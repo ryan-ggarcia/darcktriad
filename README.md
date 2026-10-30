@@ -9,7 +9,8 @@ Requisitos: Rust (rustup), Node.js e os [pré-requisitos do Tauri](https://tauri
 ```sh
 npm install
 npm run tauri dev      # abre a IDE em modo desenvolvimento
-cargo test --workspace # testes
+cargo test --workspace # testes do núcleo
+npm test               # testes da interface
 npm run tauri build    # gera os instaladores do seu sistema
 ```
 

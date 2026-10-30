@@ -1,0 +1,12 @@
+<h1>Dark Triad</h1>
+<form (submit)="$event.preventDefault(); open(folderPath.value)">
+  <label for="folder-path">Pasta</label>
+  <input id="folder-path" #folderPath required />
+  <button type="submit">Abrir</button>
+</form>
+<p role="alert">{{ error() }}</p>
+<ul>
+  @for (entry of entries(); track entry.path) {
+    <li>{{ entry.name }}{{ entry.isDir ? '/' : '' }}</li>
+  }
+</ul>

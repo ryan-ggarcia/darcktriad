@@ -8,13 +8,13 @@ IDE para C, C++ e C#. Windows, macOS e Linux.
 |---|---|
 | App | Tauri 2 (núcleo em Rust) |
 | Editor | Monaco, com atalhos do VS Code |
-| Interface | TypeScript — framework **em aberto** (Angular ou outro, decisão futura) |
+| Interface | Angular (TypeScript, componentes standalone, signals, zoneless) |
 | C / C++ | clangd (LSP) + CMake + `compile_commands.json` |
 | C# | Roslyn Language Server + `dotnet` / MSBuild |
 | Depuração | DAP: lldb-dap / GDB (C/C++), netcoredbg (C#) |
 | Terminal | xterm.js + portable-pty |
 | Busca / arquivos | crates `ignore` + `grep` (ripgrep) e `notify` |
-| Testes | `cargo test`, testes de frontend no runner do framework escolhido |
+| Testes | `cargo test` e `ng test` |
 | Release | GitHub Actions + `tauri-action`: tag `vX.Y.Z` → GitHub Release com `.msi/.exe`, `.dmg`, `.AppImage/.deb` |
 
 Proibido: componentes com licença restrita a produtos Microsoft/JetBrains (vsdbg, cpptools, C# Dev Kit) e qualquer material obtido por descompilação de produtos proprietários.

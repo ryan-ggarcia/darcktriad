@@ -3,10 +3,12 @@
   "productName": "Dark Triad",
   "identifier": "com.darktriad.ide",
   "build": {
-    "frontendDist": "../ui"
+    "beforeDevCommand": "npm run start",
+    "devUrl": "http://localhost:4200",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist/dark-triad/browser"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Dark Triad",
