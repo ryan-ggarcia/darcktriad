@@ -149,6 +149,19 @@ describe('ExplorerTree', () => {
     expect(tree.selected()).toBe('C:\\proj\\src\\b.cpp');
   });
 
+  it('renomear uma pasta expandida mantém ela e as subpastas expandidas', async () => {
+    fakes.explorer.add(`${APP}\\lib\\`, `${APP}\\lib\\x.cpp`);
+    await tree.expand(APP);
+    await tree.expand(`${APP}\\lib`);
+
+    tree.startRename(APP);
+    await tree.commitEdit('src');
+
+    expect([...tree.expanded()]).toEqual(['C:\\proj\\src', 'C:\\proj\\src\\lib']);
+    const rows = names();
+    expect(rows.slice(rows.indexOf('src'))).toEqual(['src', 'main.cpp', 'util.h', 'lib', 'x.cpp']);
+  });
+
   it('a raiz não pode ser renomeada nem excluída', async () => {
     tree.startRename(ROOT);
     await tree.remove(ROOT);

@@ -2,7 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { EditorTabs } from '../editor/editor-tabs';
 import { ExplorerService } from '../explorer.service';
 import { ChangeBatch, Entry, errorKind, errorMessage, Path } from '../ipc';
-import { basename, dirname, isWithin } from '../paths';
+import { basename, dirname, isWithin, replacePrefix } from '../paths';
 import { Dialogs } from '../shared/dialogs';
 import { CurrentFolder } from '../workspace/current-folder';
 
@@ -208,7 +208,10 @@ export class ExplorerTree {
       this.committing = false;
     }
     this.edit.set(null);
-    if (edit.target) this.tabs.renamePath(edit.target, path);
+    if (edit.target) {
+      this.tabs.renamePath(edit.target, path);
+      await this.keepExpanded(edit.target, path);
+    }
     await this.load(edit.parent);
     this.selected.set(path);
     if (edit.kind === 'file' && (await this.tabs.open(path))) this.tabs.requestFocus();
@@ -250,6 +253,18 @@ export class ExplorerTree {
   private deleteFailed(name: string, error: unknown): false {
     void this.dialogs.tell(`Não foi possível excluir ${name}.`, errorMessage(error));
     return false;
+  }
+
+  /** Pasta renomeada: ela e as subpastas que estavam expandidas continuam expandidas no caminho novo. */
+  private async keepExpanded(from: Path, to: Path): Promise<void> {
+    const moved = new Map<Path, Path>();
+    for (const dir of this.expanded()) {
+      const renamed = replacePrefix(dir, from, to);
+      if (renamed !== null) moved.set(dir, renamed);
+    }
+    if (!moved.size) return;
+    this.expanded.update((set) => new Set([...set].map((dir) => moved.get(dir) ?? dir)));
+    await Promise.all([...moved.values()].map((dir) => this.load(dir)));
   }
 
   private apply(edit: TreeEdit, name: string): Promise<Path> {

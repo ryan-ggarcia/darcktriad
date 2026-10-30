@@ -14,7 +14,7 @@ import {
   RecentFolder,
   Session,
 } from '../app/ipc';
-import { basename, dirname } from '../app/paths';
+import { basename, dirname, replacePrefix } from '../app/paths';
 import { Dialogs } from '../app/shared/dialogs';
 import { WorkspaceService } from '../app/workspace.service';
 
@@ -202,6 +202,17 @@ export class FakeExplorer implements Partial<ExplorerService> {
     const entry = this.dirs.get(dirname(path))!.find((item) => item.path === path)!;
     this.remove(path);
     this.add(entry.isDir ? `${target}\\` : target);
+    // Como no disco, a pasta leva o conteúdo junto.
+    for (const [dir, entries] of [...this.dirs]) {
+      const moved = replacePrefix(dir, path, target);
+      if (moved === null) continue;
+      this.dirs.delete(dir);
+      const items = entries.map((item) => ({
+        ...item,
+        path: replacePrefix(item.path, path, target)!,
+      }));
+      this.dirs.set(moved, items);
+    }
     return Promise.resolve(target);
   }
 
