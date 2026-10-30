@@ -1,6 +1,6 @@
 # Projeto: CMake e .NET, configuração, alvo e ferramentas
 
-Status: **MVP (v0.3)** · Depende de: [explorador.md](explorador.md), [paleta-de-comandos.md](paleta-de-comandos.md) · Usado por: [linguagem.md](linguagem.md), [compilar-e-executar.md](compilar-e-executar.md), [depuracao.md](depuracao.md)
+Status: **MVP (v0.3)** · Depende de: [explorador.md](explorador.md), [paleta-de-comandos.md](paleta-de-comandos.md) · Usado por: [ferramentas.md](ferramentas.md), [linguagem.md](linguagem.md), [compilar-e-executar.md](compilar-e-executar.md), [depuracao.md](depuracao.md)
 
 ## Problema do usuário
 
@@ -133,7 +133,7 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
    - roda `VC\Auxiliary\Build\vcvarsall.bat` (com `x64`, ou `arm64` em máquina ARM);
    - captura as variáveis de ambiente resultantes, uma vez por sessão;
    - usa esse ambiente em `cmake`, `ninja`, `clangd` e no depurador.
-3. Nada encontrado: "Nenhum compilador C/C++ encontrado." Em seguida, a instrução de instalar o Visual Studio Build Tools (com "C++ CMake tools for Windows", que inclui CMake e Ninja) ou o LLVM.
+3. Nada encontrado: "Nenhum compilador C/C++ encontrado.", com o botão **Instalar**, que oferece o Visual Studio Build Tools pelo winget ([ferramentas.md](ferramentas.md)).
 
 ### .NET
 
@@ -149,26 +149,27 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
 
 **O que a IDE procura**
 
-| Ferramenta | Para quê | Onde procura (além do `PATH`) | Versão mínima | Como instalar (mostrado ao usuário) |
-|---|---|---|---|---|
-| `cmake` | configurar e compilar C/C++ | ambiente do vcvars (Windows) | 3.21 | link para cmake.org/download |
-| `ninja` | gerador de build | ambiente do vcvars (Windows) | n/a | link para ninja-build.org |
-| `clangd` | erros e autocomplete C/C++ | Windows: `C:\Program Files\LLVM\bin`. macOS: `xcrun --find clangd`, `/opt/homebrew/opt/llvm/bin`, `/usr/local/opt/llvm/bin`. Linux: `clangd-<N>` de maior versão | 17 | link para clangd.llvm.org/installation |
-| `lldb-dap` | depurar C/C++ | os mesmos lugares do clangd; macOS também `xcrun --find lldb-dap`; Linux também `lldb-dap-<N>` | 21 (recomendado) | link para releases do LLVM |
-| `gdb` | depurar C/C++ compilado com GCC | n/a | 14, com Python (modo DAP) | gerenciador de pacotes do sistema / MSYS2 |
-| `dotnet` | compilar e rodar C# | `DOTNET_ROOT` | SDK 8 | link para dot.net |
-| `roslyn-language-server` | erros e autocomplete C# | `~/.dotnet/tools` | n/a (exige runtime .NET 10) | comando exibido: `dotnet tool install --global roslyn-language-server --prerelease` |
-| `netcoredbg` | depurar C# | n/a | n/a | link para github.com/Samsung/netcoredbg/releases |
+A ordem de busca é: `PATH`, depois os caminhos conhecidos desta tabela, depois a pasta de ferramentas da IDE (`<dados do app>/tools/`). Vale a primeira que atende a versão mínima. Instalar o que falta: [ferramentas.md](ferramentas.md).
+
+| Ferramenta | Para quê | Caminhos conhecidos (além do `PATH` e da pasta da IDE) | Versão mínima |
+|---|---|---|---|
+| `cmake` | configurar e compilar C/C++ | ambiente do vcvars (Windows) | 3.21 |
+| `ninja` | gerador de build | ambiente do vcvars (Windows) | n/a |
+| `clangd` | erros e autocomplete C/C++ | Windows: `C:\Program Files\LLVM\bin`. macOS: `xcrun --find clangd`, `/opt/homebrew/opt/llvm/bin`, `/usr/local/opt/llvm/bin`. Linux: `clangd-<N>` de maior versão | 17 |
+| `lldb-dap` | depurar C/C++ | os mesmos lugares do clangd; macOS também `xcrun --find lldb-dap`; Linux também `lldb-dap-<N>` | 21 (recomendado) |
+| `gdb` | depurar C/C++ compilado com GCC | n/a | 14, com Python (modo DAP) |
+| `dotnet` | compilar e rodar C# | `DOTNET_ROOT`, `~/.dotnet` | SDK 8 |
+| `roslyn-language-server` | erros e autocomplete C# | `~/.dotnet/tools` | n/a (exige runtime .NET 10) |
+| `netcoredbg` | depurar C# | n/a | n/a |
 
 **Como a IDE avisa**
 
-1. **Ajuda: Verificar ferramentas** abre uma aba com uma linha por ferramenta:
+1. **Ferramentas: Verificar e instalar** abre a tela de ferramentas ([ferramentas.md](ferramentas.md)), com uma linha por ferramenta:
    - ✓ com caminho e versão; ou
-   - ✗ com "para quê" e "como instalar".
+   - ✗ com "para quê", a opção de instalar e o passo a passo manual.
 
    Há um botão **Verificar de novo**.
-2. Quando uma ação precisa de uma ferramenta que falta, ela não tenta rodar. Aparece uma mensagem direta, ex.: "Para mostrar erros em C++ é preciso o clangd 17 ou mais novo. [Como instalar]".
-3. A IDE **não baixa nem instala nada sozinha** no MVP (ver README).
+2. Quando uma ação precisa de uma ferramenta que falta, ela não tenta rodar. Aparece uma mensagem direta, ex.: "Para mostrar erros em C++ é preciso o clangd 17 ou mais novo. [Instalar]". O botão abre a mesma tela.
 
 ## Atalhos (padrão do VS Code)
 
@@ -179,7 +180,7 @@ O VS Code não tem atalhos padrão para escolher configuração, alvo ou reconfi
 | Projeto: Selecionar configuração | nenhum (paleta / barra de status) |
 | Projeto: Selecionar alvo | nenhum (paleta / barra de status) |
 | Projeto: Reconfigurar CMake | nenhum (paleta) |
-| Ajuda: Verificar ferramentas | nenhum (paleta / menu Ajuda) |
+| Ferramentas: Verificar e instalar | nenhum (paleta / menu Ajuda); ver [ferramentas.md](ferramentas.md) |
 
 ## Critérios de aceite
 
@@ -204,7 +205,7 @@ O VS Code não tem atalhos padrão para escolher configuração, alvo ou reconfi
 11. **[manual]** Durante a configuração do item 6, digite no editor e role o explorador. Esperado: nenhum atraso perceptível.
 12. **[manual]** Abra `hello-cs`. Esperado: a barra mostra `.NET · Debug · ▶ hello-cs`, e o canal dotnet da Saída mostra o `dotnet restore`.
 13. **[manual, Windows]** Numa máquina com Visual Studio Build Tools (C++ e CMake tools) e sem compilador no `PATH`, abra a IDE pelo menu Iniciar e abra `hello-cpp`. Esperado: a configuração usa MSVC (o log do CMake mostra "The CXX compiler identification is MSVC").
-14. **[manual]** Remova o clangd do `PATH` e rode **Ajuda: Verificar ferramentas**. Esperado: clangd com ✗ e instrução de instalação, e as demais ferramentas com ✓, caminho e versão.
+14. **[manual]** Remova o clangd do `PATH` (e da pasta da IDE) e rode **Ferramentas: Verificar e instalar**. Esperado: clangd com ✗ e a opção de instalar, e as demais ferramentas com ✓, caminho e versão.
 
 ## O que fica de fora
 
@@ -215,5 +216,5 @@ O VS Code não tem atalhos padrão para escolher configuração, alvo ou reconfi
 - **Perfis de `launchSettings.json` e vários projetos de inicialização no .NET:** depois.
 - **Escolher o framework-alvo:** depois. O MVP usa o primeiro.
 - **Projetos `.vcxproj`, Makefile puro, Meson e Bazel:** fora (README).
-- **Baixar e instalar ferramentas automaticamente:** depois (README).
+- **Baixar e instalar ferramentas:** não é desta spec; ver [ferramentas.md](ferramentas.md).
 - **Compilação cruzada, embarcados, WSL e contêineres:** fora.

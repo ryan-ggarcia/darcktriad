@@ -89,7 +89,7 @@ No IntelliJ/CLion é difícil saber o que cada coisa faz e onde fica. Quero digi
    - **Editar:** Desfazer, Refazer, Recortar, Copiar, Colar, Localizar, Substituir, Comentar linha.
    - **Ver:** Paleta de comandos, Abrir rápido, Explorador, Executar e Depurar, Problemas, Saída, Terminal, Mostrar/ocultar barra lateral.
    - **Executar:** Compilar, Executar sem depurar, Iniciar depuração, Parar, Alternar ponto de parada.
-   - **Ajuda:** Atalhos de teclado (abre a paleta listando todos os comandos com atalho), Verificar ferramentas ([projeto.md](projeto.md)), Sobre.
+   - **Ajuda:** Atalhos de teclado (abre a paleta listando todos os comandos com atalho), Verificar e instalar ferramentas ([ferramentas.md](ferramentas.md)), Sobre.
 2. No macOS, o menu do app tem Sobre e Sair (⌘Q), e ⌘W é "Fechar editor", não "fechar janela".
 
 **Teclado global**

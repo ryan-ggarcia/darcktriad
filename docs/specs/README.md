@@ -13,7 +13,8 @@ O que entra no MVP, o que vem depois e o que fica de fora. Cada funcionalidade d
 | v0.1 | [editor.md](editor.md) | Abrir, editar e salvar arquivos em abas (Monaco). |
 | v0.1 | [explorador.md](explorador.md) | Abrir pasta e navegar/criar/renomear/excluir arquivos em árvore. |
 | v0.2 | [paleta-de-comandos.md](paleta-de-comandos.md) | Paleta de comandos, abrir arquivo por nome, ir para linha, menu principal e atalhos globais. |
-| v0.3 | [projeto.md](projeto.md) | Detectar CMake/.NET, configurar, escolher Debug/Release e alvo, verificar ferramentas. |
+| v0.3 | [projeto.md](projeto.md) | Detectar CMake/.NET, configurar, escolher Debug/Release e alvo. |
+| v0.3 | [ferramentas.md](ferramentas.md) | Detectar as ferramentas na primeira abertura e oferecer instalar o que falta, com download verificado. |
 | v0.3 | [terminal.md](terminal.md) | Terminal integrado (também usado para rodar o programa). |
 | v0.4 | [linguagem.md](linguagem.md) | Erros, autocomplete, hover, dicas de parâmetros e ir para definição (clangd e Roslyn). |
 | v0.5 | [compilar-e-executar.md](compilar-e-executar.md) | Compilar com erros clicáveis e executar sem depurar. |
@@ -64,11 +65,11 @@ A ordem segue as dependências: a linguagem precisa do `compile_commands.json` g
 |---|---|---|
 | Abrir projeto CMake (com ou sem `CMakePresets.json`) e `.csproj`/`.sln` | **MVP** | Pedido explícito ([projeto.md](projeto.md)). |
 | Configuração Debug/Release e alvo executável ativo | **MVP** | Necessário para compilar e rodar o programa certo. |
-| Verificação de ferramentas (cmake, ninja, clangd, dotnet, depuradores) com instrução clara | **MVP** | Sem isso o usuário não sabe por que "nada funciona". |
+| Assistente de ferramentas: detectar na primeira abertura e oferecer instalar o que falta (portáteis na pasta da IDE; compilador e .NET pelo gerenciador oficial do sistema), com hash fixado e verificação de assinatura | **MVP** | Decisão do usuário: sem isso, quem instala a IDE não sabe por que "nada funciona" ([ferramentas.md](ferramentas.md)). |
 | Compilar (Ctrl+Shift+B) com erros clicáveis | **MVP** | Pedido explícito ([compilar-e-executar.md](compilar-e-executar.md)). |
 | Executar sem depurar (Ctrl+F5) | **MVP** | Pedido explícito. |
 | Argumentos, variáveis de ambiente e pasta de trabalho da execução | Depois | O MVP roda sem argumentos, a partir da raiz do projeto. |
-| Ferramentas embutidas no instalador (clangd, cmake, ninja, lldb-dap, netcoredbg) | Depois | O MVP detecta o que está instalado. Embutir aumenta o instalador. **Decisão do usuário.** |
+| Ferramentas embutidas no instalador da IDE | Fora | Decisão do usuário: o instalador vem sem ferramentas, e o assistente baixa só o que falta ([ferramentas.md](ferramentas.md)). |
 | Criar projeto novo a partir de modelo (CMake "hello", `dotnet new console`) | Depois | Ajuda iniciantes; não é necessário para abrir um projeto existente. |
 | Testes (CTest, `dotnet test`, painel de testes) | Depois | Fluxo seguinte ao MVP. |
 | Escolher entre vários projetos .NET executáveis / vários frameworks-alvo | Depois | No MVP: seletor de alvo simples e primeiro framework-alvo. |
