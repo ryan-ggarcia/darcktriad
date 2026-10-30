@@ -96,6 +96,8 @@ export class ExplorerView {
     effect((onCleanup) => {
       const element = this.viewport()?.nativeElement;
       if (!element) return;
+      // A lista é recriada ao reabrir a pasta: a rolagem antiga não vale para ela.
+      this.scrollTop.set(element.scrollTop);
       const observer = new ResizeObserver(() => this.viewportHeight.set(element.clientHeight));
       observer.observe(element);
       onCleanup(() => observer.disconnect());

@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { EditorArea } from './editor/editor-area';
 import { EditorTabs } from './editor/editor-tabs';
+import { loadMonaco } from './editor/monaco-loader';
 import { Tab } from './editor/tab';
 import { ExplorerView } from './explorer/explorer-view';
 import { LANGUAGE_NAMES } from './paths';
@@ -77,7 +78,11 @@ export class App {
       showExplorer: () => this.showExplorer(),
       toggleSidebar: () => this.sidebarVisible.update((visible) => !visible),
     });
-    void this.workspace.start();
+    void this.workspace.start().then(() => {
+      // Com a tela pronta, carrega o Monaco no tempo ocioso: o primeiro arquivo abre tão rápido quanto os outros.
+      // shortcut: sem requestIdleCallback (WebKit antigo no macOS/Linux) não pré-carrega; usar setTimeout se lá medir lento.
+      globalThis.requestIdleCallback?.(() => void loadMonaco());
+    });
   }
 
   protected onKeydown(event: KeyboardEvent): void {

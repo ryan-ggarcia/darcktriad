@@ -45,10 +45,14 @@ describe('EditorTabs', () => {
 
     it('arquivo binário ou grande demais vira aviso, sem texto', async () => {
       fakes.files.disk.set('C:\\proj\\a.bin', { kind: 'binary' });
+      fakes.files.disk.set('C:\\proj\\enorme.log', { kind: 'tooLarge', size: 60 * 1048576 });
       const tab = await open('C:\\proj\\a.bin');
+      const large = await open('C:\\proj\\enorme.log');
 
       expect(tab.view.kind).toBe('binary');
       expect(tab.buffer).toBeNull();
+      expect(large.view).toEqual({ kind: 'tooLarge', size: 60 * 1048576 });
+      expect(large.buffer).toBeNull();
     });
   });
 

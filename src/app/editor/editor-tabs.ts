@@ -23,8 +23,8 @@ export class EditorTabs {
   readonly cursor = signal<{ line: number; column: number } | null>(null);
   /** Lista do Ctrl+Tab: as abas por uso recente e a escolhida. */
   readonly switcher = signal<{ tabs: Tab[]; index: number } | null>(null);
-  /** Muda quando o foco deve ir para o texto (aba clicada, Ctrl+N, Ctrl+Tab). */
-  readonly focusRequests = signal(0);
+  /** Pedido de foco no texto (aba clicada, Ctrl+N, Ctrl+Tab) ainda não atendido pelo editor. */
+  readonly focusPending = signal(false);
 
   /** Nomes repetidos ganham a pasta pai: `main.cpp · app`. */
   readonly labels = computed(() => {
@@ -89,7 +89,7 @@ export class EditorTabs {
   }
 
   requestFocus(): void {
-    this.focusRequests.update((count) => count + 1);
+    this.focusPending.set(true);
   }
 
   /** Ctrl+PageDown / Ctrl+PageUp: a aba vizinha pela posição, dando a volta. */

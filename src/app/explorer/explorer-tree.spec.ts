@@ -68,6 +68,7 @@ describe('ExplorerTree', () => {
 
     expect(tabs.active()?.path()).toBe(`${APP}\\main.cpp`);
     expect(tree.selected()).toBe(`${APP}\\main.cpp`);
+    expect(tabs.focusPending()).toBe(false);
   });
 
   it('digitar letras pula para o próximo item que começa com elas', () => {

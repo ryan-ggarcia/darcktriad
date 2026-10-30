@@ -44,10 +44,13 @@ export class CodeEditor {
       const tab = this.tab();
       if (editor) untracked(() => this.show(editor, tab));
     });
-    // Também ao terminar de criar o editor: o pedido de foco (ex.: Ctrl+N) pode chegar antes.
+    // Só foca quando pedido; o pedido (ex.: Ctrl+N) pode chegar antes de o editor existir.
     effect(() => {
-      this.tabs.focusRequests();
-      this.editor()?.focus();
+      const editor = this.editor();
+      if (editor && this.tabs.focusPending()) {
+        this.tabs.focusPending.set(false);
+        editor.focus();
+      }
     });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;

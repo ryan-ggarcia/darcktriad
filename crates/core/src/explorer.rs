@@ -239,14 +239,27 @@ mod tests {
 
     #[test]
     fn list_puts_folders_first_then_sorts_by_name() {
+        // `Docs` e `app.h` só ficam nesta ordem se maiúsculas não contarem: em ASCII, 'D' < 'b'.
         let names = listed_names(vec![
             entry("main.cpp", false),
             entry("src", true),
             entry("CMakeLists.txt", false),
             entry("build", true),
+            entry("app.h", false),
+            entry("Docs", true),
         ]);
 
-        assert_eq!(names, ["build", "src", "CMakeLists.txt", "main.cpp"]);
+        assert_eq!(
+            names,
+            [
+                "build",
+                "Docs",
+                "src",
+                "app.h",
+                "CMakeLists.txt",
+                "main.cpp"
+            ]
+        );
     }
 
     #[test]
