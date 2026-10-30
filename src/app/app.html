@@ -1,12 +1,62 @@
-<h1>Dark Triad</h1>
-<form (submit)="$event.preventDefault(); open(folderPath.value)">
-  <label for="folder-path">Pasta</label>
-  <input id="folder-path" #folderPath required />
-  <button type="submit">Abrir</button>
-</form>
-<p role="alert">{{ error() }}</p>
-<ul>
-  @for (entry of entries(); track entry.path) {
-    <li>{{ entry.name }}{{ entry.isDir ? '/' : '' }}</li>
+<nav class="activity-bar" aria-label="Barra de atividades">
+  <button
+    type="button"
+    class="activity-button"
+    [class.active]="sidebarVisible()"
+    [attr.aria-pressed]="sidebarVisible()"
+    aria-label="Explorador"
+    [title]="commands.hint('Explorador', 'showExplorer')"
+    (click)="sidebarVisible() ? sidebarVisible.set(false) : showExplorer()"
+  >
+    <app-icon name="files" />
+  </button>
+</nav>
+
+@if (sidebarVisible()) {
+  <aside class="sidebar" aria-label="Explorador">
+    <app-explorer-view />
+  </aside>
+}
+
+<main class="main">
+  @if (tabs.tabs().length) {
+    <app-editor-area />
+  } @else {
+    <app-welcome-view />
   }
-</ul>
+</main>
+
+<footer class="status-bar" aria-label="Barra de status">
+  @if (status(); as status) {
+    <span>{{ status.position }}</span>
+    <span>{{ status.language }}</span>
+    <span>UTF-8</span>
+    <span>{{ status.eol }}</span>
+  }
+</footer>
+
+@if (tabs.switcher(); as switcher) {
+  <div class="switcher" role="dialog" aria-label="Alternar entre editores">
+    <ul
+      role="listbox"
+      aria-label="Editores por uso recente"
+      [attr.aria-activedescendant]="'switcher-' + switcher.index"
+    >
+      @for (tab of switcher.tabs; track tab; let i = $index) {
+        <li
+          role="option"
+          class="switcher-item"
+          [id]="'switcher-' + i"
+          [class.selected]="i === switcher.index"
+          [attr.aria-selected]="i === switcher.index"
+          (mousedown)="$event.preventDefault(); tabs.commitSwitcher(i)"
+        >
+          {{ tabs.labels().get(tab) }}
+          <span class="switcher-path">{{ tab.path() }}</span>
+        </li>
+      }
+    </ul>
+  </div>
+}
+
+<app-dialog-host />

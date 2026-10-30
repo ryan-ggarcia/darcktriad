@@ -18,3 +18,5 @@ Saída: um arquivo por funcionalidade em docs/specs/<feature>.md com:
 - o que fica de fora.
 
 Corte sem dó: se uma funcionalidade confunde mais do que ajuda, proponha a versão mais simples ou nenhuma. Respeite docs/STACK.md (clangd, Roslyn LSP, DAP).
+
+Arquivos temporários: arquivos que você criar só para validar à mão (ex.: projetos de exemplo para conferir autocomplete ou depuração, prints, downloads, backups, logs, inclusive em %TEMP%) devem ser excluídos permanentemente ao terminar, sem lixeira. Testes automatizados do repositório (cargo test, ng test) e suas fixtures ficam. Nunca apague arquivos que você não criou.

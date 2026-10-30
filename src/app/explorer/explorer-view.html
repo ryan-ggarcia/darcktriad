@@ -1,0 +1,187 @@
+@if (folder.path(); as root) {
+  <header class="explorer-header">
+    <h2 class="explorer-root" [title]="root">{{ rootName() }}</h2>
+    <div class="explorer-actions" role="toolbar" aria-label="Ações do explorador">
+      <button
+        type="button"
+        class="icon-button"
+        title="Novo arquivo"
+        aria-label="Novo arquivo"
+        (click)="tree.startCreate('file')"
+      >
+        <app-icon name="new-file" />
+      </button>
+      <button
+        type="button"
+        class="icon-button"
+        title="Nova pasta"
+        aria-label="Nova pasta"
+        (click)="tree.startCreate('dir')"
+      >
+        <app-icon name="new-folder" />
+      </button>
+      <button
+        type="button"
+        class="icon-button"
+        title="Atualizar"
+        aria-label="Atualizar"
+        (click)="tree.refresh()"
+      >
+        <app-icon name="refresh" />
+      </button>
+      <button
+        type="button"
+        class="icon-button"
+        title="Recolher tudo"
+        aria-label="Recolher tudo"
+        (click)="tree.collapseAll()"
+      >
+        <app-icon name="collapse-all" />
+      </button>
+    </div>
+  </header>
+
+  @if (folder.watchError()) {
+    <p class="banner" role="status">
+      Mudanças externas não são detectadas automaticamente: use Atualizar.
+    </p>
+  }
+
+  <div
+    #viewport
+    class="tree"
+    role="tree"
+    tabindex="0"
+    [attr.aria-label]="'Arquivos de ' + rootName()"
+    [attr.aria-activedescendant]="activeId()"
+    (scroll)="scrollTop.set(viewport.scrollTop)"
+    (keydown)="onTreeKeydown($event)"
+    (contextmenu)="openMenu($event, null)"
+  >
+    <div class="tree-spacer" [style.height.px]="tree.rows().length * rowHeight">
+      <div class="tree-window" [style.transform]="'translateY(' + first() * rowHeight + 'px)'">
+        @for (row of visibleRows(); track row.key; let i = $index) {
+          @if (row.kind === 'entry') {
+            @let entry = row.entry;
+            @let selected = entry.path === tree.selected();
+            <div
+              role="treeitem"
+              class="tree-row"
+              [id]="'tree-row-' + (first() + i)"
+              [class.selected]="selected"
+              [attr.aria-level]="row.level"
+              [attr.aria-expanded]="entry.isDir ? row.expanded : null"
+              [attr.aria-selected]="selected"
+              [attr.aria-posinset]="row.position"
+              [attr.aria-setsize]="row.siblings"
+              [style.padding-left.px]="indent(row.level)"
+              [title]="entry.path"
+              (click)="tree.activate(entry)"
+              (contextmenu)="openMenu($event, entry)"
+            >
+              <app-icon
+                class="twistie"
+                [name]="!entry.isDir ? '' : row.expanded ? 'chevron-down' : 'chevron-right'"
+              />
+              @if (entry.isDir) {
+                <app-icon class="folder-icon" [name]="row.expanded ? 'folder-open' : 'folder'" />
+              } @else if (fileBadge(entry.name); as badge) {
+                <span [class]="'badge badge-' + badge.kind" aria-hidden="true">{{
+                  badge.label
+                }}</span>
+              } @else {
+                <app-icon name="file" />
+              }
+              @if (row.renaming) {
+                <ng-container *ngTemplateOutlet="nameField" />
+              } @else {
+                <span class="tree-name">{{ entry.name }}</span>
+                @if (entry.isSymlink) {
+                  <span class="tree-link" title="Link simbólico" aria-label="link simbólico"
+                    >↗</span
+                  >
+                }
+              }
+            </div>
+          } @else if (row.kind === 'input') {
+            <div class="tree-row" [style.padding-left.px]="indent(row.level)">
+              <app-icon class="twistie" name="" />
+              <app-icon [name]="tree.edit()?.kind === 'dir' ? 'folder' : 'file'" />
+              <ng-container *ngTemplateOutlet="nameField" />
+            </div>
+          } @else {
+            <div
+              class="tree-row tree-message"
+              role="treeitem"
+              aria-disabled="true"
+              [attr.aria-level]="row.level"
+              [style.padding-left.px]="indent(row.level) + 32"
+            >
+              {{ row.text }}
+            </div>
+          }
+        }
+      </div>
+    </div>
+  </div>
+} @else {
+  <div class="explorer-empty">
+    <p>Nenhuma pasta aberta.</p>
+    <button
+      type="button"
+      class="primary"
+      [title]="commands.hint('Abrir pasta', 'openFolder')"
+      (click)="workspace.openFolderDialog()"
+    >
+      Abrir pasta
+    </button>
+  </div>
+}
+
+<ng-template #nameField>
+  @if (tree.edit(); as edit) {
+    <span class="tree-field">
+      <input
+        #input
+        class="tree-input"
+        [value]="edit.name"
+        [attr.aria-label]="
+          edit.kind === 'rename'
+            ? 'Novo nome'
+            : edit.kind === 'dir'
+              ? 'Nome da nova pasta'
+              : 'Nome do novo arquivo'
+        "
+        [attr.aria-invalid]="edit.error ? true : null"
+        aria-describedby="tree-error"
+        (keydown)="onInputKeydown($event, input.value)"
+        (blur)="tree.commitEdit(input.value)"
+        (click)="$event.stopPropagation()"
+      />
+      @if (edit.error) {
+        <span id="tree-error" class="tree-error" role="alert">{{ edit.error }}</span>
+      }
+    </span>
+  }
+</ng-template>
+
+@if (menu(); as position) {
+  <div
+    #menu
+    class="menu"
+    role="menu"
+    aria-label="Ações do item"
+    [style.left.px]="position.x"
+    [style.top.px]="position.y"
+    (keydown)="onMenuKeydown($event)"
+  >
+    @for (item of menuItems(); track item.label) {
+      <button type="button" role="menuitem" class="menu-item" (click)="runMenuItem(item)">
+        <span>{{ item.label }}</span>
+        @if (item.shortcut) {
+          <kbd>{{ item.shortcut }}</kbd>
+        }
+      </button>
+    }
+  </div>
+}

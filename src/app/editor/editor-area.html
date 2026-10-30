@@ -1,0 +1,64 @@
+<div
+  class="tab-strip"
+  role="tablist"
+  aria-label="Editores abertos"
+  (keydown)="onTabKeydown($event)"
+>
+  @for (tab of tabs.tabs(); track tab) {
+    @let active = tab === tabs.active();
+    <div
+      role="tab"
+      class="tab"
+      [class.active]="active"
+      [class.dirty]="tab.dirty()"
+      [attr.aria-selected]="active"
+      [attr.tabindex]="active ? 0 : -1"
+      aria-controls="editor-panel"
+      [title]="tab.path() ?? tab.name()"
+      (click)="select(tab)"
+      (mousedown)="$event.button === 1 && $event.preventDefault()"
+      (auxclick)="$event.button === 1 && close(tab)"
+    >
+      <span class="tab-label" [class.deleted]="tab.deleted()">{{ tabs.labels().get(tab) }}</span>
+      @if (tab.deleted()) {
+        <span class="tab-note">(excluído)</span>
+      }
+      <button
+        type="button"
+        class="tab-close icon-button"
+        tabindex="-1"
+        [attr.aria-label]="closeHint(tab)"
+        [title]="closeHint(tab)"
+        (click)="$event.stopPropagation(); close(tab)"
+      >
+        <app-icon [name]="tab.dirty() ? 'dot' : 'close'" />
+      </button>
+    </div>
+  }
+</div>
+
+<div
+  id="editor-panel"
+  class="editor-panel"
+  role="tabpanel"
+  [attr.aria-label]="tabs.active()?.name()"
+>
+  @if (tabs.active(); as tab) {
+    @if (tab.changedOnDisk()) {
+      <div class="banner" role="alert">
+        <span>Este arquivo mudou no disco.</span>
+        <button type="button" (click)="tabs.reload(tab)">Recarregar do disco</button>
+        <button type="button" (click)="tabs.keepMine(tab)">Manter minha versão</button>
+      </div>
+    }
+    @if (readOnly(tab)) {
+      <div class="banner" role="status">
+        Codificação não suportada nesta versão: somente leitura
+      </div>
+    }
+    @if (notice(tab); as notice) {
+      <p class="notice">{{ notice }}</p>
+    }
+  }
+  <app-code-editor [tab]="textTab()" [hidden]="!textTab()" />
+</div>

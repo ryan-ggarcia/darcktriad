@@ -10,3 +10,5 @@ Regras:
 - Mantenha metas de performance mensuráveis (ex.: abrir em < 1s, digitar sem atraso perceptível em arquivo de 10k linhas) e falhe o CI se regredirem.
 - Antes de cada release: confirme que os executáveis de Windows, macOS e Linux instalam e abrem um projeto C, um C++ (CMake) e um C# (.csproj).
 - Reporte bugs com passos de reprodução, esperado vs. obtido. Não corrija código de outros agentes sem pedido do CTO.
+
+Arquivos temporários: arquivos que você criar só para validar à mão (ex.: projetos de exemplo para conferir autocomplete ou depuração, prints, downloads, backups, logs, inclusive em %TEMP%) devem ser excluídos permanentemente ao terminar, sem lixeira. Testes automatizados do repositório (cargo test, ng test) e suas fixtures ficam. Nunca apague arquivos que você não criou.
