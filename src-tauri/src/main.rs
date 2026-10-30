@@ -2,26 +2,236 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! Ponto de montagem: cria os adaptadores, injeta nos casos de uso e expõe comandos ao frontend.
+//! O contrato com a interface está em docs/ipc.md.
 
 use std::path::PathBuf;
 
-use darktriad_core::{Entry, Explorer};
-use darktriad_infra::LocalFileSystem;
-use tauri::State;
+use darktriad_core::{
+    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, OpenedFolder, RecentFolderView,
+    Session, Workspace, validate_name, validate_path,
+};
+use darktriad_infra::{JsonStateStore, LocalFileSystem, NotifyWatcher};
+use tauri::{AppHandle, Emitter, Manager, Window, Wry};
+use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 
-// `async` faz o Tauri rodar o comando fora da thread de UI.
+type AppExplorer = Explorer<LocalFileSystem>;
+type AppEditor = Editor<LocalFileSystem>;
+type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
+
+/// Evento com as mudanças no disco dentro da pasta aberta.
+const FS_CHANGED: &str = "fs-changed";
+
+/// Roda `job` numa thread de I/O: nem a thread de UI nem o runtime assíncrono esperam o disco.
+async fn blocking<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    tauri::async_runtime::spawn_blocking(job)
+        .await
+        .map_err(|error| Error::new(ErrorKind::Other, error.to_string()))?
+}
+
 #[tauri::command]
-async fn list_dir(
+async fn list_dir(app: AppHandle, path: PathBuf) -> Result<Vec<Entry>, Error> {
+    validate_path(&path)?;
+    blocking(move || app.state::<AppExplorer>().list(&path)).await
+}
+
+#[tauri::command]
+async fn create_file(app: AppHandle, parent: PathBuf, name: String) -> Result<PathBuf, Error> {
+    validate_path(&parent)?;
+    blocking(move || {
+        let root = app.state::<AppWorkspace>().root()?;
+        app.state::<AppExplorer>()
+            .create_file(&root, &parent, &name)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn create_dir(app: AppHandle, parent: PathBuf, name: String) -> Result<PathBuf, Error> {
+    validate_path(&parent)?;
+    blocking(move || {
+        let root = app.state::<AppWorkspace>().root()?;
+        app.state::<AppExplorer>().create_dir(&root, &parent, &name)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn rename_entry(app: AppHandle, path: PathBuf, new_name: String) -> Result<PathBuf, Error> {
+    validate_path(&path)?;
+    blocking(move || {
+        let root = app.state::<AppWorkspace>().root()?;
+        app.state::<AppExplorer>().rename(&root, &path, &new_name)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn move_to_trash(app: AppHandle, path: PathBuf) -> Result<(), Error> {
+    validate_path(&path)?;
+    blocking(move || {
+        let root = app.state::<AppWorkspace>().root()?;
+        app.state::<AppExplorer>().move_to_trash(&root, &path)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn delete_permanently(app: AppHandle, path: PathBuf) -> Result<(), Error> {
+    validate_path(&path)?;
+    blocking(move || {
+        let root = app.state::<AppWorkspace>().root()?;
+        app.state::<AppExplorer>().delete_permanently(&root, &path)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn read_file(app: AppHandle, path: PathBuf) -> Result<FileContent, Error> {
+    validate_path(&path)?;
+    blocking(move || app.state::<AppEditor>().read(&path)).await
+}
+
+#[tauri::command]
+async fn save_file(
+    app: AppHandle,
     path: PathBuf,
-    explorer: State<'_, Explorer<LocalFileSystem>>,
-) -> Result<Vec<Entry>, String> {
-    explorer.list(&path).map_err(|error| error.to_string())
+    content: String,
+    eol: Eol,
+    bom: bool,
+    expected_version: Option<String>,
+) -> Result<String, Error> {
+    validate_path(&path)?;
+    blocking(move || {
+        app.state::<AppEditor>()
+            .save(&path, &content, eol, bom, expected_version.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn default_eol() -> Eol {
+    Eol::system_default()
+}
+
+#[tauri::command]
+async fn open_folder(app: AppHandle, path: PathBuf) -> Result<OpenedFolder, Error> {
+    validate_path(&path)?;
+    blocking(move || app.state::<AppWorkspace>().open(&path)).await
+}
+
+#[tauri::command]
+async fn close_folder(app: AppHandle) -> Result<(), Error> {
+    blocking(move || {
+        app.state::<AppWorkspace>().close();
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn recent_folders(app: AppHandle) -> Result<Vec<RecentFolderView>, Error> {
+    blocking(move || Ok(app.state::<AppWorkspace>().recent_folders())).await
+}
+
+#[tauri::command]
+async fn remove_recent_folder(app: AppHandle, path: PathBuf) -> Result<(), Error> {
+    validate_path(&path)?;
+    blocking(move || app.state::<AppWorkspace>().remove_recent_folder(&path)).await
+}
+
+#[tauri::command]
+async fn save_session(app: AppHandle, session: Session) -> Result<(), Error> {
+    for path in session.open_files.iter().chain(&session.active_file) {
+        validate_path(path)?;
+    }
+    blocking(move || app.state::<AppWorkspace>().save_session(session)).await
+}
+
+#[tauri::command]
+async fn pick_folder(window: Window) -> Result<Option<PathBuf>, Error> {
+    pick(window, |dialog| dialog.blocking_pick_folder()).await
+}
+
+#[tauri::command]
+async fn pick_file(window: Window) -> Result<Option<PathBuf>, Error> {
+    pick(window, |dialog| dialog.blocking_pick_file()).await
+}
+
+#[tauri::command]
+async fn pick_save_path(
+    window: Window,
+    directory: Option<PathBuf>,
+    file_name: Option<String>,
+) -> Result<Option<PathBuf>, Error> {
+    if let Some(directory) = &directory {
+        validate_path(directory)?;
+    }
+    if let Some(file_name) = &file_name {
+        validate_name(file_name)?;
+    }
+    pick(window, move |mut dialog| {
+        if let Some(directory) = directory {
+            dialog = dialog.set_directory(directory);
+        }
+        if let Some(file_name) = file_name {
+            dialog = dialog.set_file_name(file_name);
+        }
+        dialog.blocking_save_file()
+    })
+    .await
+}
+
+/// Mostra um diálogo nativo e devolve o caminho escolhido, ou `None` se o usuário cancelou.
+async fn pick(
+    window: Window,
+    show: impl FnOnce(FileDialogBuilder<Wry>) -> Option<FilePath> + Send + 'static,
+) -> Result<Option<PathBuf>, Error> {
+    blocking(move || {
+        let dialog = window.dialog().file();
+        // Mesma regra do plugin: no Linux (GTK) o diálogo não aceita janela pai.
+        #[cfg(any(windows, target_os = "macos"))]
+        let dialog = dialog.set_parent(&window);
+        Ok(show(dialog).and_then(|path| path.into_path().ok()))
+    })
+    .await
 }
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Explorer::new(LocalFileSystem))
-        .invoke_handler(tauri::generate_handler![list_dir])
+        .manage(Editor::new(LocalFileSystem))
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let watcher = NotifyWatcher::new(move |batch| {
+                // Só falha com o app fechando, quando não há mais quem avisar.
+                let _ = handle.emit(FS_CHANGED, batch);
+            });
+            let store = JsonStateStore::new(app.path().app_data_dir()?.join("state.json"));
+            app.manage(Workspace::new(LocalFileSystem, watcher, store));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            list_dir,
+            create_file,
+            create_dir,
+            rename_entry,
+            move_to_trash,
+            delete_permanently,
+            read_file,
+            save_file,
+            default_eol,
+            open_folder,
+            close_folder,
+            recent_folders,
+            remove_recent_folder,
+            save_session,
+            pick_folder,
+            pick_file,
+            pick_save_path,
+        ])
         .run(tauri::generate_context!())
         .expect("falha ao iniciar o Dark Triad");
 }

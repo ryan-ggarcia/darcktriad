@@ -1,47 +1,44 @@
 //! Adaptadores: implementações concretas das portas definidas em `darktriad-core`.
 
-use std::fs;
-use std::io;
-use std::path::Path;
+mod local_fs;
+mod state_store;
+mod watcher;
 
-use darktriad_core::{Entry, FileSystem};
-
-/// Sistema de arquivos local do sistema operacional.
-pub struct LocalFileSystem;
-
-impl FileSystem for LocalFileSystem {
-    fn read_dir(&self, path: &Path) -> io::Result<Vec<Entry>> {
-        fs::read_dir(path)?
-            .map(|item| {
-                let item = item?;
-                Ok(Entry {
-                    name: item.file_name().to_string_lossy().into_owned(),
-                    path: item.path(),
-                    is_dir: item.file_type()?.is_dir(),
-                })
-            })
-            .collect()
-    }
-}
+pub use local_fs::LocalFileSystem;
+pub use state_store::JsonStateStore;
+pub use watcher::NotifyWatcher;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod test_support {
+    use std::ops::Deref;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn read_dir_reports_files_and_folders() {
-        let root = std::env::temp_dir().join(format!("darktriad-infra-{}", std::process::id()));
-        fs::create_dir_all(root.join("src")).unwrap();
-        fs::write(root.join("main.c"), "int main(void) { return 0; }").unwrap();
+    /// Pasta temporária exclusiva do teste, apagada no fim mesmo se o teste falhar.
+    pub struct TempDir(PathBuf);
 
-        let mut entries = LocalFileSystem.read_dir(&root).unwrap();
-        fs::remove_dir_all(&root).unwrap();
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
+    impl TempDir {
+        pub fn new(name: &str) -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("darktriad-{name}-{}-{serial}", std::process::id()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
 
-        let summary: Vec<_> = entries
-            .iter()
-            .map(|entry| (entry.name.as_str(), entry.is_dir))
-            .collect();
-        assert_eq!(summary, [("main.c", false), ("src", true)]);
+    impl Deref for TempDir {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 }

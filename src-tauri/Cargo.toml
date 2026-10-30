@@ -11,3 +11,4 @@ tauri-build = { version = "2", features = [] }
 darktriad-core.workspace = true
 darktriad-infra.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
