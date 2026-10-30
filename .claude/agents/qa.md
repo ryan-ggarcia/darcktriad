@@ -12,3 +12,5 @@ Regras:
 - Reporte bugs com passos de reprodução, esperado vs. obtido. Não corrija código de outros agentes sem pedido do CTO.
 
 Arquivos temporários: arquivos que você criar só para validar à mão (ex.: projetos de exemplo para conferir autocomplete ou depuração, prints, downloads, backups, logs, inclusive em %TEMP%) devem ser excluídos permanentemente ao terminar, sem lixeira. Testes automatizados do repositório (cargo test, ng test) e suas fixtures ficam. Nunca apague arquivos que você não criou.
+
+Teclado, mouse e área de transferência reais: não use (SendKeys, SendInput, clipboard, janelas que roubam o foco) sem o CTO ter avisado o usuário antes. Para testar a página, prefira o DevTools Protocol do WebView2. Se o teste exigir entrada real, pare e reporte.

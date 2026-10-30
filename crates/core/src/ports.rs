@@ -1,7 +1,8 @@
 //! Portas: o que o núcleo precisa do mundo de fora. Os adaptadores ficam em `darktriad-infra`.
 
 use std::io;
-use std::path::Path;
+use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
 
 use crate::{AppState, Entry};
 
@@ -53,4 +54,17 @@ pub trait FolderWatcher: Send + Sync {
 pub trait StateStore: Send + Sync {
     fn load(&self) -> io::Result<AppState>;
     fn save(&self, state: &AppState) -> io::Result<()>;
+}
+
+/// Percurso dos arquivos da pasta aberta como o Abrir rápido os lista: sem os ignorados por
+/// `.gitignore` e `.ignore` nem os itens escondidos do explorador.
+pub trait ProjectWalker: Send + Sync {
+    /// Entrega a `found` cada arquivo de `root` que é um dos caminhos de `scope` ou está dentro
+    /// de um deles, até `found` pedir para parar. Itens ilegíveis são pulados.
+    fn walk(
+        &self,
+        root: &Path,
+        scope: &[PathBuf],
+        found: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
+    );
 }

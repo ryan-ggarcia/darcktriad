@@ -1,10 +1,12 @@
 //! Adaptadores: implementações concretas das portas definidas em `darktriad-core`.
 
 mod local_fs;
+mod project_walker;
 mod state_store;
 mod watcher;
 
 pub use local_fs::LocalFileSystem;
+pub use project_walker::IgnoreWalker;
 pub use state_store::JsonStateStore;
 pub use watcher::NotifyWatcher;
 

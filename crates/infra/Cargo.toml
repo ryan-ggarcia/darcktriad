@@ -6,6 +6,8 @@ publish = false
 
 [dependencies]
 darktriad-core.workspace = true
+# Índice do Abrir rápido: percorre a pasta respeitando .gitignore/.ignore (docs/STACK.md).
+ignore = "0.4"
 notify = "8"
 serde_json = "1"
 trash = "5"

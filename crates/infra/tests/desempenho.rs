@@ -5,12 +5,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::{Duration, Instant};
 
-use darktriad_core::{Editor, Explorer, FileContent};
-use darktriad_infra::LocalFileSystem;
+use darktriad_core::{Editor, Explorer, FileContent, FileIndex};
+use darktriad_infra::{IgnoreWalker, LocalFileSystem};
 
 const CORE_BUDGET: Duration = Duration::from_millis(100);
+/// Metade dos 500 ms da meta: o resto fica para levar a lista à interface e desenhá-la.
+const QUICK_OPEN_BUDGET: Duration = Duration::from_millis(250);
 
 /// Pasta temporária do teste, apagada no fim mesmo se o teste falhar.
 struct TempDir(PathBuf);
@@ -79,4 +82,65 @@ fn reading_a_10000_line_file_fits_the_budget() {
 
     assert_eq!(lines, 10_000);
     assert!(elapsed < CORE_BUDGET, "ler 10.000 linhas levou {elapsed:?}");
+}
+
+/// Cria `folders` pastas com `files_per_folder` arquivos vazios cada, em paralelo: no Windows,
+/// criar 50.000 arquivos um a um leva mais que o próprio teste.
+fn create_project(root: &Path, folders: usize, files_per_folder: usize) {
+    let workers = thread::available_parallelism().map_or(4, usize::from);
+    thread::scope(|scope| {
+        for worker in 0..workers {
+            scope.spawn(move || {
+                for folder in (worker..folders).step_by(workers) {
+                    let dir = root.join(format!("modulo{folder:03}"));
+                    fs::create_dir(&dir).unwrap();
+                    for file in 0..files_per_folder {
+                        fs::write(dir.join(format!("arquivo{file:03}.cpp")), "").unwrap();
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// Meta do Ctrl+P (README): primeira lista em < 500 ms num projeto com 50.000 arquivos. O índice
+/// é montado ao abrir a pasta; a primeira lista é o que a interface recebe quando o usuário
+/// aperta Ctrl+P, logo no começo da montagem (lista parcial) ou com ela pronta (lista completa).
+#[test]
+fn quick_open_first_list_with_50000_files_fits_the_budget() {
+    let project = TempDir::new("grande-projeto");
+    create_project(project.path(), 500, 100);
+    let index = FileIndex::new(IgnoreWalker, || {});
+
+    let started = Instant::now();
+    let job = index.start(project.path());
+    let first_partial_list = thread::scope(|scope| {
+        scope.spawn(|| index.run(job));
+        while index.snapshot().files.is_empty() {
+            thread::yield_now();
+        }
+        started.elapsed()
+    });
+    let whole_index = started.elapsed();
+
+    let mut listed = 0;
+    let complete_list = fastest_of_three(|| {
+        let snapshot = index.snapshot();
+        listed = snapshot.files.len();
+        serde_json::to_vec(&snapshot).unwrap();
+    });
+
+    eprintln!(
+        "Ctrl+P com 50.000 arquivos: lista parcial em {first_partial_list:?}, \
+         lista completa em {complete_list:?}, índice montado em {whole_index:?}"
+    );
+    assert_eq!(listed, 50_000);
+    assert!(
+        first_partial_list < QUICK_OPEN_BUDGET,
+        "a lista parcial levou {first_partial_list:?}"
+    );
+    assert!(
+        complete_list < QUICK_OPEN_BUDGET,
+        "a lista completa levou {complete_list:?}"
+    );
 }

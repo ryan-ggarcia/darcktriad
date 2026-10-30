@@ -12,3 +12,11 @@ darktriad-core.workspace = true
 darktriad-infra.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Ler a lista do menu que a interface envia.
+serde.workspace = true
+
+# Desligar os atalhos de navegador do WebView2 (o Tauri não expõe a opção). As versões são as que
+# o wry já usa, para os tipos COM serem os mesmos.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"

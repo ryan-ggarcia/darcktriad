@@ -4,22 +4,31 @@
 //! Ponto de montagem: cria os adaptadores, injeta nos casos de uso e expõe comandos ao frontend.
 //! O contrato com a interface está em docs/ipc.md.
 
+mod menu;
+
 use std::path::PathBuf;
 
 use darktriad_core::{
-    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, OpenedFolder, RecentFolderView,
-    Session, Workspace, validate_name, validate_path,
+    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, OpenedFolder,
+    ProjectFiles, RecentFolderView, Session, Workspace, validate_name, validate_path,
 };
-use darktriad_infra::{JsonStateStore, LocalFileSystem, NotifyWatcher};
+use darktriad_infra::{IgnoreWalker, JsonStateStore, LocalFileSystem, NotifyWatcher};
+use menu::MenuEntry;
 use tauri::{AppHandle, Emitter, Manager, Window, Wry};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 
 type AppExplorer = Explorer<LocalFileSystem>;
 type AppEditor = Editor<LocalFileSystem>;
 type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
+type AppIndex = FileIndex<IgnoreWalker>;
 
+const MAIN_WINDOW: &str = "main";
 /// Evento com as mudanças no disco dentro da pasta aberta.
 const FS_CHANGED: &str = "fs-changed";
+/// Evento sem dados: a lista do Abrir rápido mudou (`project_files` devolve a nova).
+const PROJECT_FILES_CHANGED: &str = "project-files-changed";
+/// Evento com o id do comando escolhido no menu nativo.
+const MENU_COMMAND: &str = "menu-command";
 
 /// Roda `job` numa thread de I/O: nem a thread de UI nem o runtime assíncrono esperam o disco.
 async fn blocking<T: Send + 'static>(
@@ -118,16 +127,49 @@ async fn default_eol() -> Eol {
 #[tauri::command]
 async fn open_folder(app: AppHandle, path: PathBuf) -> Result<OpenedFolder, Error> {
     validate_path(&path)?;
-    blocking(move || app.state::<AppWorkspace>().open(&path)).await
+    let worker = app.clone();
+    let (opened, job) = blocking(move || {
+        let opened = worker.state::<AppWorkspace>().open(&path)?;
+        Ok((opened, worker.state::<AppIndex>().start(&path)))
+    })
+    .await?;
+    // A pasta abre sem esperar o índice; o Abrir rápido mostra "Indexando…" até ele terminar.
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppIndex>().run(job));
+    Ok(opened)
 }
 
 #[tauri::command]
 async fn close_folder(app: AppHandle) -> Result<(), Error> {
     blocking(move || {
         app.state::<AppWorkspace>().close();
+        app.state::<AppIndex>().clear();
         Ok(())
     })
     .await
+}
+
+#[tauri::command]
+async fn project_files(app: AppHandle) -> Result<ProjectFiles, Error> {
+    blocking(move || Ok(app.state::<AppIndex>().snapshot())).await
+}
+
+#[tauri::command]
+async fn set_menu(app: AppHandle, items: Vec<MenuEntry>) -> Result<(), Error> {
+    blocking(move || {
+        let menu = menu::build(&app, &items).map_err(menu_error)?;
+        app.set_menu(menu).map_err(menu_error)?;
+        Ok(())
+    })
+    .await
+}
+
+/// Atalho que o macOS não entende é o motivo provável; o resto é falha da plataforma.
+fn menu_error(error: tauri::Error) -> Error {
+    let kind = match error {
+        tauri::Error::Menu(_) => ErrorKind::InvalidInput,
+        _ => ErrorKind::Other,
+    };
+    Error::new(kind, format!("Não foi possível montar o menu: {error}"))
 }
 
 #[tauri::command]
@@ -198,19 +240,63 @@ async fn pick(
     .await
 }
 
+/// Desliga os atalhos de navegador do WebView2 (F5, Ctrl+R, Ctrl+P, Ctrl+F, Ctrl+J…). As teclas
+/// continuam chegando à página, e os atalhos de edição (Ctrl+C/V/X/Z) continuam valendo.
+#[cfg(windows)]
+fn disable_browser_shortcuts(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows_core::Interface;
+
+    window.with_webview(|webview| {
+        // Só falha num runtime do WebView2 anterior a 2021; aí os atalhos de navegador ficam.
+        let _ = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.Settings())
+                .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+                .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false))
+        };
+    })
+}
+
+fn on_menu_command(app: &AppHandle, id: &str) {
+    if id == menu::QUIT_ITEM {
+        // Fechar a janela passa pelo `onCloseRequested` da interface, que pergunta o que salvar.
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            let _ = window.close();
+        }
+        return;
+    }
+    let _ = app.emit(MENU_COMMAND, id);
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Explorer::new(LocalFileSystem))
         .manage(Editor::new(LocalFileSystem))
+        .on_menu_event(|app, event| on_menu_command(app, event.id().as_ref()))
         .setup(|app| {
+            let handle = app.handle().clone();
+            app.manage(FileIndex::new(IgnoreWalker, move || {
+                let _ = handle.emit(PROJECT_FILES_CHANGED, ());
+            }));
             let handle = app.handle().clone();
             let watcher = NotifyWatcher::new(move |batch| {
                 // Só falha com o app fechando, quando não há mais quem avisar.
-                let _ = handle.emit(FS_CHANGED, batch);
+                let _ = handle.emit(FS_CHANGED, &batch);
+                let handle = handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    handle.state::<AppIndex>().update(&batch);
+                });
             });
             let store = JsonStateStore::new(app.path().app_data_dir()?.join("state.json"));
             app.manage(Workspace::new(LocalFileSystem, watcher, store));
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                disable_browser_shortcuts(&window)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -228,6 +314,8 @@ fn main() {
             recent_folders,
             remove_recent_folder,
             save_session,
+            project_files,
+            set_menu,
             pick_folder,
             pick_file,
             pick_save_path,
