@@ -1,0 +1,8 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/infra", "src-tauri"]
+
+[workspace.dependencies]
+darktriad-core = { path = "crates/core" }
+darktriad-infra = { path = "crates/infra" }
+serde = { version = "1", features = ["derive"] }

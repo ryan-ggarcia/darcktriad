@@ -1,0 +1,13 @@
+[package]
+name = "dark-triad"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+darktriad-core.workspace = true
+darktriad-infra.workspace = true
+tauri = { version = "2", features = [] }
