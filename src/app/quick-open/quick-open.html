@@ -1,0 +1,75 @@
+@if (visible()) {
+  <div
+    #dialog
+    class="quick-open"
+    role="dialog"
+    [attr.aria-label]="title()"
+    (focusout)="onFocusOut($event, dialog)"
+  >
+    <input
+      #input
+      class="quick-input"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded="true"
+      aria-controls="quick-list"
+      autocomplete="off"
+      spellcheck="false"
+      [attr.aria-label]="title()"
+      [attr.aria-activedescendant]="items().length ? 'quick-item-' + selected() : null"
+      [placeholder]="placeholder()"
+      [value]="value()"
+      (input)="onInput(input.value)"
+      (keydown)="onKeydown($event)"
+    />
+    @if (message(); as message) {
+      <p class="quick-message" role="status">{{ message }}</p>
+    }
+    <ul
+      #list
+      id="quick-list"
+      class="quick-list"
+      role="listbox"
+      [attr.aria-label]="title()"
+      (scroll)="scrollTop.set(list.scrollTop)"
+      (mousedown)="$event.preventDefault()"
+    >
+      <li role="presentation" [style.height.px]="first() * rowHeight"></li>
+      @for (item of shown(); track $index) {
+        @let i = first() + $index;
+        <li
+          role="option"
+          class="quick-item"
+          [id]="'quick-item-' + i"
+          [class.selected]="i === selected()"
+          [class.section-start]="item.section && i > 0"
+          [attr.aria-selected]="i === selected()"
+          [attr.aria-posinset]="i + 1"
+          [attr.aria-setsize]="items().length"
+          (click)="accept(i)"
+        >
+          <span class="quick-label">
+            @for (part of item.label; track $index) {
+              <span [class.quick-match]="part.match">{{ part.text }}</span>
+            }
+          </span>
+          <span class="quick-detail">
+            @for (part of item.detail; track $index) {
+              <span [class.quick-match]="part.match">{{ part.text }}</span>
+            }
+          </span>
+          @if (item.keys) {
+            <kbd class="quick-keys">{{ item.keys }}</kbd>
+          }
+          @if (item.section) {
+            <span class="quick-section">{{ item.section }}</span>
+          }
+        </li>
+      }
+      <li
+        role="presentation"
+        [style.height.px]="(items().length - first() - shown().length) * rowHeight"
+      ></li>
+    </ul>
+  </div>
+}

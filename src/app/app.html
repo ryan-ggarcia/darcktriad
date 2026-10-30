@@ -27,6 +27,7 @@
 </main>
 
 <footer class="status-bar" aria-label="Barra de status">
+  <span class="status-message" role="status">{{ commands.keyStatus() }}</span>
   @if (status(); as status) {
     <span>{{ status.position }}</span>
     <span>{{ status.language }}</span>
@@ -58,5 +59,7 @@
     </ul>
   </div>
 }
+
+<app-quick-open />
 
 <app-dialog-host />

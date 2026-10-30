@@ -9,8 +9,10 @@ import {
   Entry,
   Eol,
   FileContent,
+  MenuEntry,
   OpenedFolder,
   Path,
+  ProjectFiles,
   RecentFolder,
   Session,
 } from '../app/ipc';
@@ -250,6 +252,13 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
   watchError: string | null = null;
   fsChanged?: (batch: ChangeBatch) => void;
   closeRequested?: () => Promise<boolean>;
+  destroyed = false;
+  /** O que `project_files` devolve; `projectFilesCalls` conta os pedidos. */
+  index: ProjectFiles = { root: null, files: [], indexing: false };
+  projectFilesCalls = 0;
+  projectFilesChanged?: () => void;
+  readonly menus: MenuEntry[][] = [];
+  menuCommand?: (id: string) => void;
 
   openFolder(path: Path): Promise<OpenedFolder> {
     if (this.openError) return Promise.reject(this.openError);
@@ -288,6 +297,31 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
 
   async onCloseRequested(handler: () => Promise<boolean>) {
     this.closeRequested = handler;
+    return () => undefined;
+  }
+
+  destroyWindow(): Promise<void> {
+    this.destroyed = true;
+    return Promise.resolve();
+  }
+
+  projectFiles(): Promise<ProjectFiles> {
+    this.projectFilesCalls++;
+    return Promise.resolve({ ...this.index });
+  }
+
+  async onProjectFilesChanged(handler: () => void) {
+    this.projectFilesChanged = handler;
+    return () => undefined;
+  }
+
+  setMenu(items: MenuEntry[]): Promise<void> {
+    this.menus.push(items);
+    return Promise.resolve();
+  }
+
+  async onMenuCommand(handler: (id: string) => void) {
+    this.menuCommand = handler;
     return () => undefined;
   }
 }

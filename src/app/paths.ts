@@ -31,6 +31,12 @@ export function relativeTo(path: Path, root: Path): string {
   return path.slice(root.endsWith(separatorOf(root)) ? root.length : root.length + 1);
 }
 
+/** Caminho absoluto de um item relativo a `root`, sem repetir o separador da raiz do disco. */
+export function joinPath(root: Path, relative: string): Path {
+  const separator = separatorOf(root);
+  return root.endsWith(separator) ? root + relative : root + separator + relative;
+}
+
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   c: 'c',
   cpp: 'cpp',

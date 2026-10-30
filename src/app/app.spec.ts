@@ -66,6 +66,45 @@ describe('App', () => {
     expect(rows[3].getAttribute('aria-level')).toBe('1');
   });
 
+  it('todo botão visível tem dica, com o atalho quando há', async () => {
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    fakes.explorer.add('C:\\proj\\main.cpp');
+
+    const page = await render();
+
+    const buttons = [...page.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(4);
+    for (const button of buttons) expect(button.title, button.outerHTML).not.toBe('');
+    expect(page.querySelector('.activity-button')?.getAttribute('title')).toBe(
+      'Explorador (Ctrl+Shift+E)',
+    );
+  });
+
+  it('Ctrl+Shift+P abre a paleta; Ctrl+K mostra o acorde na barra de status', async () => {
+    const page = await render();
+    const press = async (init: KeyboardEventInit) => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, ...init }));
+      await settle();
+      TestBed.tick();
+    };
+
+    await press({ key: 'K', code: 'KeyK', ctrlKey: true });
+    expect(page.querySelector('.status-message')?.textContent).toBe(
+      '(Ctrl+K) pressionado. Aguardando a segunda tecla…',
+    );
+    await press({ key: 'Escape', code: 'Escape' });
+    expect(page.querySelector('.status-message')?.textContent).toBe(
+      'A combinação não é um comando',
+    );
+
+    await press({ key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true });
+    expect(page.querySelector('[role=dialog]')?.getAttribute('aria-label')).toBe(
+      'Paleta de comandos',
+    );
+    expect(page.querySelector<HTMLInputElement>('.quick-input')?.value).toBe('>');
+    expect(fakes.workspace.menus.length).toBeGreaterThan(0);
+  });
+
   it('bloqueia F5 e Ctrl+R, que recarregariam a página e perderiam o que não foi salvo', async () => {
     await render();
 

@@ -2,42 +2,17 @@
   <header class="explorer-header">
     <h2 class="explorer-root" [title]="root">{{ rootName() }}</h2>
     <div class="explorer-actions" role="toolbar" aria-label="Ações do explorador">
-      <button
-        type="button"
-        class="icon-button"
-        title="Novo arquivo"
-        aria-label="Novo arquivo"
-        (click)="tree.startCreate('file')"
-      >
-        <app-icon name="new-file" />
-      </button>
-      <button
-        type="button"
-        class="icon-button"
-        title="Nova pasta"
-        aria-label="Nova pasta"
-        (click)="tree.startCreate('dir')"
-      >
-        <app-icon name="new-folder" />
-      </button>
-      <button
-        type="button"
-        class="icon-button"
-        title="Atualizar"
-        aria-label="Atualizar"
-        (click)="tree.refresh()"
-      >
-        <app-icon name="refresh" />
-      </button>
-      <button
-        type="button"
-        class="icon-button"
-        title="Recolher tudo"
-        aria-label="Recolher tudo"
-        (click)="tree.collapseAll()"
-      >
-        <app-icon name="collapse-all" />
-      </button>
+      @for (action of toolbar; track action.id) {
+        <button
+          type="button"
+          class="icon-button"
+          [title]="commands.hint(action.label, action.id)"
+          [attr.aria-label]="action.label"
+          (click)="commands.run(action.id)"
+        >
+          <app-icon [name]="action.icon" />
+        </button>
+      }
     </div>
   </header>
 

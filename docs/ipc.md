@@ -76,6 +76,7 @@ interface ProjectFiles {
   indexing: boolean;  // verdadeiro: o índice ainda está sendo montado e `files` é parcial
 }
 
+// `label` é texto literal: o núcleo escapa `&` (não há tecla de atalho sublinhada nos rótulos).
 type MenuEntry =
   | { kind: 'command'; id: string; label: string; accelerator?: string | null; role?: EditRole | null }
   | { kind: 'submenu'; label: string; items: MenuEntry[] }

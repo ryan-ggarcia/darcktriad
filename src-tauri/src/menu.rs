@@ -51,6 +51,11 @@ pub fn build(app: &AppHandle, entries: &[MenuEntry]) -> tauri::Result<Menu<Wry>>
     Ok(menu)
 }
 
+/// O menu trata `&` como tecla de atalho sublinhada: `&&` mostra o `&` de caminhos como `C:\P&D`.
+fn literal(label: &str) -> String {
+    label.replace('&', "&&")
+}
+
 fn item(app: &AppHandle, entry: &MenuEntry) -> tauri::Result<Item> {
     Ok(match entry {
         MenuEntry::Command {
@@ -58,9 +63,9 @@ fn item(app: &AppHandle, entry: &MenuEntry) -> tauri::Result<Item> {
             label,
             accelerator,
             role,
-        } => command(app, id, label, accelerator.as_deref(), *role)?,
+        } => command(app, id, &literal(label), accelerator.as_deref(), *role)?,
         MenuEntry::Submenu { label, items } => {
-            let submenu = Submenu::new(app, label, true)?;
+            let submenu = Submenu::new(app, literal(label), true)?;
             for entry in items {
                 submenu.append(item(app, entry)?.as_ref())?;
             }

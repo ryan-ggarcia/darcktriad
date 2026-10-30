@@ -101,6 +101,11 @@ export class Workspace {
     await this.loadRecents();
   }
 
+  /** Arquivo: Sair. A mesma pergunta do botão fechar; depois fecha a janela. */
+  async quit(): Promise<void> {
+    if (await this.confirmClose()) await this.service.destroyWindow();
+  }
+
   private applyChanges(batch: ChangeBatch): void {
     void this.tree.applyChanges(batch);
     void this.tabs.checkDisk(batch.rescan ? null : batch.paths);

@@ -25,7 +25,12 @@ import { Dialogs } from './dialogs';
         <p id="dialog-detail" class="dialog-detail">{{ question.detail }}</p>
         <div class="dialog-buttons">
           @for (button of question.buttons; track button) {
-            <button type="button" [class.primary]="$first" (click)="answer(button)">
+            <button
+              type="button"
+              [class.primary]="$first"
+              [title]="button"
+              (click)="answer(button)"
+            >
               {{ button }}
             </button>
           }

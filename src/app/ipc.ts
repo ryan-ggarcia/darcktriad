@@ -52,6 +52,21 @@ export interface ChangeBatch {
   rescan: boolean;
 }
 
+export interface ProjectFiles {
+  root: Path | null;
+  /** Relativos a `root`, com o separador do sistema. */
+  files: string[];
+  /** O índice ainda está sendo montado e `files` é parcial. */
+  indexing: boolean;
+}
+
+export type EditRole = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
+
+export type MenuEntry =
+  | { kind: 'command'; id: string; label: string; accelerator?: string | null; role?: EditRole }
+  | { kind: 'submenu'; label: string; items: MenuEntry[] }
+  | { kind: 'separator' };
+
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;
 }

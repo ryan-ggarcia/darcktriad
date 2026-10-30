@@ -41,7 +41,8 @@ export class EditorArea {
   }
 
   protected closeHint(tab: Tab): string {
-    return tab.dirty() ? 'Alterações não salvas' : this.commands.hint('Fechar', 'closeEditor');
+    const hint = this.commands.hint('Fechar', 'closeEditor');
+    return tab.dirty() ? `${hint}: alterações não salvas` : hint;
   }
 
   /** Setas na faixa de abas, como no padrão ARIA de abas. */

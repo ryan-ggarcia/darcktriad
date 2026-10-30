@@ -11,7 +11,7 @@ import {
   untracked,
 } from '@angular/core';
 import type * as Monaco from 'monaco-editor';
-import { Commands } from '../shared/commands';
+import { CommandId, COMMANDS, Commands } from '../shared/commands';
 import { KeyStroke, PLATFORM } from '../shared/keybindings';
 import { EditorTabs } from './editor-tabs';
 import { MonacoBuffer } from './monaco-buffers';
@@ -36,6 +36,7 @@ export class CodeEditor {
   private readonly viewStates = new WeakMap<Tab, Monaco.editor.ICodeEditorViewState | null>();
   private shown: Tab | null = null;
   private destroyed = false;
+  private readonly cleanup: (() => void)[] = [];
 
   constructor() {
     afterNextRender(() => void this.create());
@@ -52,10 +53,32 @@ export class CodeEditor {
         editor.focus();
       }
     });
+    effect(() => {
+      const editor = this.editor();
+      const target = this.tabs.goTo();
+      if (editor && target) untracked(() => this.goTo(editor, target));
+    });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+      this.cleanup.forEach((dispose) => dispose());
       this.editor()?.dispose();
     });
+  }
+
+  /** Ctrl+G: fora do arquivo vai para a última linha; a linha fica no meio da tela. */
+  private goTo(
+    editor: Monaco.editor.IStandaloneCodeEditor,
+    target: { line: number; column: number },
+  ): void {
+    this.tabs.goTo.set(null);
+    const model = editor.getModel();
+    if (!model) return;
+    // Só a linha é limitada antes: o Monaco mandaria a linha 9999 para o fim da última linha.
+    const lineNumber = Math.min(target.line, model.getLineCount());
+    const position = model.validatePosition({ lineNumber, column: target.column });
+    editor.setPosition(position);
+    editor.revealPositionInCenter(position);
+    editor.focus();
   }
 
   private async create(): Promise<void> {
@@ -68,14 +91,45 @@ export class CodeEditor {
       fontSize: 14,
       readOnlyMessage: { value: 'Codificação não suportada nesta versão: somente leitura' },
     });
-    // Os atalhos da IDE também valem com o foco no texto, inclusive os acordes Ctrl+K.
+    // Os atalhos da IDE também valem com o foco no texto, inclusive os acordes Ctrl+K. Os de
+    // edição (Ctrl+C, Ctrl+Z…) ficam com o Monaco.
     for (const { id, chord } of this.commands.bindings) {
+      if (COMMANDS[id].native) continue;
       editor.addCommand(toMonacoKeybinding(monaco, chord), () => this.commands.run(id));
     }
+    // O F1 e o item "Command Palette" do menu de contexto abrem a paleta da IDE, não a do Monaco.
+    const palette = monaco.editor.addCommand({
+      id: 'editor.action.quickCommand',
+      run: () => this.commands.run('showCommands'),
+    });
+    this.cleanup.push(() => palette.dispose(), this.commands.register(editorCommands(editor)));
+    this.showChordsInStatusBar(editor);
     editor.onDidChangeCursorPosition(({ position }) =>
       this.tabs.cursor.set({ line: position.lineNumber, column: position.column }),
     );
     this.editor.set(editor);
+  }
+
+  /**
+   * Com o foco no texto, os acordes são do Monaco (que também tem os dele, como Ctrl+K Ctrl+C);
+   * as mensagens que ele daria vão para a barra de status da IDE.
+   * shortcut: o Monaco não expõe o acorde em andamento; isto troca o `status` do serviço de
+   * notificações interno dele. Se uma versão nova mudar esses nomes, a barra deixa de mostrar
+   * acordes digitados no editor (o resto segue funcionando); conferir ao atualizar o Monaco.
+   */
+  private showChordsInStatusBar(editor: Monaco.editor.IStandaloneCodeEditor): void {
+    const notifications = (editor as unknown as MonacoInternals)._standaloneKeybindingService
+      ?._notificationService;
+    if (!notifications) return;
+    notifications.status = (message, options) => {
+      // "Não é um comando" vem com prazo para sumir; "(Ctrl+K) foi pressionado" vem sem.
+      if (options?.hideAfter) {
+        this.commands.chordFailed();
+        return { close: () => undefined };
+      }
+      const first = /^\((.+)\)/.exec(message)?.[1];
+      return { close: first ? this.commands.chordPending(first) : () => undefined };
+    };
   }
 
   private show(editor: Monaco.editor.IStandaloneCodeEditor, tab: Tab | null): void {
@@ -92,6 +146,35 @@ export class CodeEditor {
     const position = editor.getPosition();
     this.tabs.cursor.set(position && { line: position.lineNumber, column: position.column });
   }
+}
+
+interface MonacoInternals {
+  _standaloneKeybindingService?: {
+    _notificationService?: {
+      status(message: string, options?: { hideAfter?: number }): { close(): void };
+    };
+  };
+}
+
+/** Comandos do menu Editar, executados pelas ações do próprio Monaco no editor. */
+function editorCommands(
+  editor: Monaco.editor.IStandaloneCodeEditor,
+): Partial<Record<CommandId, () => void>> {
+  const action = (id: string) => () => {
+    editor.focus();
+    editor.trigger('menu', id, null);
+  };
+  return {
+    undo: action('undo'),
+    redo: action('redo'),
+    cut: action('editor.action.clipboardCutAction'),
+    copy: action('editor.action.clipboardCopyAction'),
+    paste: action('editor.action.clipboardPasteAction'),
+    selectAll: action('editor.action.selectAll'),
+    find: action('actions.find'),
+    replace: action('editor.action.startFindReplaceAction'),
+    commentLine: action('editor.action.commentLine'),
+  };
 }
 
 /** No Monaco, `CtrlCmd` é ⌘ no macOS e Ctrl nos outros; `WinCtrl` é o outro dos dois. */

@@ -11,10 +11,19 @@ import { Workspace } from './workspace';
   template: `
     <h1 class="welcome-title">Dark Triad</h1>
     <div class="welcome-actions">
-      <button type="button" class="primary" (click)="workspace.openFolderDialog()">
+      <button
+        type="button"
+        class="primary"
+        [title]="commands.hint('Abrir pasta', 'openFolder')"
+        (click)="workspace.openFolderDialog()"
+      >
         Abrir pasta <kbd>{{ commands.shortcut('openFolder') }}</kbd>
       </button>
-      <button type="button" (click)="workspace.openFileDialog()">
+      <button
+        type="button"
+        [title]="commands.hint('Abrir arquivo', 'openFile')"
+        (click)="workspace.openFileDialog()"
+      >
         Abrir arquivo <kbd>{{ commands.shortcut('openFile') }}</kbd>
       </button>
     </div>

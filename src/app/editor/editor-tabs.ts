@@ -9,6 +9,8 @@ import { TextBuffers } from './text-buffer';
 
 type TextContent = Extract<FileContent, { kind: 'text' }>;
 
+const MAX_RECENT_PATHS = 50;
+
 /** Estado das abas e os fluxos de abrir, salvar e fechar (docs/specs/editor.md). */
 @Injectable({ providedIn: 'root' })
 export class EditorTabs {
@@ -25,6 +27,10 @@ export class EditorTabs {
   readonly switcher = signal<{ tabs: Tab[]; index: number } | null>(null);
   /** Pedido de foco no texto (aba clicada, Ctrl+N, Ctrl+Tab) ainda não atendido pelo editor. */
   readonly focusPending = signal(false);
+  /** Pedido de Ctrl+G ainda não atendido pelo editor; ele limita a posição ao arquivo. */
+  readonly goTo = signal<{ line: number; column: number } | null>(null);
+  /** Arquivos por uso recente, inclusive os já fechados, para o Ctrl+P com o campo vazio. */
+  readonly recentPaths = signal<Path[]>([]);
 
   /** Nomes repetidos ganham a pasta pai: `main.cpp · app`. */
   readonly labels = computed(() => {
@@ -86,6 +92,12 @@ export class EditorTabs {
   activate(tab: Tab): void {
     this.recent = [tab, ...this.recent.filter((item) => item !== tab)];
     this.active.set(tab);
+    const path = tab.path();
+    if (path) {
+      this.recentPaths.update((paths) =>
+        [path, ...paths.filter((item) => item !== path)].slice(0, MAX_RECENT_PATHS),
+      );
+    }
   }
 
   requestFocus(): void {

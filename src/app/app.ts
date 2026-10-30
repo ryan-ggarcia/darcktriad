@@ -12,13 +12,17 @@ import { EditorArea } from './editor/editor-area';
 import { EditorTabs } from './editor/editor-tabs';
 import { loadMonaco } from './editor/monaco-loader';
 import { Tab } from './editor/tab';
+import { ExplorerTree } from './explorer/explorer-tree';
 import { ExplorerView } from './explorer/explorer-view';
+import { MainMenu } from './main-menu';
 import { LANGUAGE_NAMES } from './paths';
+import { QuickOpen } from './quick-open/quick-open';
 import { Commands } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
 import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
 import { PLATFORM } from './shared/keybindings';
+import { CurrentFolder } from './workspace/current-folder';
 import { WelcomeView } from './workspace/welcome-view';
 import { Workspace } from './workspace/workspace';
 
@@ -26,7 +30,7 @@ import { Workspace } from './workspace/workspace';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DialogHost, EditorArea, ExplorerView, Icon, WelcomeView],
+  imports: [DialogHost, EditorArea, ExplorerView, Icon, QuickOpen, WelcomeView],
   host: {
     '(window:keydown)': 'onKeydown($event)',
     '(window:keyup)': 'onKeyup($event)',
@@ -38,9 +42,12 @@ export class App {
   protected readonly tabs = inject(EditorTabs);
   protected readonly commands = inject(Commands);
   private readonly workspace = inject(Workspace);
+  private readonly folder = inject(CurrentFolder);
+  private readonly tree = inject(ExplorerTree);
   private readonly dialogs = inject(Dialogs);
   private readonly injector = inject(Injector);
   private readonly explorer = viewChild(ExplorerView);
+  private readonly quickOpen = viewChild.required(QuickOpen);
 
   protected readonly sidebarVisible = signal(true);
   protected readonly status = computed(() => {
@@ -55,29 +62,8 @@ export class App {
   });
 
   constructor() {
-    const mac = PLATFORM === 'mac';
-    const withActive = (action: (tab: Tab) => unknown) => () => {
-      const tab = this.tabs.active();
-      if (tab) action(tab);
-    };
-    this.commands.register({
-      newFile: () => this.tabs.newUntitled(),
-      openFile: () => (mac ? this.workspace.openFileOrFolder() : this.workspace.openFileDialog()),
-      openFolder: () =>
-        mac ? this.workspace.openFileOrFolder() : this.workspace.openFolderDialog(),
-      closeFolder: () => this.workspace.closeFolder(),
-      save: withActive((tab) => this.tabs.save(tab)),
-      saveAs: withActive((tab) => this.tabs.saveAs(tab)),
-      saveAll: () => this.tabs.saveAll(),
-      closeEditor: withActive((tab) => this.tabs.close(tab)),
-      closeAllEditors: () => this.tabs.closeAll(),
-      nextEditor: () => this.tabs.activateNext(1),
-      previousEditor: () => this.tabs.activateNext(-1),
-      recentEditors: () => this.tabs.cycleRecent(1),
-      recentEditorsBack: () => this.tabs.cycleRecent(-1),
-      showExplorer: () => this.showExplorer(),
-      toggleSidebar: () => this.sidebarVisible.update((visible) => !visible),
-    });
+    this.registerCommands();
+    inject(MainMenu).start();
     void this.workspace.start().then(() => {
       // Com a tela pronta, carrega o Monaco no tempo ocioso: o primeiro arquivo abre tão rápido quanto os outros.
       // shortcut: sem requestIdleCallback (WebKit antigo no macOS/Linux) não pré-carrega; usar setTimeout se lá medir lento.
@@ -92,9 +78,10 @@ export class App {
     }
     // Com uma pergunta aberta, só ela responde ao teclado.
     if (this.dialogs.current()) return;
-    if (event.key === 'Escape' && this.tabs.switcher()) {
+    if (this.tabs.switcher() && (event.key === 'Escape' || event.key === 'Enter')) {
       event.preventDefault();
-      this.tabs.cancelSwitcher();
+      if (event.key === 'Enter') this.tabs.commitSwitcher();
+      else this.tabs.cancelSwitcher();
     } else if (this.commands.handleKey(event)) {
       event.preventDefault();
     }
@@ -108,5 +95,49 @@ export class App {
   protected showExplorer(): void {
     this.sidebarVisible.set(true);
     afterNextRender(() => this.explorer()?.focus(), { injector: this.injector });
+  }
+
+  private registerCommands(): void {
+    const mac = PLATFORM === 'mac';
+    const withActive = (action: (tab: Tab) => unknown) => () => {
+      const tab = this.tabs.active();
+      if (tab) action(tab);
+    };
+    // As ações do explorador precisam da barra lateral à mostra para o campo de nome aparecer.
+    const inExplorer = (action: () => unknown) => () => {
+      this.sidebarVisible.set(true);
+      action();
+    };
+    this.commands.setConditions({
+      editorOpen: () => this.tabs.active() !== null,
+      textEditor: () => this.tabs.active()?.view.kind === 'text',
+      folderOpen: () => this.folder.path() !== null,
+    });
+    this.commands.register({
+      newFile: () => this.tabs.newUntitled(),
+      openFile: () => (mac ? this.workspace.openFileOrFolder() : this.workspace.openFileDialog()),
+      openFolder: () => this.workspace.openFolderDialog(),
+      closeFolder: () => this.workspace.closeFolder(),
+      save: withActive((tab) => this.tabs.save(tab)),
+      saveAs: withActive((tab) => this.tabs.saveAs(tab)),
+      saveAll: () => this.tabs.saveAll(),
+      quit: () => this.workspace.quit(),
+      closeEditor: withActive((tab) => this.tabs.close(tab)),
+      closeAllEditors: () => this.tabs.closeAll(),
+      nextEditor: () => this.tabs.activateNext(1),
+      previousEditor: () => this.tabs.activateNext(-1),
+      recentEditors: () => this.tabs.cycleRecent(1),
+      recentEditorsBack: () => this.tabs.cycleRecent(-1),
+      showCommands: () => this.quickOpen().show('>'),
+      quickOpen: () => this.quickOpen().show(''),
+      goToLine: () => this.quickOpen().show(':'),
+      keyboardShortcuts: () => this.quickOpen().show('>', true),
+      showExplorer: () => this.showExplorer(),
+      toggleSidebar: () => this.sidebarVisible.update((visible) => !visible),
+      explorerNewFile: inExplorer(() => this.tree.startCreate('file')),
+      explorerNewFolder: inExplorer(() => this.tree.startCreate('dir')),
+      explorerRefresh: () => this.tree.refresh(),
+      explorerCollapseAll: () => this.tree.collapseAll(),
+    });
   }
 }

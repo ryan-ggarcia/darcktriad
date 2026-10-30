@@ -47,8 +47,20 @@
     @if (tab.changedOnDisk()) {
       <div class="banner" role="alert">
         <span>Este arquivo mudou no disco.</span>
-        <button type="button" (click)="tabs.reload(tab)">Recarregar do disco</button>
-        <button type="button" (click)="tabs.keepMine(tab)">Manter minha versão</button>
+        <button
+          type="button"
+          title="Recarregar do disco: descarta as alterações desta aba"
+          (click)="tabs.reload(tab)"
+        >
+          Recarregar do disco
+        </button>
+        <button
+          type="button"
+          title="Manter minha versão: o próximo salvamento pergunta se sobrescreve"
+          (click)="tabs.keepMine(tab)"
+        >
+          Manter minha versão
+        </button>
       </div>
     }
     @if (readOnly(tab)) {

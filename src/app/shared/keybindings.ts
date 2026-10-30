@@ -1,4 +1,4 @@
-/** Atalhos de teclado: definição, leitura de eventos e acordes (Ctrl+K …). */
+/** Atalhos de teclado: leitura de eventos, texto do atalho e acordes (Ctrl+K …). */
 
 export type Platform = 'windows' | 'mac' | 'linux';
 
@@ -7,49 +7,6 @@ export const PLATFORM: Platform = navigator.userAgent.includes('Mac')
   : navigator.userAgent.includes('Windows')
     ? 'windows'
     : 'linux';
-
-export type CommandId =
-  | 'newFile'
-  | 'openFile'
-  | 'openFolder'
-  | 'closeFolder'
-  | 'save'
-  | 'saveAs'
-  | 'saveAll'
-  | 'closeEditor'
-  | 'closeAllEditors'
-  | 'nextEditor'
-  | 'previousEditor'
-  | 'recentEditors'
-  | 'recentEditorsBack'
-  | 'showExplorer'
-  | 'toggleSidebar';
-
-/**
- * Atalhos padrão do VS Code, conferidos nas tabelas de docs/specs/editor.md e explorador.md.
- * `Mod` é Ctrl, ou ⌘ no macOS; as partes de um acorde são separadas por espaço.
- */
-export function defaultKeys(platform: Platform): Record<CommandId, string[]> {
-  const mac = platform === 'mac';
-  return {
-    newFile: ['Mod+N'],
-    openFile: ['Mod+O'],
-    // No macOS, ⌘O abre arquivo ou pasta.
-    openFolder: mac ? ['Mod+O'] : ['Mod+K Mod+O'],
-    closeFolder: ['Mod+K F'],
-    save: ['Mod+S'],
-    saveAs: ['Mod+Shift+S'],
-    saveAll: mac ? ['Mod+Alt+S'] : platform === 'windows' ? ['Mod+K S'] : [],
-    closeEditor: platform === 'windows' ? ['Mod+F4', 'Mod+W'] : ['Mod+W'],
-    closeAllEditors: ['Mod+K Mod+W'],
-    nextEditor: mac ? ['Mod+Alt+Right', 'Mod+Shift+]'] : ['Mod+PageDown'],
-    previousEditor: mac ? ['Mod+Alt+Left', 'Mod+Shift+['] : ['Mod+PageUp'],
-    recentEditors: ['Ctrl+Tab'],
-    recentEditorsBack: ['Ctrl+Shift+Tab'],
-    showExplorer: ['Mod+Shift+E'],
-    toggleSidebar: ['Mod+B'],
-  };
-}
 
 /** Uma tecla com modificadores; `code` é o `KeyboardEvent.code` (posição física). */
 export interface KeyStroke {
@@ -60,8 +17,8 @@ export interface KeyStroke {
   code: string;
 }
 
-export interface Binding {
-  id: CommandId;
+export interface Binding<Id extends string = string> {
+  id: Id;
   chord: KeyStroke[];
 }
 
@@ -70,6 +27,7 @@ const CODES: Record<string, string> = {
   Left: 'ArrowLeft',
   '[': 'BracketLeft',
   ']': 'BracketRight',
+  '/': 'Slash',
 };
 
 const LABELS: Record<string, string> = {
@@ -77,7 +35,14 @@ const LABELS: Record<string, string> = {
   ArrowLeft: '←',
   BracketLeft: '[',
   BracketRight: ']',
+  Slash: '/',
+  Escape: 'Esc',
 };
+
+/** `Mod` é Ctrl, ou ⌘ no macOS; as partes de um acorde são separadas por espaço. */
+export function parseChord(text: string, platform: Platform): KeyStroke[] {
+  return text.split(' ').map((stroke) => parseStroke(stroke, platform));
+}
 
 export function parseStroke(text: string, platform: Platform): KeyStroke {
   const parts = text.split('+');
@@ -92,26 +57,34 @@ export function parseStroke(text: string, platform: Platform): KeyStroke {
   };
 }
 
-export function bindingsFor(keys: Record<CommandId, string[]>, platform: Platform): Binding[] {
-  return (Object.entries(keys) as [CommandId, string[]][]).flatMap(([id, list]) =>
-    list.map((text) => ({ id, chord: text.split(' ').map((s) => parseStroke(s, platform)) })),
-  );
-}
-
 /** Texto do atalho como o VS Code mostra: `Ctrl+Shift+S`, ou `⇧⌘S` no macOS. */
 export function formatChord(chord: KeyStroke[], platform: Platform): string {
-  return chord
-    .map((stroke) => {
-      const key = LABELS[stroke.code] ?? stroke.code.replace(/^Key/, '');
-      if (platform === 'mac') {
-        const mods = `${stroke.ctrl ? '⌃' : ''}${stroke.alt ? '⌥' : ''}${stroke.shift ? '⇧' : ''}`;
-        return `${mods}${stroke.meta ? '⌘' : ''}${key}`;
-      }
-      return [stroke.ctrl && 'Ctrl', stroke.shift && 'Shift', stroke.alt && 'Alt', key]
-        .filter(Boolean)
-        .join('+');
-    })
-    .join(' ');
+  return chord.map((stroke) => formatStroke(stroke, platform)).join(' ');
+}
+
+export function formatStroke(stroke: KeyStroke, platform: Platform): string {
+  const key = LABELS[stroke.code] ?? stroke.code.replace(/^(Key|Digit)/, '');
+  if (platform === 'mac') {
+    const mods = `${stroke.ctrl ? '⌃' : ''}${stroke.alt ? '⌥' : ''}${stroke.shift ? '⇧' : ''}`;
+    return `${mods}${stroke.meta ? '⌘' : ''}${key}`;
+  }
+  return [stroke.ctrl && 'Ctrl', stroke.shift && 'Shift', stroke.alt && 'Alt', key]
+    .filter(Boolean)
+    .join('+');
+}
+
+/**
+ * O atalho para o menu nativo (docs/ipc.md, `set_menu`). Fora do macOS ele é só texto; no macOS
+ * vai no formato do Tauri, e acordes ficam sem atalho, porque o menu de lá não os entende.
+ */
+export function formatAccelerator(chord: KeyStroke[], platform: Platform): string | null {
+  if (platform !== 'mac') return formatChord(chord, platform);
+  if (chord.length > 1) return null;
+  const [stroke] = chord;
+  return [stroke.ctrl && 'Ctrl', stroke.alt && 'Alt', stroke.shift && 'Shift', stroke.meta && 'Cmd']
+    .filter(Boolean)
+    .concat(stroke.code)
+    .join('+');
 }
 
 function matches(event: KeyboardEvent, stroke: KeyStroke): boolean {
@@ -126,29 +99,32 @@ function matches(event: KeyboardEvent, stroke: KeyStroke): boolean {
 
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
-/** O que fazer com a tecla: rodar um comando, só consumir (parte de um acorde) ou deixar passar. */
-export type KeyResult = CommandId | 'consume' | null;
+/** O que fazer com a tecla: rodar um comando, esperar a segunda tecla, avisar que o acorde não existe ou deixar passar. */
+export type KeyResult<Id extends string> =
+  { kind: 'command'; id: Id } | { kind: 'pending'; first: KeyStroke } | { kind: 'unknown' } | null;
 
 /** Casa teclas com atalhos, guardando a primeira parte de um acorde até a próxima tecla. */
-export class ShortcutDispatcher {
-  private pending: Binding[] | null = null;
+export class ShortcutDispatcher<Id extends string> {
+  private pending: Binding<Id>[] | null = null;
 
-  constructor(private readonly bindings: Binding[]) {}
+  constructor(private readonly bindings: Binding<Id>[]) {}
 
-  handle(event: KeyboardEvent): KeyResult {
+  /** `available` filtra os atalhos cujo comando não vale agora (condição de disponibilidade). */
+  handle(event: KeyboardEvent, available: (id: Id) => boolean = () => true): KeyResult<Id> {
     if (MODIFIER_KEYS.has(event.key)) return null;
     const step = this.pending ? 1 : 0;
     const candidates = (this.pending ?? this.bindings).filter(
-      (binding) => binding.chord.length > step && matches(event, binding.chord[step]),
+      (binding) =>
+        binding.chord.length > step && matches(event, binding.chord[step]) && available(binding.id),
     );
     this.pending = null;
     const complete = candidates.find((binding) => binding.chord.length === step + 1);
-    if (complete) return complete.id;
+    if (complete) return { kind: 'command', id: complete.id };
     if (candidates.length) {
       this.pending = candidates;
-      return 'consume';
+      return { kind: 'pending', first: candidates[0].chord[0] };
     }
     // Como no VS Code, a segunda tecla de um acorde que não existe é descartada.
-    return step ? 'consume' : null;
+    return step ? { kind: 'unknown' } : null;
   }
 }

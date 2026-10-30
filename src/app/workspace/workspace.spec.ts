@@ -103,6 +103,19 @@ describe('Workspace', () => {
     expect(fakes.dialogs.asked.length).toBe(2);
   });
 
+  it('Arquivo: Sair faz a mesma pergunta e só fecha a janela se o usuário seguir', async () => {
+    await workspace.openFolder(ROOT);
+    ((await tabs.open(MAIN))!.buffer as FakeBuffer).type('x');
+
+    fakes.dialogs.answers.push('Cancelar');
+    await workspace.quit();
+    expect(fakes.workspace.destroyed).toBe(false);
+
+    fakes.dialogs.answers.push('Não salvar');
+    await workspace.quit();
+    expect(fakes.workspace.destroyed).toBe(true);
+  });
+
   it('fs-changed chega na árvore e nas abas', async () => {
     await workspace.start();
     await workspace.openFolder(ROOT);

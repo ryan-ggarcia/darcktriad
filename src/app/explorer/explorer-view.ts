@@ -13,7 +13,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { Entry, Path } from '../ipc';
 import { basename, relativeTo } from '../paths';
-import { Commands } from '../shared/commands';
+import { CommandId, Commands } from '../shared/commands';
 import { Dialogs } from '../shared/dialogs';
 import { Icon } from '../shared/icon';
 import { PLATFORM } from '../shared/keybindings';
@@ -61,6 +61,12 @@ export class ExplorerView {
   private readonly dialogs = inject(Dialogs);
   protected readonly rowHeight = ROW_HEIGHT;
   protected readonly fileBadge = fileBadge;
+  protected readonly toolbar: { id: CommandId; label: string; icon: string }[] = [
+    { id: 'explorerNewFile', label: 'Novo arquivo', icon: 'new-file' },
+    { id: 'explorerNewFolder', label: 'Nova pasta', icon: 'new-folder' },
+    { id: 'explorerRefresh', label: 'Atualizar', icon: 'refresh' },
+    { id: 'explorerCollapseAll', label: 'Recolher tudo', icon: 'collapse-all' },
+  ];
 
   private readonly viewport = viewChild<ElementRef<HTMLElement>>('viewport');
   private readonly menuElement = viewChild<ElementRef<HTMLElement>>('menu');

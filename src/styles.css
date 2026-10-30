@@ -572,3 +572,101 @@ app-root {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Paleta de comandos, Abrir rápido e Ir para linha */
+.quick-open {
+  position: fixed;
+  z-index: 10;
+  top: 8px;
+  left: 50%;
+  width: min(600px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 6px;
+  background: var(--bg-side);
+  border: 1px solid #454545;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px #000a;
+}
+
+.quick-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--fg-strong);
+  background: var(--bg-input);
+  border: 1px solid var(--focus);
+  border-radius: 2px;
+  outline: none;
+}
+
+.quick-message {
+  margin: 6px 6px 0;
+  color: var(--fg-muted);
+}
+
+.quick-list {
+  max-height: min(440px, 60vh); /* 20 linhas: VISIBLE_ROWS em quick-open.ts */
+  margin: 4px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  /* Sem isto, o navegador compensa o espaçador de cima ao rolar e a lista virtualizada dispara. */
+  overflow-anchor: none;
+  list-style: none;
+}
+
+.quick-list:not(:has(.quick-item)) {
+  display: none;
+}
+
+.quick-section {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+/* Linha separando os grupos, sem mudar a altura fixa da linha (a lista é virtualizada). */
+.quick-item.section-start {
+  box-shadow: inset 0 1px var(--border);
+}
+
+.quick-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.quick-item:hover {
+  background: var(--bg-hover);
+}
+
+.quick-item.selected {
+  background: var(--bg-selected);
+  color: var(--fg-strong);
+}
+
+.quick-label {
+  flex: none;
+}
+
+.quick-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.quick-match {
+  color: #2aaaff;
+  font-weight: 700;
+}
+
+.status-message {
+  margin-right: auto;
+}
