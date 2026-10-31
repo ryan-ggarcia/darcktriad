@@ -170,12 +170,11 @@ impl TerminalProcess for PtyProcess {
 
     #[cfg(windows)]
     fn kill(&self) -> io::Result<()> {
-        let result = lock(&self.killer).kill();
+        // O portable-pty 0.9 inverte o resultado do TerminateProcess (sucesso vira Err com código 0);
+        // o próprio WinChild::kill dele ignora o resultado. O `wait` confirma o fim.
+        let _ = lock(&self.killer).kill();
         self.close_terminal();
-        match result {
-            Err(_) if self.exited.load(Ordering::Acquire) => Ok(()),
-            other => other,
-        }
+        Ok(())
     }
 
     fn wait(&self) -> io::Result<u32> {
