@@ -95,7 +95,7 @@ describe('projeto', () => {
         editorOpen: () => false,
         textEditor: () => false,
         folderOpen: () => true,
-        cmakeProject: () => project.isCMake(),
+        project: () => project.channel() !== null,
       });
       const { page, stable } = render(ProjectStatus);
       fakes.project.emitState({ ...CMAKE, status: { kind: 'ready' }, target: 'app' });
@@ -105,6 +105,29 @@ describe('projeto', () => {
       page.querySelector<HTMLElement>('[aria-label="Alvo: app"]')!.click();
 
       expect(ran).toEqual(['selectConfig', 'selectTarget']);
+    });
+
+    it('.NET: mostra ".NET" no lugar de "CMake", com andamento e erro', async () => {
+      const { page, stable } = render(ProjectStatus);
+      fakes.project.emitState({
+        root: '/home/ana/hello-cs',
+        kind: 'dotnetSolution',
+        configs: ['Debug', 'Release'],
+        config: 'Debug',
+        status: { kind: 'configuring' },
+      });
+      await stable();
+      expect(text(page)).toBe('.NET: configurando… · Debug');
+      expect(project.channel()).toBe('dotnet');
+
+      fakes.project.emitState({ status: { kind: 'failed', message: 'O dotnet restore falhou.' } });
+      await stable();
+      const kind = page.querySelector('.status-error')!;
+      expect(text(kind)).toBe('.NET: erro (ver Saída)');
+      expect(kind.getAttribute('title')).toBe(
+        'O dotnet restore falhou. Clique para ver a saída no canal dotnet.',
+      );
+      expect(panel.tab()).toBe('output');
     });
 
     it('sem projeto, diz que é só edição e explica o que falta para compilar', async () => {
@@ -118,7 +141,7 @@ describe('projeto', () => {
     });
   });
 
-  describe('estado e canal CMake', () => {
+  describe('estado e canal da Saída', () => {
     it('a Saída guarda só as últimas linhas e começa limpa a cada configuração', () => {
       for (let i = 0; i < OUTPUT_LIMIT + 10; i++) {
         fakes.project.emit({ kind: 'output', line: `linha ${i}` });

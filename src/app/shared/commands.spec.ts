@@ -70,7 +70,7 @@ describe('Commands', () => {
       editorOpen: () => false,
       textEditor: () => false,
       folderOpen: () => true,
-      cmakeProject: () => false,
+      project: () => false,
     });
   });
 

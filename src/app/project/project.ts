@@ -1,11 +1,19 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { errorMessage, ProjectEvent, ProjectState } from '../ipc';
+import { errorMessage, ProjectEvent, ProjectKind, ProjectState } from '../ipc';
 import { ProjectService } from '../project.service';
 import { Dialogs } from '../shared/dialogs';
 import { Panel } from '../shared/panel';
 
-/** O canal CMake da Saída guarda só as últimas linhas, para não crescer sem fim. */
+/** O canal da Saída guarda só as últimas linhas, para não crescer sem fim. */
 export const OUTPUT_LIMIT = 5000;
+
+/** O canal da Saída de cada tipo de projeto que configura (docs/ipc.md). */
+const CHANNELS: Partial<Record<ProjectKind, 'CMake' | 'dotnet'>> = {
+  cmake: 'CMake',
+  cmakePresets: 'CMake',
+  dotnetSolution: 'dotnet',
+  dotnetProjects: 'dotnet',
+};
 
 const NO_PROJECT: ProjectState = {
   root: null,
@@ -20,7 +28,7 @@ const NO_PROJECT: ProjectState = {
   problems: [],
 };
 
-/** O projeto da pasta aberta (docs/specs/projeto.md): estado do núcleo, canal CMake e escolhas. */
+/** O projeto da pasta aberta (docs/specs/projeto.md): estado do núcleo, canal da Saída e escolhas. */
 @Injectable({ providedIn: 'root' })
 export class Project {
   private readonly service = inject(ProjectService);
@@ -28,9 +36,10 @@ export class Project {
   private readonly dialogs = inject(Dialogs);
 
   readonly state = signal<ProjectState>(NO_PROJECT);
-  /** O canal CMake da Saída, uma linha por item. */
+  /** As linhas do canal da Saída, uma por item. */
   readonly output = signal<string[]>([]);
-  readonly isCMake = computed(() => ['cmake', 'cmakePresets'].includes(this.state().kind));
+  /** O canal da Saída (CMake ou dotnet); null se a pasta não tem projeto que configure. */
+  readonly channel = computed(() => CHANNELS[this.state().kind] ?? null);
   private warnedRoot: string | null = null;
   private eventSeen = false;
 
@@ -59,7 +68,7 @@ export class Project {
   }
 
   reconfigure(): void {
-    this.service.reconfigure().catch(this.tellError('reconfigurar o CMake'));
+    this.service.reconfigure().catch(this.tellError('reconfigurar o projeto'));
   }
 
   private onEvent(event: ProjectEvent): void {

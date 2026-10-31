@@ -133,7 +133,7 @@ export class App {
       editorOpen: () => this.tabs.active() !== null,
       textEditor: () => this.tabs.active()?.view.kind === 'text',
       folderOpen: () => this.folder.path() !== null,
-      cmakeProject: () => this.project.isCMake(),
+      project: () => this.project.channel() !== null,
     });
     this.commands.register({
       newFile: () => this.tabs.newUntitled(),
@@ -176,7 +176,7 @@ export class App {
       options: configs,
       current: config,
       // Com presets, a lista vem do `cmake --list-presets`, na primeira configuração.
-      empty: 'Nenhuma configuração ainda: a lista aparece depois que o CMake configura.',
+      empty: 'Nenhuma configuração ainda: a lista aparece depois que o projeto configura.',
       accept: (choice) => this.project.selectConfig(choice),
     });
   }
@@ -189,7 +189,7 @@ export class App {
       current: target,
       empty:
         status.kind === 'configuring'
-          ? 'O CMake está configurando: os alvos aparecem quando ele terminar.'
+          ? 'O projeto está configurando: os alvos aparecem quando ele terminar.'
           : status.kind === 'failed'
             ? 'A configuração falhou: veja a Saída.'
             : 'Nenhum programa executável neste projeto.',

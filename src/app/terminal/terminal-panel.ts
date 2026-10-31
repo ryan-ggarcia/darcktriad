@@ -25,7 +25,7 @@ const MIN_HEIGHT = 100;
 const EDITOR_MIN_HEIGHT = 150;
 
 /**
- * O painel inferior, com as abas Problemas, Saída (canal CMake) e Terminal: na do terminal, a
+ * O painel inferior, com as abas Problemas, Saída (canal CMake ou dotnet) e Terminal: na do terminal, a
  * tela do terminal ativo e a lista de terminais à direita.
  */
 @Component({

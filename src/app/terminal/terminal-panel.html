@@ -21,7 +21,7 @@
       id="panel-tab-problems"
       class="panel-tab"
       aria-controls="panel-problems"
-      title="Problemas: os erros da configuração do CMake"
+      title="Problemas: os erros da configuração do projeto (CMake ou .NET)"
       [class.active]="tab === 'problems'"
       [attr.aria-selected]="tab === 'problems'"
       (click)="panel.show('problems')"
@@ -37,7 +37,7 @@
       id="panel-tab-output"
       class="panel-tab"
       aria-controls="panel-output"
-      title="Saída: o log do CMake"
+      title="Saída: o log da configuração do projeto (CMake ou dotnet)"
       [class.active]="tab === 'output'"
       [attr.aria-selected]="tab === 'output'"
       (click)="panel.show('output')"
@@ -59,8 +59,8 @@
     </button>
   </div>
   <div class="panel-actions" role="toolbar" aria-label="Ações do painel">
-    @if (tab === 'output') {
-      <span class="panel-channel" title="Canal da Saída">CMake</span>
+    @if (tab === 'output' && project.channel(); as channel) {
+      <span class="panel-channel" title="Canal da Saída">{{ channel }}</span>
     }
     @if (tab === 'terminal') {
       <button

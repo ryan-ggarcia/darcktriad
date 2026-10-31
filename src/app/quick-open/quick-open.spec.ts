@@ -70,7 +70,7 @@ describe('QuickOpen', () => {
       editorOpen: () => textEditor,
       textEditor: () => textEditor,
       folderOpen: () => true,
-      cmakeProject: () => false,
+      project: () => false,
     });
     fixture = TestBed.createComponent(QuickOpen);
     quick = fixture.componentInstance;

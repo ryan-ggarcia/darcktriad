@@ -11,7 +11,7 @@ import { Project } from './project';
   template: `
     @let state = project.state();
     @if (state.root) {
-      @if (project.isCMake()) {
+      @if (project.channel()) {
         <span role="status">
           <button
             type="button"
@@ -47,19 +47,12 @@ import { Project } from './project';
             ▶ {{ state.target }}
           </button>
         }
-      } @else if (state.kind === 'editOnly') {
+      } @else {
         <span
           class="status-item"
           title="Para compilar, a pasta precisa de um CMakeLists.txt (C/C++) ou de um .csproj (C#)."
         >
           Sem projeto (só edição)
-        </span>
-      } @else {
-        <span
-          class="status-item"
-          title="Projeto .NET: compilar e executar chegam numa próxima versão."
-        >
-          .NET
         </span>
       }
     }
@@ -70,15 +63,19 @@ export class ProjectStatus {
   protected readonly commands = inject(Commands);
   protected readonly panel = inject(Panel);
 
+  private readonly kind = computed(() => (this.project.channel() === 'dotnet' ? '.NET' : 'CMake'));
+
   protected readonly kindLabel = computed(() => {
     const status = this.project.state().status.kind;
-    if (status === 'configuring') return 'CMake: configurando…';
-    return status === 'failed' ? 'CMake: erro (ver Saída)' : 'CMake';
+    if (status === 'configuring') return `${this.kind()}: configurando…`;
+    return status === 'failed' ? `${this.kind()}: erro (ver Saída)` : this.kind();
   });
 
   protected readonly kindHint = computed(() => {
     const status = this.project.state().status;
-    const show = 'Clique para ver a saída do CMake.';
-    return status.kind === 'failed' ? `${status.message} ${show}` : `Projeto CMake. ${show}`;
+    const show = `Clique para ver a saída no canal ${this.project.channel()}.`;
+    return status.kind === 'failed'
+      ? `${status.message} ${show}`
+      : `Projeto ${this.kind()}. ${show}`;
   });
 }

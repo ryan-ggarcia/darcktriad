@@ -11,7 +11,7 @@ import {
 } from './keybindings';
 
 /** Condição de disponibilidade: o comando só aparece e só roda quando ela vale. */
-export type Condition = 'editorOpen' | 'textEditor' | 'folderOpen' | 'cmakeProject';
+export type Condition = 'editorOpen' | 'textEditor' | 'folderOpen' | 'project';
 
 export interface CommandSpec {
   /** Nome em pt-BR no formato `Categoria: Ação`. */
@@ -178,9 +178,9 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   toggleTerminal: { title: 'Ver: Terminal', keys: ['Ctrl+`'] },
   newTerminal: { title: 'Terminal: Novo terminal', keys: ['Ctrl+Shift+`'] },
   // Sem atalho, como no VS Code: ficam na paleta e na barra de status.
-  selectConfig: { title: 'Projeto: Selecionar configuração', when: 'cmakeProject' },
-  selectTarget: { title: 'Projeto: Selecionar alvo', when: 'cmakeProject' },
-  reconfigure: { title: 'Projeto: Reconfigurar CMake', when: 'cmakeProject' },
+  selectConfig: { title: 'Projeto: Selecionar configuração', when: 'project' },
+  selectTarget: { title: 'Projeto: Selecionar alvo', when: 'project' },
+  reconfigure: { title: 'Projeto: Reconfigurar', when: 'project' },
   checkTools: {
     title: 'Ferramentas: Verificar e instalar',
     menu: 'Verificar e instalar ferramentas',

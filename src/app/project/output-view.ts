@@ -10,7 +10,7 @@ import {
 import { Panel } from '../shared/panel';
 import { Project } from './project';
 
-/** A aba Saída, canal CMake: a saída ao vivo, que rola sozinha enquanto o usuário está no fim. */
+/** A aba Saída, no canal do projeto (CMake ou dotnet): a saída ao vivo, que rola sozinha enquanto o usuário está no fim. */
 @Component({
   selector: 'app-output-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -21,18 +21,18 @@ import { Project } from './project';
         #log
         class="output-log"
         tabindex="0"
-        aria-label="Saída do CMake"
+        [attr.aria-label]="'Saída: canal ' + project.channel()"
         (scroll)="onScroll(log)"
         >{{ text() }}</pre>
     } @else {
       <p class="panel-empty">
-        Nada no canal CMake ainda. A saída aparece quando o CMake configura.
+        Nada na Saída ainda. A saída aparece quando o projeto (CMake ou .NET) configura.
       </p>
     }
   `,
 })
 export class OutputView {
-  private readonly project = inject(Project);
+  protected readonly project = inject(Project);
   private readonly panel = inject(Panel);
   private readonly log = viewChild<ElementRef<HTMLElement>>('log');
   protected readonly text = computed(() => this.project.output().join('\n'));

@@ -4,7 +4,7 @@ import { Problem } from '../ipc';
 import { isWithin, relativeTo } from '../paths';
 import { Project } from './project';
 
-/** A aba Problemas: os erros da configuração do CMake; clicar leva à linha. */
+/** A aba Problemas: os erros da configuração do projeto (CMake ou .NET); clicar leva à linha. */
 @Component({
   selector: 'app-problems-view',
   changeDetection: ChangeDetectionStrategy.OnPush,

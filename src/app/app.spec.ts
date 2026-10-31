@@ -144,6 +144,38 @@ describe('App', () => {
     expect(status().trim()).toBe('');
   });
 
+  it('projeto .NET: barra de status, comandos do projeto e canal dotnet na Saída', async () => {
+    fakes.workspace.recents = [{ path: 'C:\\hello-cs', exists: true }];
+    const page = await render();
+    const commands = TestBed.inject(Commands);
+    expect(commands.isAvailable('reconfigure')).toBe(false);
+
+    fakes.project.emitState({
+      root: 'C:\\hello-cs',
+      kind: 'dotnetProjects',
+      configs: ['Debug', 'Release'],
+      config: 'Debug',
+      status: { kind: 'ready' },
+      buildDir: null,
+      targets: [{ name: 'hello-cs', path: 'C:\\hello-cs\\bin\\Debug\\net8.0\\hello-cs.dll' }],
+      target: 'hello-cs',
+    });
+    await settle();
+    TestBed.tick();
+    const status = page.querySelector('.status-project')!.textContent!.replace(/\s+/g, ' ');
+    expect(status.trim()).toBe('.NET · Debug · ▶ hello-cs');
+    for (const id of ['selectConfig', 'selectTarget', 'reconfigure'] as const) {
+      expect(commands.isAvailable(id), id).toBe(true);
+    }
+
+    commands.run('reconfigure');
+    expect(fakes.project.reconfigures).toBe(1);
+    page.querySelector<HTMLElement>('#panel-tab-output')!.click();
+    TestBed.tick();
+    expect(page.querySelector('.panel-channel')?.textContent?.trim()).toBe('dotnet');
+    expect(page.querySelector('app-output-view')?.textContent).toContain('CMake ou .NET');
+  });
+
   it('bloqueia F5 e Ctrl+R, que recarregariam a página e perderiam o que não foi salvo', async () => {
     await render();
 
