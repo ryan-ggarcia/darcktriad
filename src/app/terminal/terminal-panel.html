@@ -12,7 +12,7 @@
 ></div>
 
 @let tab = panel.tab();
-@let problems = project.state().problems.length;
+@let problems = problemCount();
 <header class="panel-header">
   <div role="tablist" aria-label="Abas do painel">
     <button
@@ -21,7 +21,12 @@
       id="panel-tab-problems"
       class="panel-tab"
       aria-controls="panel-problems"
-      title="Problemas: os erros da configuração do projeto (CMake ou .NET)"
+      [title]="
+        commands.hint(
+          'Problemas: erros e avisos do projeto e dos servidores de linguagem',
+          'showProblems'
+        )
+      "
       [class.active]="tab === 'problems'"
       [attr.aria-selected]="tab === 'problems'"
       (click)="panel.show('problems')"
@@ -37,7 +42,7 @@
       id="panel-tab-output"
       class="panel-tab"
       aria-controls="panel-output"
-      title="Saída: o log da configuração do projeto (CMake ou dotnet)"
+      title="Saída: o log do projeto (CMake ou dotnet) e dos servidores de linguagem (clangd, C#)"
       [class.active]="tab === 'output'"
       [attr.aria-selected]="tab === 'output'"
       (click)="panel.show('output')"
@@ -59,8 +64,18 @@
     </button>
   </div>
   <div class="panel-actions" role="toolbar" aria-label="Ações do painel">
-    @if (tab === 'output' && project.channel(); as channel) {
-      <span class="panel-channel" title="Canal da Saída">{{ channel }}</span>
+    @if (tab === 'output' && output.channels().length) {
+      <select
+        class="panel-channel"
+        aria-label="Canal da Saída"
+        title="Canal da Saída: escolha de quem é o log"
+        [value]="output.current()"
+        (change)="panel.outputChannel.set($any($event.target).value)"
+      >
+        @for (channel of output.channels(); track channel) {
+          <option [value]="channel" [selected]="channel === output.current()">{{ channel }}</option>
+        }
+      </select>
     }
     @if (tab === 'terminal') {
       <button

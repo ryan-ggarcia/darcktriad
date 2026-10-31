@@ -4,6 +4,7 @@ import { Eol, errorKind, errorMessage, FileContent, Path, Session } from '../ipc
 import { basename, dirname, isWithin, languageOf, replacePrefix } from '../paths';
 import { Dialogs } from '../shared/dialogs';
 import { CurrentFolder } from '../workspace/current-folder';
+import { JumpHistory, JumpLocation } from './jump-history';
 import { Tab } from './tab';
 import { TextBuffers } from './text-buffer';
 
@@ -56,6 +57,8 @@ export class EditorTabs {
 
   /** Abas da mais para a menos usada; fechar uma ativa a anterior por uso. */
   private recent: Tab[] = [];
+  private readonly history = new JumpHistory();
+  private readonly savedListeners = new Set<(tab: Tab) => void>();
   private readonly opening = new Map<Path, Promise<Tab | null>>();
   private defaultEol?: Promise<Eol>;
 
@@ -64,6 +67,40 @@ export class EditorTabs {
     const tab = this.find(path) ?? (await this.loadOnce(path));
     if (tab) this.activate(tab);
     return tab;
+  }
+
+  /** Abre o arquivo e põe o cursor em `position` (base 1); `record` guarda de onde se saiu (Alt+←). */
+  async openAt(
+    path: Path,
+    position: { line: number; column: number },
+    record = true,
+  ): Promise<Tab | null> {
+    if (record) this.recordJump();
+    const tab = await this.open(path);
+    if (tab?.view.kind === 'text') this.goTo.set({ line: position.line, column: position.column });
+    return tab;
+  }
+
+  /** Antes de um salto (definição, Ctrl+P, Ctrl+G, problema): guarda a posição atual. */
+  recordJump(): void {
+    const here = this.location();
+    if (here) this.history.record(here);
+  }
+
+  /** Alt+← (⌃- no macOS). */
+  back(): Promise<unknown> {
+    return this.revisit(this.history.back(this.location()));
+  }
+
+  /** Alt+→ (⌃⇧- no macOS). */
+  forward(): Promise<unknown> {
+    return this.revisit(this.history.forward());
+  }
+
+  /** Avisa a cada gravação bem-sucedida (o servidor de linguagem recebe `didSave`). */
+  onSaved(listener: (tab: Tab) => void): () => void {
+    this.savedListeners.add(listener);
+    return () => this.savedListeners.delete(listener);
   }
 
   /** Ctrl+N: "Sem título-N", com o fim de linha padrão do sistema. */
@@ -258,6 +295,16 @@ export class EditorTabs {
     if (active) this.activate(active);
   }
 
+  private location(): JumpLocation | null {
+    const path = this.active()?.path();
+    const cursor = this.cursor();
+    return path && cursor ? { path, ...cursor } : null;
+  }
+
+  private async revisit(target: JumpLocation | null): Promise<void> {
+    if (target) await this.openAt(target.path, target, false);
+  }
+
   private find(path: Path): Tab | null {
     return this.tabs().find((tab) => tab.path() === path) ?? null;
   }
@@ -350,6 +397,7 @@ export class EditorTabs {
       tab.path.set(path);
       buffer.setLanguage(languageOf(path));
     }
+    for (const listener of this.savedListeners) listener(tab);
     return true;
   }
 

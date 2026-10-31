@@ -329,6 +329,7 @@ export class QuickOpen {
       section,
       accept: () => {
         this.close();
+        this.tabs.recordJump();
         void this.tabs.open(path).then((tab) => tab && this.tabs.requestFocus());
       },
     };
@@ -346,6 +347,7 @@ export class QuickOpen {
         keys: '',
         accept: () => {
           this.close();
+          this.tabs.recordJump();
           this.tabs.goTo.set({ line, column: column ?? 1 });
         },
       },

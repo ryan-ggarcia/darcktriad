@@ -18,7 +18,7 @@ import { Project } from './project';
             class="status-item"
             [class.status-error]="state.status.kind === 'failed'"
             [title]="kindHint()"
-            (click)="panel.show('output')"
+            (click)="panel.showOutput(project.channel())"
           >
             {{ kindLabel() }}
           </button>

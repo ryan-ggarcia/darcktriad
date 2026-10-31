@@ -5,12 +5,14 @@ import {
   DestroyRef,
   effect,
   ElementRef,
+  EnvironmentInjector,
   inject,
   input,
   signal,
   untracked,
 } from '@angular/core';
 import type * as Monaco from 'monaco-editor';
+import { connectMonaco } from '../language/monaco-language';
 import { CommandId, COMMANDS, Commands } from '../shared/commands';
 import { KeyStroke, PLATFORM } from '../shared/keybindings';
 import { EditorTabs } from './editor-tabs';
@@ -32,6 +34,8 @@ export class CodeEditor {
   private readonly tabs = inject(EditorTabs);
   private readonly commands = inject(Commands);
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
+  /** O da janela: os provedores e marcadores seguem valendo sem nenhuma aba aberta. */
+  private readonly rootInjector = inject(EnvironmentInjector);
   private readonly editor = signal<Monaco.editor.IStandaloneCodeEditor | null>(null);
   private readonly viewStates = new WeakMap<Tab, Monaco.editor.ICodeEditorViewState | null>();
   private shown: Tab | null = null;
@@ -52,6 +56,21 @@ export class CodeEditor {
         this.tabs.focusPending.set(false);
         editor.focus();
       }
+    });
+    // Codificação não suportada, ou aberto por "Ir para definição" fora da pasta.
+    effect(() => {
+      const editor = this.editor();
+      const tab = this.tab();
+      if (!editor || tab?.view.kind !== 'text') return;
+      const outside = tab.outsideProject();
+      editor.updateOptions({
+        readOnly: tab.view.readOnly || outside,
+        readOnlyMessage: {
+          value: outside
+            ? 'Fora do projeto: somente leitura'
+            : 'Codificação não suportada nesta versão: somente leitura',
+        },
+      });
     });
     effect(() => {
       const editor = this.editor();
@@ -89,7 +108,15 @@ export class CodeEditor {
       theme: 'vs-dark',
       automaticLayout: true,
       fontSize: 14,
-      readOnlyMessage: { value: 'Codificação não suportada nesta versão: somente leitura' },
+    });
+    connectMonaco(monaco, this.rootInjector);
+    // Ctrl+clique (⌘+clique no macOS) faz o mesmo que F12.
+    editor.onMouseDown(({ event, target }) => {
+      const modifier = PLATFORM === 'mac' ? event.metaKey : event.ctrlKey;
+      if (!modifier || !event.leftButton || !target.position) return;
+      if (target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT) return;
+      editor.setPosition(target.position);
+      this.commands.run('goToDefinition');
     });
     // Os atalhos da IDE também valem com o foco no texto, inclusive os acordes Ctrl+K. Os de
     // edição (Ctrl+C, Ctrl+Z…) ficam com o Monaco.
@@ -140,7 +167,6 @@ export class CodeEditor {
       return;
     }
     editor.setModel((tab.view.buffer as MonacoBuffer).model);
-    editor.updateOptions({ readOnly: tab.view.readOnly });
     const state = this.viewStates.get(tab);
     if (state) editor.restoreViewState(state);
     const position = editor.getPosition();
@@ -174,6 +200,9 @@ function editorCommands(
     find: action('actions.find'),
     replace: action('editor.action.startFindReplaceAction'),
     commentLine: action('editor.action.commentLine'),
+    triggerSuggest: action('editor.action.triggerSuggest'),
+    triggerParameterHints: action('editor.action.triggerParameterHints'),
+    showHover: action('editor.action.showHover'),
   };
 }
 

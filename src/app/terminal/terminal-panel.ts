@@ -2,6 +2,7 @@ import {
   afterNextRender,
   ChangeDetectionStrategy,
   Component,
+  computed,
   DestroyRef,
   effect,
   ElementRef,
@@ -14,7 +15,8 @@ import {
 } from '@angular/core';
 import { OutputView } from '../project/output-view';
 import { ProblemsView } from '../project/problems-view';
-import { Project } from '../project/project';
+import { OutputChannels } from '../project/output-channels';
+import { Problems } from '../project/problems';
 import { Commands } from '../shared/commands';
 import { Icon } from '../shared/icon';
 import { Panel } from '../shared/panel';
@@ -25,7 +27,7 @@ const MIN_HEIGHT = 100;
 const EDITOR_MIN_HEIGHT = 150;
 
 /**
- * O painel inferior, com as abas Problemas, Saída (canal CMake ou dotnet) e Terminal: na do terminal, a
+ * O painel inferior, com as abas Problemas, Saída (canais CMake, dotnet, clangd e C#) e Terminal: na do terminal, a
  * tela do terminal ativo e a lista de terminais à direita.
  */
 @Component({
@@ -45,7 +47,9 @@ export class TerminalPanel {
   protected readonly terminals = inject(Terminals);
   protected readonly commands = inject(Commands);
   protected readonly panel = inject(Panel);
-  protected readonly project = inject(Project);
+  protected readonly output = inject(OutputChannels);
+  private readonly problems = inject(Problems);
+  protected readonly problemCount = computed(() => this.problems.items().length);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly height = signal(280);

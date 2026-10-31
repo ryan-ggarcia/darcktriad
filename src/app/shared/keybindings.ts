@@ -31,6 +31,7 @@ const CODES: Record<string, string> = {
   ']': 'BracketRight',
   '/': 'Slash',
   '`': 'Backquote',
+  '-': 'Minus',
 };
 
 const LABELS: Record<string, string> = {
@@ -39,6 +40,7 @@ const LABELS: Record<string, string> = {
   BracketLeft: '[',
   BracketRight: ']',
   Slash: '/',
+  Minus: '-',
   Escape: 'Esc',
 };
 

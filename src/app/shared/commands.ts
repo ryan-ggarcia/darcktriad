@@ -69,11 +69,22 @@ export type CommandId =
   | 'selectTarget'
   | 'reconfigure'
   | 'checkTools'
+  | 'triggerSuggest'
+  | 'triggerParameterHints'
+  | 'showHover'
+  | 'goToDefinition'
+  | 'navigateBack'
+  | 'navigateForward'
+  | 'showProblems'
+  | 'nextProblem'
+  | 'previousProblem'
+  | 'restartCpp'
+  | 'restartCsharp'
   | 'keyboardShortcuts';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
- * explorador.md, paleta-de-comandos.md, terminal.md e projeto.md). Menu, botões, paleta e teclado partem daqui.
+ * explorador.md, paleta-de-comandos.md, terminal.md, projeto.md e linguagem.md). Menu, botões, paleta e teclado partem daqui.
  */
 export const COMMANDS: Record<CommandId, CommandSpec> = {
   newFile: { title: 'Arquivo: Novo arquivo', keys: ['Mod+N'] },
@@ -185,6 +196,43 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
     title: 'Ferramentas: Verificar e instalar',
     menu: 'Verificar e instalar ferramentas',
   },
+  // Os três primeiros são do Monaco; ficam aqui para a paleta e a lista de atalhos.
+  triggerSuggest: {
+    title: 'Editar: Mostrar sugestões',
+    keys: ['Ctrl+Space'],
+    when: 'textEditor',
+    native: true,
+  },
+  triggerParameterHints: {
+    title: 'Editar: Mostrar dicas de parâmetros',
+    keys: ['Mod+Shift+Space'],
+    when: 'textEditor',
+    native: true,
+  },
+  showHover: {
+    title: 'Editar: Mostrar hover',
+    keys: ['Mod+K Mod+I'],
+    when: 'textEditor',
+    native: true,
+  },
+  goToDefinition: { title: 'Ir: Ir para definição', keys: ['F12'], when: 'textEditor' },
+  navigateBack: {
+    title: 'Ir: Voltar',
+    windows: ['Alt+Left'],
+    linux: ['Ctrl+Alt+-'],
+    mac: ['Ctrl+-'],
+  },
+  navigateForward: {
+    title: 'Ir: Avançar',
+    windows: ['Alt+Right'],
+    linux: ['Ctrl+Shift+-'],
+    mac: ['Ctrl+Shift+-'],
+  },
+  showProblems: { title: 'Ver: Problemas', keys: ['Mod+Shift+M'] },
+  nextProblem: { title: 'Ir: Próximo problema', keys: ['F8'] },
+  previousProblem: { title: 'Ir: Problema anterior', keys: ['Shift+F8'] },
+  restartCpp: { title: 'Linguagem: Reiniciar servidor C/C++', when: 'folderOpen' },
+  restartCsharp: { title: 'Linguagem: Reiniciar servidor C#', when: 'folderOpen' },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
 };
 
@@ -220,7 +268,7 @@ export function isCommandId(id: string): id is CommandId {
 }
 
 const CHORD_FAILED = 'A combinação não é um comando';
-const CHORD_FAILED_MS = 10_000;
+const FLASH_MS = 10_000;
 
 /** O registro em uso: tratadores, disponibilidade, despacho de teclas e o texto dos atalhos. */
 @Injectable({ providedIn: 'root' })
@@ -288,8 +336,13 @@ export class Commands {
   }
 
   chordFailed(): void {
-    this.keyStatus.set(CHORD_FAILED);
-    setTimeout(() => this.clearStatus(CHORD_FAILED), CHORD_FAILED_MS);
+    this.flash(CHORD_FAILED);
+  }
+
+  /** Um aviso curto na barra de status (ex.: "Definição não disponível"), que some sozinho. */
+  flash(text: string): void {
+    this.keyStatus.set(text);
+    setTimeout(() => this.clearStatus(text), FLASH_MS);
   }
 
   title(id: CommandId): string {

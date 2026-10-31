@@ -9,6 +9,8 @@ import {
   Entry,
   Eol,
   FileContent,
+  Language,
+  LanguageEvent,
   MenuEntry,
   OpenedFolder,
   Path,
@@ -21,7 +23,9 @@ import {
   TerminalInfo,
   ToolCheck,
 } from '../app/ipc';
+import { TextChange } from '../app/language/lsp';
 import { basename, dirname, replacePrefix } from '../app/paths';
+import { LanguageService } from '../app/language.service';
 import { ProjectService } from '../app/project.service';
 import { Dialogs } from '../app/shared/dialogs';
 import { TerminalScreen, TerminalScreens } from '../app/terminal/terminal-screen';
@@ -37,6 +41,7 @@ export class FakeBuffer implements TextBuffer {
   private version = 1;
   private nextVersion = 2;
   private readonly undoStack: [string, number][] = [];
+  private readonly editListeners = new Set<(changes: TextChange[]) => void>();
   disposed = false;
 
   constructor(
@@ -48,10 +53,20 @@ export class FakeBuffer implements TextBuffer {
 
   /** O usuário digitando. */
   type(text: string): void {
+    const lines = this.text.split('\n');
+    const end = { line: lines.length - 1, character: lines[lines.length - 1].length };
     this.undoStack.push([this.text, this.version]);
     this.text = text;
     this.version = this.nextVersion++;
     this.onChange();
+    for (const listener of this.editListeners) {
+      listener([{ range: { start: { line: 0, character: 0 }, end }, text }]);
+    }
+  }
+
+  onEdit(listener: (changes: TextChange[]) => void): () => void {
+    this.editListeners.add(listener);
+    return () => this.editListeners.delete(listener);
   }
 
   undo(): void {
@@ -527,6 +542,60 @@ export class FakeProjectService implements Partial<ProjectService> {
   }
 }
 
+/** Servidores de linguagem em memória: o teste manda eventos e lê as mensagens LSP enviadas. */
+export class FakeLanguageService implements Partial<LanguageService> {
+  readonly started: Language[] = [];
+  readonly restarted: Language[] = [];
+  /** As mensagens enviadas a cada servidor, já como objetos. */
+  readonly sent: Record<Language, { id?: number; method?: string; params?: any }[]> = {
+    cpp: [],
+    csharp: [],
+  };
+  /** Erro devolvido pelo próximo `language_start`. */
+  startError: AppError | null = null;
+  private readonly handlers = new Map<Language, (event: LanguageEvent) => void>();
+
+  /** O núcleo mandando um evento do servidor. */
+  emit(language: Language, event: LanguageEvent): void {
+    this.handlers.get(language)?.(event);
+  }
+
+  /** O servidor respondendo ao pedido `method` mais recente. */
+  respond(language: Language, method: string, result: unknown): void {
+    const request = this.sent[language].filter((message) => message.method === method).at(-1);
+    const message = JSON.stringify({ jsonrpc: '2.0', id: request!.id, result });
+    this.emit(language, { kind: 'message', message });
+  }
+
+  /** O processo de pé e o `initialize` respondido com `capabilities`. */
+  run(language: Language, capabilities: object = {}): void {
+    this.emit(language, { kind: 'state', state: { kind: 'running' } });
+    this.respond(language, 'initialize', { capabilities });
+  }
+
+  methods(language: Language): string[] {
+    return this.sent[language].map((message) => message.method ?? 'resposta');
+  }
+
+  start(language: Language, onEvent: (event: LanguageEvent) => void): Promise<void> {
+    this.started.push(language);
+    if (this.startError) return Promise.reject(this.startError);
+    this.handlers.set(language, onEvent);
+    onEvent({ kind: 'state', state: { kind: 'starting' } });
+    return Promise.resolve();
+  }
+
+  send(language: Language, message: string): Promise<void> {
+    this.sent[language].push(JSON.parse(message));
+    return Promise.resolve();
+  }
+
+  restart(language: Language): Promise<void> {
+    this.restarted.push(language);
+    return Promise.resolve();
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
@@ -535,6 +604,7 @@ export interface Fakes {
   terminals: FakeTerminalService;
   screens: FakeScreens;
   project: FakeProjectService;
+  languages: FakeLanguageService;
   providers: Provider[];
 }
 
@@ -546,6 +616,7 @@ export function createFakes(): Fakes {
   const terminals = new FakeTerminalService();
   const screens = new FakeScreens();
   const project = new FakeProjectService();
+  const languages = new FakeLanguageService();
   return {
     files,
     dialogs,
@@ -554,6 +625,7 @@ export function createFakes(): Fakes {
     terminals,
     screens,
     project,
+    languages,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
@@ -563,6 +635,7 @@ export function createFakes(): Fakes {
       { provide: TerminalService, useValue: terminals },
       { provide: TerminalScreens, useValue: screens },
       { provide: ProjectService, useValue: project },
+      { provide: LanguageService, useValue: languages },
     ],
   };
 }

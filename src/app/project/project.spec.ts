@@ -199,7 +199,7 @@ describe('projeto', () => {
   });
 
   describe('Problemas', () => {
-    it('lista arquivo:linha e mensagem; o clique abre o arquivo na linha', async () => {
+    it('lista o arquivo e, em cada item, mensagem, origem e linha:coluna; o clique abre na linha', async () => {
       const file = `${ROOT}/CMakeLists.txt`;
       fakes.files.write(file, 'project(x)\n');
       const { page, stable } = render(ProblemsView);
@@ -212,8 +212,10 @@ describe('projeto', () => {
         problems: [{ file, line: 7, message: 'Unknown CMake command "add_executabl".' }],
       });
       await stable();
+      expect(text(page.querySelector('.problem-file-name')!)).toBe('CMakeLists.txt');
       const item = page.querySelector<HTMLElement>('.problem')!;
-      expect(text(item.querySelector('.problem-location')!)).toBe('CMakeLists.txt:7');
+      expect(text(item.querySelector('.problem-location')!)).toBe('7:1');
+      expect(text(item.querySelector('.problem-source')!)).toBe('CMake');
       expect(text(item.querySelector('.problem-message')!)).toBe(
         'Unknown CMake command "add_executabl".',
       );

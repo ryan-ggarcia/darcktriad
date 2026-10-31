@@ -12,6 +12,7 @@ const CATEGORIES = [
   'Explorador',
   'Terminal',
   'Projeto',
+  'Linguagem',
   'Ferramentas',
   'Ajuda',
 ];

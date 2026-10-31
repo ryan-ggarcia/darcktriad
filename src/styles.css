@@ -13,6 +13,9 @@
   --accent: #0078d4;
   --focus: #0078d4;
   --error: #f14c4c;
+  --warning: #cca700;
+  --info: #3794ff;
+  --bg-banner-info: #0d3a58;
   --row: 22px;
   color-scheme: dark;
 }
@@ -115,6 +118,10 @@ kbd {
   padding: 6px 12px;
   background: var(--bg-banner);
   color: var(--fg-strong);
+}
+
+.banner-info {
+  background: var(--bg-banner-info);
 }
 
 /* Layout fixo: barra de atividades | barra lateral | editores, e a barra de status embaixo. */
@@ -656,10 +663,13 @@ app-root {
 
 .panel-channel {
   margin-right: 8px;
-  padding: 0 8px;
+  padding: 0 4px;
+  font: inherit;
   font-size: 12px;
   line-height: 20px;
+  color: var(--fg);
   background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 2px;
 }
 
@@ -696,13 +706,56 @@ app-root {
   border-radius: 0;
 }
 
-.problem-mark {
-  color: var(--error);
+.problem-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 12px;
+  white-space: nowrap;
+  color: var(--fg-strong);
 }
 
+.problem-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.problem-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problem {
+  padding-left: 32px;
+}
+
+.problem:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.problem-source,
 .problem-location {
   flex: none;
   color: var(--fg-muted);
+}
+
+/* Gravidade: a cor acompanha o ícone e o texto, nunca sozinha. */
+.severity-error {
+  color: var(--error);
+}
+
+.severity-warning {
+  color: var(--warning);
+}
+
+.severity-info {
+  color: var(--info);
 }
 
 .problem-message {
@@ -918,6 +971,23 @@ button.status-item:hover {
 
 .status-pick::after {
   content: ' ▾';
+}
+
+/* Servidores de linguagem e contador de problemas na barra de status */
+.status-languages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.status-action {
+  text-decoration: underline;
+}
+
+button.status-item:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
 }
 
 /* Ferramentas: Verificar e instalar */

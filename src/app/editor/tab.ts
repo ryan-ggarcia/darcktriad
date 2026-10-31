@@ -22,6 +22,8 @@ export class Tab {
   readonly deleted = signal(false);
   /** O disco mudou enquanto a aba tinha alterações: a faixa pede uma escolha. */
   readonly changedOnDisk = signal(false);
+  /** Aberto por "Ir para definição" fora da pasta (cabeçalho do sistema, SDK): somente leitura. */
+  readonly outsideProject = signal(false);
   readonly eol: WritableSignal<Eol>;
   /** `version` da última leitura ou gravação; nula em arquivo sem título. */
   version: string | null = null;

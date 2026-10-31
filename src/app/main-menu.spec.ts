@@ -30,8 +30,13 @@ describe('menu principal', () => {
       'Arquivo',
       'Editar',
       'Ver',
+      'Ir',
       'Ajuda',
     ]);
+    expect(item(submenu(menu, 'Ir'), 'Voltar')?.accelerator).toBe('Alt+←');
+    expect(item(submenu(buildMenu(recents, 'linux'), 'Ir'), 'Voltar')?.accelerator).toBe(
+      'Ctrl+Alt+-',
+    );
     const file = submenu(menu, 'Arquivo');
     expect(item(file, 'Abrir pasta')?.accelerator).toBe('Ctrl+K Ctrl+O');
     expect(item(file, 'Sair')).toEqual({

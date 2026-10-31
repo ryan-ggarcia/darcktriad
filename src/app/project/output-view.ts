@@ -8,9 +8,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { Panel } from '../shared/panel';
-import { Project } from './project';
+import { OutputChannels } from './output-channels';
 
-/** A aba Saída, no canal do projeto (CMake ou dotnet): a saída ao vivo, que rola sozinha enquanto o usuário está no fim. */
+/** A aba Saída, no canal escolhido (CMake, dotnet, clangd, C#): a saída ao vivo, que rola sozinha enquanto o usuário está no fim. */
 @Component({
   selector: 'app-output-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -21,21 +21,22 @@ import { Project } from './project';
         #log
         class="output-log"
         tabindex="0"
-        [attr.aria-label]="'Saída: canal ' + project.channel()"
+        [attr.aria-label]="'Saída: canal ' + output.current()"
         (scroll)="onScroll(log)"
         >{{ text() }}</pre>
     } @else {
       <p class="panel-empty">
-        Nada na Saída ainda. A saída aparece quando o projeto (CMake ou .NET) configura.
+        Nada na Saída ainda. A saída aparece quando o projeto (CMake ou .NET) configura ou um
+        servidor de linguagem (clangd, C#) inicia.
       </p>
     }
   `,
 })
 export class OutputView {
-  protected readonly project = inject(Project);
+  protected readonly output = inject(OutputChannels);
   private readonly panel = inject(Panel);
   private readonly log = viewChild<ElementRef<HTMLElement>>('log');
-  protected readonly text = computed(() => this.project.output().join('\n'));
+  protected readonly text = computed(() => this.output.lines().join('\n'));
   private following = true;
 
   constructor() {

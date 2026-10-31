@@ -10,8 +10,8 @@ const RECENT_FOLDER = 'recentFolder:';
 type Item = CommandId | '-' | 'recentFolders';
 
 /**
- * Os menus da spec, só com os comandos que já existem; Executar e os painéis Problemas e Saída
- * entram quando os comandos deles chegarem ao registro.
+ * Os menus da spec, só com os comandos que já existem; Executar e o painel Saída entram quando os
+ * comandos deles chegarem ao registro.
  */
 const MENUS: [string, Item[]][] = [
   [
@@ -49,7 +49,31 @@ const MENUS: [string, Item[]][] = [
       'commentLine',
     ],
   ],
-  ['Ver', ['showCommands', 'quickOpen', '-', 'showExplorer', 'toggleTerminal', 'toggleSidebar']],
+  [
+    'Ver',
+    [
+      'showCommands',
+      'quickOpen',
+      '-',
+      'showExplorer',
+      'showProblems',
+      'toggleTerminal',
+      'toggleSidebar',
+    ],
+  ],
+  [
+    'Ir',
+    [
+      'navigateBack',
+      'navigateForward',
+      '-',
+      'goToDefinition',
+      'goToLine',
+      '-',
+      'nextProblem',
+      'previousProblem',
+    ],
+  ],
   ['Ajuda', ['keyboardShortcuts', 'checkTools']],
 ];
 

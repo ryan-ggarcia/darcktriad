@@ -67,6 +67,14 @@
       <div class="banner" role="status">
         Codificação não suportada nesta versão: somente leitura
       </div>
+    } @else if (tab.outsideProject()) {
+      <div
+        class="banner banner-info"
+        role="status"
+        title="Aberto por Ir para definição, fora da pasta do projeto (cabeçalho do sistema, SDK)"
+      >
+        Fora do projeto: somente leitura
+      </div>
     }
     @if (notice(tab); as notice) {
       <p class="notice">{{ notice }}</p>

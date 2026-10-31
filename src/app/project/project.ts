@@ -3,6 +3,8 @@ import { errorMessage, ProjectEvent, ProjectKind, ProjectState } from '../ipc';
 import { ProjectService } from '../project.service';
 import { Dialogs } from '../shared/dialogs';
 import { Panel } from '../shared/panel';
+import { MarkerSeverity } from '../language/lsp';
+import { Problems } from './problems';
 
 /** O canal da Saída guarda só as últimas linhas, para não crescer sem fim. */
 export const OUTPUT_LIMIT = 5000;
@@ -34,6 +36,7 @@ export class Project {
   private readonly service = inject(ProjectService);
   private readonly panel = inject(Panel);
   private readonly dialogs = inject(Dialogs);
+  private readonly problems = inject(Problems);
 
   readonly state = signal<ProjectState>(NO_PROJECT);
   /** As linhas do canal da Saída, uma por item. */
@@ -85,9 +88,24 @@ export class Project {
   private apply(state: ProjectState): void {
     const before = this.state().status.kind;
     this.state.set(state);
+    const source = this.channel() ?? 'CMake';
+    this.problems.set(
+      'project',
+      state.problems.map(({ file, line, message }) => ({
+        file,
+        severity: MarkerSeverity.Error,
+        message,
+        source,
+        startLineNumber: line,
+        startColumn: 1,
+        endLineNumber: line,
+        endColumn: 1,
+      })),
+    );
     // Cada configuração começa com o canal limpo; a primeira linha é o comando.
     if (state.status.kind === 'configuring' && before !== 'configuring') this.output.set([]);
-    if (state.status.kind === 'failed' && before !== 'failed') this.panel.show('output');
+    if (state.status.kind === 'failed' && before !== 'failed')
+      this.panel.showOutput(this.channel());
     if (state.warning && state.root !== this.warnedRoot) {
       this.warnedRoot = state.root;
       void this.dialogs.tell(state.warning);

@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import type * as Monaco from 'monaco-editor';
 import { Eol } from '../ipc';
+import { TextChange } from '../language/lsp';
 import { loadMonaco } from './monaco-loader';
 import { TextBuffer, TextBuffers } from './text-buffer';
 
@@ -39,6 +40,21 @@ export class MonacoBuffer implements TextBuffer {
 
   versionId(): number {
     return this.model.getAlternativeVersionId();
+  }
+
+  onEdit(listener: (changes: TextChange[]) => void): () => void {
+    const subscription = this.model.onDidChangeContent(({ changes }) =>
+      listener(
+        changes.map(({ range, text }) => ({
+          range: {
+            start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+            end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+          },
+          text,
+        })),
+      ),
+    );
+    return () => subscription.dispose();
   }
 
   dispose(): void {

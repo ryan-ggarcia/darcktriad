@@ -14,8 +14,11 @@ import { loadMonaco } from './editor/monaco-loader';
 import { Tab } from './editor/tab';
 import { ExplorerTree } from './explorer/explorer-tree';
 import { ExplorerView } from './explorer/explorer-view';
+import { Languages } from './language/languages';
+import { LanguageStatus } from './language/language-status';
 import { MainMenu } from './main-menu';
 import { LANGUAGE_NAMES } from './paths';
+import { Problems } from './project/problems';
 import { Project } from './project/project';
 import { ProjectStatus } from './project/project-status';
 import { ToolsView } from './project/tools-view';
@@ -24,6 +27,7 @@ import { Commands } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
 import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
+import { Panel } from './shared/panel';
 import { learnKeyLabel, loadKeyboardLayout, PLATFORM } from './shared/keybindings';
 import { CurrentFolder } from './workspace/current-folder';
 import { TerminalPanel } from './terminal/terminal-panel';
@@ -40,6 +44,7 @@ import { Workspace } from './workspace/workspace';
     EditorArea,
     ExplorerView,
     Icon,
+    LanguageStatus,
     ProjectStatus,
     QuickOpen,
     TerminalPanel,
@@ -61,6 +66,9 @@ export class App {
   private readonly tree = inject(ExplorerTree);
   private readonly terminals = inject(Terminals);
   private readonly project = inject(Project);
+  private readonly languages = inject(Languages);
+  protected readonly problems = inject(Problems);
+  private readonly panel = inject(Panel);
   private readonly dialogs = inject(Dialogs);
   private readonly injector = inject(Injector);
   private readonly explorer = viewChild(ExplorerView);
@@ -166,7 +174,26 @@ export class App {
       selectTarget: () => this.pickTarget(),
       reconfigure: () => this.project.reconfigure(),
       checkTools: () => this.toolsView().show(),
+      goToDefinition: () => this.languages.goToDefinition((pick) => this.quickOpen().pick(pick)),
+      navigateBack: () => this.tabs.back(),
+      navigateForward: () => this.tabs.forward(),
+      showProblems: () => this.panel.show('problems'),
+      nextProblem: () => this.goToProblem(1),
+      previousProblem: () => this.goToProblem(-1),
+      restartCpp: () => this.languages.restart('cpp'),
+      restartCsharp: () => this.languages.restart('csharp'),
     });
+  }
+
+  /** F8 / Shift+F8: o próximo problema, passando de arquivo em arquivo. */
+  private goToProblem(offset: 1 | -1): void {
+    const path = this.tabs.active()?.path();
+    const cursor = this.tabs.cursor();
+    const item = this.problems.next(path && cursor ? { file: path, ...cursor } : null, offset);
+    if (item) {
+      const position = { line: item.startLineNumber, column: item.startColumn };
+      void this.tabs.openAt(item.file, position, false);
+    }
   }
 
   private pickConfig(): void {

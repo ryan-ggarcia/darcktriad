@@ -1,4 +1,5 @@
 import { Eol } from '../ipc';
+import { TextChange } from '../language/lsp';
 
 /** O texto de uma aba. Em produção é um modelo do Monaco; nos testes, um falso em memória. */
 export interface TextBuffer {
@@ -9,6 +10,8 @@ export interface TextBuffer {
   setLanguage(language: string): void;
   /** Muda a cada edição e volta ao valor anterior quando a edição é desfeita. */
   versionId(): number;
+  /** Cada edição, com os trechos no formato do LSP (base 0, no texto de antes). */
+  onEdit(listener: (changes: TextChange[]) => void): () => void;
   dispose(): void;
 }
 

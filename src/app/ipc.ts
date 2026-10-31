@@ -128,6 +128,20 @@ export interface ToolCheck {
   status: ToolStatus;
 }
 
+/** C e C++ (clangd) ou C# (Roslyn). */
+export type Language = 'cpp' | 'csharp';
+
+export type ServerState =
+  | { kind: 'starting' }
+  | { kind: 'running' }
+  | { kind: 'stopped'; reason: string }
+  | { kind: 'noProject' };
+
+export type LanguageEvent =
+  | { kind: 'message'; message: string }
+  | { kind: 'log'; line: string }
+  | { kind: 'state'; state: ServerState };
+
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;
 }
