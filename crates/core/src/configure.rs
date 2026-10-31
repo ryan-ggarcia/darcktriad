@@ -736,8 +736,12 @@ mod tests {
             self.project.open(Path::new(ROOT), choice);
         }
 
+        /// Com `/` em todo sistema: no Windows o `join` do caminho de build põe `\`.
         fn log(&self) -> Vec<String> {
-            lock(&self.log).clone()
+            lock(&self.log)
+                .iter()
+                .map(|line| line.replace('\\', "/"))
+                .collect()
         }
 
         fn output(&self) -> Vec<String> {
@@ -871,7 +875,10 @@ mod tests {
         assert_eq!(state["state"]["buildDir"], "/proj/out/build/debug");
         assert_eq!(
             state["state"]["targets"][0]["path"],
-            "/proj/out/build/debug/app"
+            Path::new("/proj/out/build/debug")
+                .join("app")
+                .to_str()
+                .unwrap()
         );
         let output = serde_json::to_value(ProjectEvent::Output { line: "x".into() }).unwrap();
         assert_eq!(output, serde_json::json!({ "kind": "output", "line": "x" }));
