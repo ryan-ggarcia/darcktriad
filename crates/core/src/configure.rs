@@ -1,4 +1,5 @@
-//! Caso de uso do projeto aberto: detecta o tipo da pasta e, no CMake, configura e lista os alvos.
+//! Caso de uso do projeto aberto: detecta o tipo da pasta e, no CMake e no .NET, configura e lista
+//! os alvos.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -11,10 +12,11 @@ use serde::Serialize;
 
 use crate::tools::tool;
 use crate::{
-    BuildConfig, CMakeProblem, CMakeTarget, Error, ErrorKind, FileApi, FileSystem, Platform,
-    ProcessRunner, ProjectChoice, ProjectKind, Result, ToolProbe, ToolStatus, cmake_build_dir,
-    cmake_configure_args, cmake_preset_args, detect_project, is_hidden, parse_build_dir,
-    parse_cmake_error, parse_preset_names,
+    BuildConfig, CMakeProblem, CMakeTarget, DotnetProperties, Error, ErrorKind, FileApi,
+    FileSystem, Platform, ProcessRunner, ProjectChoice, ProjectKind, Result, ToolProbe, ToolStatus,
+    cmake_build_dir, cmake_configure_args, cmake_preset_args, detect_project, dotnet_property_args,
+    is_hidden, parse_build_dir, parse_cmake_error, parse_dotnet_properties, parse_msbuild_error,
+    parse_preset_names, parse_solution_projects, project::has_extension,
 };
 
 /// Quanto esperar depois do último salvamento de um arquivo do CMake para reconfigurar.
@@ -26,7 +28,7 @@ const DEBUG_RELEASE: [&str; 2] = ["Debug", "Release"];
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ProjectStatus {
-    /// Nada a configurar: sem projeto, ou .NET (ainda não configurado nesta versão).
+    /// Nada a configurar: sem projeto.
     #[default]
     Idle,
     Configuring,
@@ -54,7 +56,7 @@ pub struct ProjectState {
     pub configs: Vec<String>,
     pub config: Option<String>,
     pub status: ProjectStatus,
-    /// A pasta de build da última configuração que deu certo.
+    /// A pasta de build da última configuração do CMake que deu certo; no .NET, `None`.
     pub build_dir: Option<PathBuf>,
     pub targets: Vec<CMakeTarget>,
     pub target: Option<String>,
@@ -67,7 +69,7 @@ pub struct ProjectState {
 // Cada evento vive só até ser enviado à interface; caixa no estado seria só ruído (o lint dispara no Windows).
 #[allow(clippy::large_enum_variant)]
 pub enum ProjectEvent {
-    /// Uma linha do canal CMake da Saída.
+    /// Uma linha da Saída: canal CMake ou dotnet, conforme o `kind` do projeto.
     Output { line: String },
     /// O estado mudou (inclusive um problema novo).
     State { state: ProjectState },
@@ -82,7 +84,7 @@ struct Inner {
     reconfigure_at: Option<Instant>,
 }
 
-type Configured = std::result::Result<(PathBuf, Vec<CMakeTarget>), String>;
+type Configured = std::result::Result<(Option<PathBuf>, Vec<CMakeTarget>), String>;
 
 /// Caso de uso: o projeto da pasta aberta.
 pub struct Project<F, R, A, T> {
@@ -144,16 +146,16 @@ where
         }
     }
 
-    /// Detecta o projeto de `root` e, se for CMake, configura. Volta quando a configuração termina.
+    /// Detecta o projeto de `root` e, se for CMake ou .NET, configura. Volta quando a configuração
+    /// termina.
     pub fn open(&self, root: &Path, choice: ProjectChoice) {
         let detected = detect_project(&self.files_of(root));
-        let cmake = is_cmake(detected.kind);
         {
             let mut inner = self.lock();
             stop(&mut inner);
             let configs: Vec<String> = match detected.kind {
-                ProjectKind::CMake => DEBUG_RELEASE.map(String::from).into(),
-                _ => Vec::new(),
+                ProjectKind::CMakePresets | ProjectKind::EditOnly => Vec::new(),
+                _ => DEBUG_RELEASE.map(String::from).into(),
             };
             inner.state = ProjectState {
                 root: Some(root.into()),
@@ -170,12 +172,12 @@ where
             };
             self.emit_state(&inner);
         }
-        if cmake {
+        if detected.kind != ProjectKind::EditOnly {
             let _ = self.configure();
         }
     }
 
-    /// Esquece o projeto. Uma configuração em andamento é cancelada, e o cmake já morreu na volta.
+    /// Esquece o projeto. Uma configuração em andamento é cancelada, e o processo já morreu na volta.
     pub fn close(&self) {
         {
             let mut inner = self.lock();
@@ -206,8 +208,9 @@ where
         Ok(())
     }
 
-    /// Configura o projeto CMake aberto e volta quando termina. Uma configuração em andamento é
-    /// cancelada. O resultado (pronto ou erro do CMake) fica no estado, não no `Result`.
+    /// Configura o projeto aberto (CMake, ou restore e leitura dos alvos no .NET) e volta quando
+    /// termina. Uma configuração em andamento é cancelada. O resultado (pronto ou erro) fica no
+    /// estado, não no `Result`.
     pub fn configure(&self) -> Result<()> {
         let (generation, cancel, root, kind) = self.begin()?;
         let _running = lock(&self.running);
@@ -301,8 +304,13 @@ where
         let mut inner = self.lock();
         let kind = inner.state.kind;
         let root = (inner.state.root.clone())
-            .filter(|_| is_cmake(kind))
-            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "A pasta aberta não é CMake"))?;
+            .filter(|_| kind != ProjectKind::EditOnly)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    "A pasta aberta não tem projeto CMake nem .NET",
+                )
+            })?;
         stop(&mut inner);
         let state = &mut inner.state;
         state.status = ProjectStatus::Configuring;
@@ -320,7 +328,10 @@ where
         root: &Path,
         kind: ProjectKind,
     ) -> Configured {
-        let cmake = self.find_cmake()?;
+        if !is_cmake(kind) {
+            return self.configure_dotnet(generation, cancel, root, kind);
+        }
+        let cmake = self.find_tool("cmake")?;
         let build_dir = if kind == ProjectKind::CMakePresets {
             let presets = self.list_presets(generation, cancel, &cmake, root)?;
             let preset = self
@@ -343,10 +354,7 @@ where
             }
             build_dir
         } else {
-            let config = match self.lock().state.config.as_deref() {
-                Some("Release") => BuildConfig::Release,
-                _ => BuildConfig::Debug,
-            };
+            let config = self.build_config();
             let has_ninja = matches!(tool("ninja").check(&self.tools), ToolStatus::Present { .. });
             let args = cmake_configure_args(root, config, has_ninja, self.platform)
                 .map_err(|error| error.message)?;
@@ -359,17 +367,167 @@ where
             .file_api
             .executables(&build_dir)
             .map_err(|error| error.message)?;
-        Ok((build_dir, targets))
+        Ok((Some(build_dir), targets))
     }
 
-    fn find_cmake(&self) -> std::result::Result<PathBuf, String> {
-        let cmake = tool("cmake");
-        match cmake.check(&self.tools) {
+    /// `dotnet restore`, a lista de projetos e os alvos executáveis de cada um.
+    fn configure_dotnet(
+        &self,
+        generation: u64,
+        cancel: &AtomicBool,
+        root: &Path,
+        kind: ProjectKind,
+    ) -> Configured {
+        let dotnet = self.find_tool("dotnet")?;
+        let config = self.build_config();
+        let files = self.files_of(root);
+        let projects = if kind == ProjectKind::DotnetSolution {
+            let solution = files
+                .iter()
+                .filter(|file| file.components().count() == 1)
+                .filter(|file| {
+                    let name = file.to_string_lossy();
+                    has_extension(&name, "sln") || has_extension(&name, "slnx")
+                })
+                .min()
+                .map(|file| root.join(file))
+                .ok_or("A solução .sln sumiu da pasta.")?;
+            let restore = ["restore".into(), solution.clone().into()];
+            self.run_dotnet(generation, cancel, &dotnet, &restore, root, true)?;
+            let list = ["sln".into(), solution.into(), "list".into()];
+            let lines = self.run_dotnet(generation, cancel, &dotnet, &list, root, false)?;
+            parse_solution_projects(&lines.join("\n"))
+                .into_iter()
+                .map(|project| root.join(project))
+                .collect()
+        } else {
+            let mut projects: Vec<PathBuf> = files
+                .iter()
+                .filter(|file| has_extension(&file.to_string_lossy(), "csproj"))
+                .map(|file| root.join(file))
+                .collect();
+            projects.sort();
+            for project in &projects {
+                let restore = ["restore".into(), project.into()];
+                self.run_dotnet(generation, cancel, &dotnet, &restore, root, true)?;
+            }
+            projects
+        };
+        let mut targets = Vec::new();
+        for project in &projects {
+            let target = self.dotnet_target(generation, cancel, &dotnet, project, config, root)?;
+            targets.extend(target);
+        }
+        Ok((None, targets))
+    }
+
+    /// O alvo de um projeto .NET, ou `None` se ele não é executável (`Exe`/`WinExe`).
+    fn dotnet_target(
+        &self,
+        generation: u64,
+        cancel: &AtomicBool,
+        dotnet: &Path,
+        project: &Path,
+        config: BuildConfig,
+        root: &Path,
+    ) -> std::result::Result<Option<CMakeTarget>, String> {
+        let read = |framework| {
+            let args = dotnet_property_args(project, config, framework);
+            let lines = self.run_dotnet(generation, cancel, dotnet, &args, root, false)?;
+            parse_dotnet_properties(&lines.join("\n")).ok_or_else(|| {
+                lines
+                    .into_iter()
+                    .for_each(|line| self.output(generation, line));
+                format!(
+                    "O dotnet msbuild não informou as propriedades de {}.",
+                    project.display()
+                )
+            })
+        };
+        let properties: DotnetProperties = read(None)?;
+        if !properties.is_executable() {
+            return Ok(None);
+        }
+        // Com `TargetFrameworks`, o MSBuild só informa o `TargetPath` de um framework escolhido.
+        let properties = match properties.first_framework() {
+            Some(framework) => read(Some(framework))?,
+            None => properties,
+        };
+        if properties.target_path.is_empty() {
+            return Err(format!(
+                "O dotnet msbuild não informou o TargetPath de {}.",
+                project.display()
+            ));
+        }
+        let name = project.file_stem().unwrap_or_default().to_string_lossy();
+        Ok(Some(CMakeTarget {
+            name: name.into(),
+            path: properties.target_path.into(),
+        }))
+    }
+
+    /// Roda o dotnet. Com `live`, mostra o comando e a saída ao vivo no canal dotnet; sem ele, a
+    /// saída só aparece se der erro. Os erros do MSBuild viram problemas.
+    fn run_dotnet(
+        &self,
+        generation: u64,
+        cancel: &AtomicBool,
+        dotnet: &Path,
+        args: &[OsString],
+        root: &Path,
+        live: bool,
+    ) -> std::result::Result<Vec<String>, String> {
+        if live {
+            self.output(generation, format!("> {}", command_line(dotnet, args)));
+        }
+        let mut lines = Vec::new();
+        let success = self
+            .runner
+            .run(dotnet, args, root, cancel, &mut |line| {
+                if live {
+                    self.output(generation, line.to_owned());
+                }
+                lines.push(line.to_owned());
+            })
+            .map_err(|error| run_error("dotnet", error))?;
+        if success {
+            return Ok(lines);
+        }
+        self.update(generation, |state| {
+            for line in &lines {
+                let Some(mut problem) = parse_msbuild_error(line) else {
+                    continue;
+                };
+                problem.file = root.join(problem.file);
+                // O MSBuild repete os erros no resumo do fim.
+                if !state.problems.contains(&problem) {
+                    state.problems.push(problem);
+                }
+            }
+        });
+        if !live {
+            lines
+                .into_iter()
+                .for_each(|line| self.output(generation, line));
+        }
+        Err("O dotnet terminou com erro: veja o canal dotnet da Saída.".into())
+    }
+
+    fn build_config(&self) -> BuildConfig {
+        match self.lock().state.config.as_deref() {
+            Some("Release") => BuildConfig::Release,
+            _ => BuildConfig::Debug,
+        }
+    }
+
+    fn find_tool(&self, program: &str) -> std::result::Result<PathBuf, String> {
+        let tool = tool(program);
+        match tool.check(&self.tools) {
             ToolStatus::Present { path, .. } => Ok(path),
             _ => Err(format!(
-                "Para configurar o projeto é preciso o cmake {} ou mais novo. {}",
-                cmake.minimum.unwrap_or_default(),
-                cmake.install
+                "Para configurar o projeto é preciso o {program} {} ou mais novo. {}",
+                tool.minimum.unwrap_or_default(),
+                tool.install
             )),
         }
     }
@@ -393,7 +551,7 @@ where
                     lines.push(line.to_owned());
                 },
             )
-            .map_err(run_error)?;
+            .map_err(|error| run_error("cmake", error))?;
         let presets = parse_preset_names(&lines.join("\n"));
         if success && !presets.is_empty() {
             return Ok(presets);
@@ -414,12 +572,7 @@ where
         args: &[OsString],
         root: &Path,
     ) -> std::result::Result<Option<PathBuf>, String> {
-        let command = std::iter::once(cmake.as_os_str())
-            .chain(args.iter().map(OsString::as_os_str))
-            .map(OsStr::to_string_lossy)
-            .collect::<Vec<_>>()
-            .join(" ");
-        self.output(generation, format!("> {command}"));
+        self.output(generation, format!("> {}", command_line(cmake, args)));
         let mut build_dir = None;
         // O texto do erro vem na linha seguinte à do arquivo.
         let mut pending: Option<CMakeProblem> = None;
@@ -440,7 +593,7 @@ where
                     self.add_problem(generation, root, problem, line.trim());
                 }
             })
-            .map_err(run_error)?;
+            .map_err(|error| run_error("cmake", error))?;
         if let Some(problem) = pending {
             self.add_problem(generation, root, problem, "");
         }
@@ -462,7 +615,7 @@ where
                     state.target.take(),
                     targets.iter().map(|target| target.name.as_str()),
                 );
-                state.build_dir = Some(build_dir);
+                state.build_dir = build_dir;
                 state.targets = targets;
                 state.status = ProjectStatus::Ready;
             }
@@ -542,8 +695,16 @@ fn unknown(what: &str, name: &str) -> Error {
     Error::new(ErrorKind::InvalidInput, format!("{what}: {name}"))
 }
 
-fn run_error(error: std::io::Error) -> String {
-    format!("Não foi possível rodar o cmake: {error}")
+fn run_error(program: &str, error: std::io::Error) -> String {
+    format!("Não foi possível rodar o {program}: {error}")
+}
+
+fn command_line(program: &Path, args: &[OsString]) -> String {
+    std::iter::once(program.as_os_str())
+        .chain(args.iter().map(OsString::as_os_str))
+        .map(OsStr::to_string_lossy)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn query_error(error: std::io::Error) -> String {
@@ -648,6 +809,7 @@ mod tests {
     struct FakeTools {
         cmake: bool,
         ninja: bool,
+        dotnet: bool,
     }
 
     impl ToolProbe for FakeTools {
@@ -655,6 +817,7 @@ mod tests {
             let found = match program {
                 "cmake" => self.cmake,
                 "ninja" => self.ninja,
+                "dotnet" => self.dotnet,
                 _ => false,
             };
             found
@@ -664,7 +827,7 @@ mod tests {
         }
 
         fn version_output(&self, path: &Path) -> io::Result<String> {
-            Ok(format!("{} version 3.28.3", path.display()))
+            Ok(format!("{} version 10.0.113", path.display()))
         }
     }
 
@@ -689,6 +852,7 @@ mod tests {
                 FakeTools {
                     cmake: true,
                     ninja: true,
+                    dotnet: true,
                 },
                 Vec::new(),
                 script,
@@ -891,6 +1055,7 @@ mod tests {
         let tools = FakeTools {
             cmake: true,
             ninja: false,
+            dotnet: true,
         };
         let fixture = Fixture::with(&["CMakeLists.txt"], tools, Vec::new(), succeed);
         fixture.open(ProjectChoice::default());
@@ -1115,6 +1280,7 @@ mod tests {
         let tools = FakeTools {
             cmake: false,
             ninja: true,
+            dotnet: true,
         };
         let fixture = Fixture::with(&["CMakeLists.txt"], tools, Vec::new(), succeed);
         fixture.open(ProjectChoice::default());
@@ -1150,6 +1316,7 @@ mod tests {
         let tools = FakeTools {
             cmake: true,
             ninja: true,
+            dotnet: true,
         };
         let fixture = Fixture::with(
             &["CMakeLists.txt"],
@@ -1186,5 +1353,273 @@ mod tests {
         wait_until(|| fixture.log().len() >= 2);
         thread::sleep(Duration::from_millis(700));
         assert_eq!(fixture.log().len(), 2, "{:?}", fixture.log());
+    }
+
+    /// Um dotnet que restaura, lista `src/app/app.csproj` na solução e informa as propriedades:
+    /// `app` é Exe e `lib`, biblioteca. Com `multi` no nome, o projeto tem dois frameworks-alvo.
+    fn dotnet(args: &[String], _: &AtomicBool, on_line: &mut dyn FnMut(&str)) -> io::Result<bool> {
+        match args[0].as_str() {
+            "restore" => on_line("  Restored"),
+            "sln" => ["Project(s)", "----------", "src/app/app.csproj"]
+                .iter()
+                .for_each(|line| on_line(line)),
+            _ => {
+                let project = Path::new(&args[1]).file_stem().unwrap().to_str().unwrap();
+                let config = args[5].trim_start_matches("-p:Configuration=");
+                let framework = args
+                    .get(6)
+                    .map(|arg| arg.trim_start_matches("-p:TargetFramework="));
+                let (frameworks, path) = match (project, framework) {
+                    ("multi", None) => ("net10.0;net8.0", String::new()),
+                    (_, framework) => (
+                        "",
+                        format!(
+                            "/proj/bin/{config}/{}/{project}.dll",
+                            framework.unwrap_or("net10.0")
+                        ),
+                    ),
+                };
+                let kind = if project == "lib" { "Library" } else { "Exe" };
+                on_line(
+                    &serde_json::json!({ "Properties": {
+                        "OutputType": kind, "TargetPath": path, "TargetFrameworks": frameworks
+                    }})
+                    .to_string(),
+                );
+            }
+        }
+        Ok(true)
+    }
+
+    fn msbuild_line(project: &str, config: &str, framework: &str) -> String {
+        format!(
+            "/bin/dotnet msbuild {project} -getProperty:OutputType -getProperty:TargetPath \
+             -getProperty:TargetFrameworks -p:Configuration={config}{framework}"
+        )
+    }
+
+    fn target(name: &str, path: &str) -> CMakeTarget {
+        CMakeTarget {
+            name: name.into(),
+            path: path.into(),
+        }
+    }
+
+    #[test]
+    fn dotnet_projects_restore_then_read_the_executable_targets() {
+        let fixture = Fixture::new(&["lib.csproj", "app.csproj", "Program.cs"], dotnet);
+        fixture.open(ProjectChoice::default());
+
+        assert_eq!(
+            fixture.log(),
+            [
+                "/bin/dotnet restore /proj/app.csproj".to_string(),
+                "/bin/dotnet restore /proj/lib.csproj".to_string(),
+                msbuild_line("/proj/app.csproj", "Debug", ""),
+                msbuild_line("/proj/lib.csproj", "Debug", ""),
+            ]
+        );
+        let state = fixture.project.state();
+        assert_eq!(state.kind, ProjectKind::DotnetProjects);
+        assert_eq!(state.configs, DEBUG_RELEASE);
+        assert_eq!(state.config.as_deref(), Some("Debug"));
+        assert_eq!(state.status, ProjectStatus::Ready);
+        assert_eq!(state.build_dir, None);
+        assert_eq!(
+            state.targets,
+            [target("app", "/proj/bin/Debug/net10.0/app.dll")]
+        );
+        assert_eq!(state.target.as_deref(), Some("app"));
+        // Só o restore vai para o canal dotnet; a leitura das propriedades não.
+        assert_eq!(
+            fixture.output(),
+            [
+                "> /bin/dotnet restore /proj/app.csproj",
+                "  Restored",
+                "> /bin/dotnet restore /proj/lib.csproj",
+                "  Restored",
+            ]
+        );
+    }
+
+    #[test]
+    fn dotnet_solution_lists_its_projects_and_multi_target_uses_the_first_framework() {
+        let fixture = Fixture::new(&["b.slnx", "a.sln"], |args, cancel, on_line| {
+            if args[0] == "sln" {
+                on_line("src/multi/multi.csproj");
+                return Ok(true);
+            }
+            dotnet(args, cancel, on_line)
+        });
+        fixture.open(ProjectChoice::default());
+
+        assert_eq!(
+            fixture.log(),
+            [
+                "/bin/dotnet restore /proj/a.sln".to_string(),
+                "/bin/dotnet sln /proj/a.sln list".to_string(),
+                msbuild_line("/proj/src/multi/multi.csproj", "Debug", ""),
+                msbuild_line(
+                    "/proj/src/multi/multi.csproj",
+                    "Debug",
+                    " -p:TargetFramework=net10.0"
+                ),
+            ]
+        );
+        let state = fixture.project.state();
+        assert_eq!(state.kind, ProjectKind::DotnetSolution);
+        assert_eq!(
+            state.targets,
+            [target("multi", "/proj/bin/Debug/net10.0/multi.dll")]
+        );
+    }
+
+    #[test]
+    fn dotnet_saved_choice_is_used_and_changing_the_config_reads_the_targets_again() {
+        let fixture = Fixture::new(&["app.csproj"], dotnet);
+        fixture.open(ProjectChoice {
+            config: Some("Release".into()),
+            target: Some("app".into()),
+        });
+        assert_eq!(
+            fixture.log()[1],
+            msbuild_line("/proj/app.csproj", "Release", "")
+        );
+        assert_eq!(
+            fixture.project.state().targets,
+            [target("app", "/proj/bin/Release/net10.0/app.dll")]
+        );
+
+        fixture.project.select_config("Debug").unwrap();
+        fixture.project.configure().unwrap();
+        let state = fixture.project.state();
+        assert_eq!(
+            state.targets,
+            [target("app", "/proj/bin/Debug/net10.0/app.dll")]
+        );
+        assert_eq!(
+            fixture.project.choice(),
+            ProjectChoice {
+                config: Some("Debug".into()),
+                target: Some("app".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn dotnet_restore_error_becomes_a_problem_and_stops_there() {
+        // Relativo: o arquivo do problema fica absoluto a partir da raiz.
+        let error = "app.csproj(9,5): error MSB4025: The project file could not be loaded. \
+                     [/proj/app.csproj]";
+        let fixture = Fixture::new(&["app.csproj"], move |_, _, on_line| {
+            on_line(error);
+            on_line(error);
+            Ok(false)
+        });
+        fixture.open(ProjectChoice::default());
+
+        assert_eq!(fixture.log(), ["/bin/dotnet restore /proj/app.csproj"]);
+        let state = fixture.project.state();
+        assert_eq!(
+            state.status,
+            ProjectStatus::Failed {
+                message: "O dotnet terminou com erro: veja o canal dotnet da Saída.".into()
+            }
+        );
+        assert_eq!(
+            state.problems,
+            [Problem {
+                file: "/proj/app.csproj".into(),
+                line: 9,
+                message: "MSB4025: The project file could not be loaded.".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn dotnet_msbuild_failure_shows_its_output_in_the_channel() {
+        let fixture = Fixture::new(&["app.csproj"], |args, cancel, on_line| {
+            if args[0] == "msbuild" {
+                on_line("MSBUILD : error MSB1009: Project file does not exist.");
+                return Ok(false);
+            }
+            dotnet(args, cancel, on_line)
+        });
+        fixture.open(ProjectChoice::default());
+
+        assert!(matches!(
+            fixture.project.state().status,
+            ProjectStatus::Failed { .. }
+        ));
+        assert_eq!(
+            fixture.output().last().map(String::as_str),
+            Some("MSBUILD : error MSB1009: Project file does not exist.")
+        );
+    }
+
+    #[test]
+    fn dotnet_without_a_target_path_is_an_error() {
+        let fixture = Fixture::new(&["app.csproj"], |args, _, on_line| {
+            if args[0] == "msbuild" {
+                on_line(
+                    r#"{"Properties": {"OutputType": "Exe", "TargetPath": "", "TargetFrameworks": ""}}"#,
+                );
+            }
+            Ok(true)
+        });
+        fixture.open(ProjectChoice::default());
+
+        let ProjectStatus::Failed { message } = fixture.project.state().status else {
+            panic!("esperava erro");
+        };
+        assert!(message.contains("TargetPath"), "{message}");
+    }
+
+    #[test]
+    fn a_new_dotnet_configure_kills_the_running_restore_first() {
+        let died = Arc::new(AtomicBool::new(false));
+        let script_died = Arc::clone(&died);
+        let fixture = Fixture::new(&["app.csproj"], move |args, cancel, on_line| {
+            if args[0] == "restore" && !script_died.load(Ordering::Acquire) {
+                let result = die_when_cancelled(cancel, &script_died);
+                on_line("atrasada");
+                return result;
+            }
+            dotnet(args, cancel, on_line)
+        });
+        let project = Arc::clone(&fixture.project);
+        let first = thread::spawn(move || project.open(Path::new(ROOT), ProjectChoice::default()));
+        wait_until(|| fixture.log().len() == 1);
+
+        fixture.project.select_config("Release").unwrap();
+        fixture.project.configure().unwrap();
+        first.join().unwrap();
+
+        assert!(died.load(Ordering::Acquire));
+        let state = fixture.project.state();
+        assert_eq!(state.status, ProjectStatus::Ready);
+        assert_eq!(
+            state.targets,
+            [target("app", "/proj/bin/Release/net10.0/app.dll")]
+        );
+        assert!(!fixture.output().contains(&"atrasada".to_string()));
+    }
+
+    #[test]
+    fn missing_dotnet_is_an_error_with_install_steps_and_runs_nothing() {
+        let tools = FakeTools {
+            cmake: true,
+            ninja: true,
+            dotnet: false,
+        };
+        let fixture = Fixture::with(&["app.csproj"], tools, Vec::new(), dotnet);
+        fixture.open(ProjectChoice::default());
+
+        let ProjectStatus::Failed { message } = fixture.project.state().status else {
+            panic!("esperava erro");
+        };
+        assert!(message.contains("dotnet 8"), "{message}");
+        assert!(message.contains("dotnet.microsoft.com"), "{message}");
+        assert!(fixture.log().is_empty());
     }
 }

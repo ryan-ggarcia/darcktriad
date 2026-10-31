@@ -13,6 +13,8 @@ use darktriad_core::ProcessRunner;
 
 /// De quanto em quanto tempo o pedido de cancelamento é conferido.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
+pub(crate) const DOTNET_QUIET: [(&str, &str); 2] =
+    [("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1")];
 
 pub struct StdProcessRunner;
 
@@ -29,6 +31,8 @@ impl ProcessRunner for StdProcessRunner {
         command
             .args(args)
             .current_dir(cwd)
+            // Os dotnet que a IDE roda não mandam telemetria em nome do usuário nem põem o banner na Saída.
+            .envs(DOTNET_QUIET)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -137,6 +141,16 @@ mod tests {
 
         let (result, _) = run("exit 3", &cancel);
         assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn dotnet_runs_without_telemetry_or_banner() {
+        let (result, lines) = run(
+            "echo $DOTNET_CLI_TELEMETRY_OPTOUT$DOTNET_NOLOGO",
+            &AtomicBool::new(false),
+        );
+        assert!(result.unwrap());
+        assert_eq!(lines, ["11"]);
     }
 
     #[test]

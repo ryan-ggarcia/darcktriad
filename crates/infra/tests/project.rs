@@ -1,5 +1,5 @@
-//! Projeto CMake (docs/specs/projeto.md) com o cmake de verdade, numa cópia temporária das
-//! fixtures. Sem `cmake` no PATH os testes são pulados com um aviso. Fora do Windows: lá o
+//! Projeto CMake e .NET (docs/specs/projeto.md) com o cmake e o dotnet de verdade, numa cópia
+//! temporária das fixtures. Sem a ferramenta no PATH os testes são pulados com um aviso. Fora do Windows: lá o
 //! compilador depende do ambiente do vcvars, que ainda não é aplicado.
 #![cfg(not(windows))]
 
@@ -44,11 +44,11 @@ fn probe() -> SystemToolProbe {
     SystemToolProbe::new(std::env::temp_dir().join("darktriad-sem-ferramentas"))
 }
 
-/// Configura uma cópia da fixture e devolve o estado final e as linhas do canal CMake.
-/// `None` quando não há cmake para testar.
-fn configure(name: &str) -> Option<(TempDir, ProjectState, Vec<String>)> {
-    if probe().find("cmake").is_empty() {
-        eprintln!("PULADO: `cmake` não está no PATH; o teste de integração do CMake não rodou.");
+/// Configura uma cópia da fixture com `tool` e devolve o estado final e as linhas da Saída.
+/// `None` quando não há `tool` para testar.
+fn configure(name: &str, tool: &str) -> Option<(TempDir, ProjectState, Vec<String>)> {
+    if probe().find(tool).is_empty() {
+        eprintln!("PULADO: `{tool}` não está no PATH; o teste de integração de {name} não rodou.");
         return None;
     }
     let path = std::env::temp_dir().join(format!("darktriad-{name}-{}", std::process::id()));
@@ -111,7 +111,7 @@ fn assert_ready(state: &ProjectState, output: &[String], build_dir: &Path) {
 
 #[test]
 fn hello_cpp_configures_in_build_debug_with_app_and_tool() {
-    let Some((root, state, output)) = configure("hello-cpp") else {
+    let Some((root, state, output)) = configure("hello-cpp", "cmake") else {
         return;
     };
     assert_eq!(state.configs, ["Debug", "Release"]);
@@ -125,11 +125,29 @@ fn hello_cpp_configures_in_build_debug_with_app_and_tool() {
 
 #[test]
 fn hello_cpp_presets_uses_the_binary_dir_of_the_preset() {
-    let Some((root, state, output)) = configure("hello-cpp-presets") else {
+    let Some((root, state, output)) = configure("hello-cpp-presets", "cmake") else {
         return;
     };
     assert_eq!(state.configs, ["debug", "release"]);
     assert_eq!(state.config.as_deref(), Some("debug"));
     assert_ready(&state, &output, &root.0.join("out/build/debug"));
     assert!(!root.0.join("build").exists());
+}
+
+#[test]
+fn hello_cs_restores_and_targets_its_dll() {
+    let Some((root, state, output)) = configure("hello-cs", "dotnet") else {
+        return;
+    };
+    assert_eq!(state.status, ProjectStatus::Ready, "{}", output.join("\n"));
+    assert_eq!(state.configs, ["Debug", "Release"]);
+    assert_eq!(state.config.as_deref(), Some("Debug"));
+    assert_eq!(state.target.as_deref(), Some("hello-cs"));
+    let [target] = state.targets.as_slice() else {
+        panic!("{:?}", state.targets);
+    };
+    assert_eq!(target.name, "hello-cs");
+    assert_eq!(target.path, root.0.join("bin/Debug/net10.0/hello-cs.dll"));
+    assert!(output[0].starts_with("> ") && output[0].contains(" restore "));
+    assert!(root.0.join("obj/project.assets.json").is_file());
 }

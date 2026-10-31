@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 
 use darktriad_core::ToolProbe;
 
+use crate::process::DOTNET_QUIET;
+
 /// Uma ferramenta que não responde ao `--version` nesse tempo é tratada como sem versão.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -66,7 +68,10 @@ impl ToolProbe for SystemToolProbe {
     }
 
     fn version_output(&self, path: &Path) -> io::Result<String> {
-        output_within(Command::new(path).arg("--version"), self.timeout)
+        output_within(
+            Command::new(path).arg("--version").envs(DOTNET_QUIET),
+            self.timeout,
+        )
     }
 }
 
@@ -250,6 +255,17 @@ mod tests {
                 path: root.join("bin/clangd"),
                 version: Some("16.0.0".into()),
             }
+        );
+    }
+
+    #[test]
+    fn dotnet_version_runs_without_telemetry_or_banner() {
+        let root = TempDir::new("probe-quiet");
+        let dotnet = root.join("bin/dotnet");
+        script(&dotnet, "echo $DOTNET_CLI_TELEMETRY_OPTOUT$DOTNET_NOLOGO");
+        assert_eq!(
+            probe(&root, &[]).version_output(&dotnet).unwrap().trim(),
+            "11"
         );
     }
 

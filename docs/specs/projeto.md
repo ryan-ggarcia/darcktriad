@@ -115,7 +115,7 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
 2. **Quando configura:**
    - ao abrir a pasta;
    - ao trocar de configuração;
-   - pelo comando **Projeto: Reconfigurar CMake**;
+   - pelo comando **Projeto: Reconfigurar** (no .NET, roda o restore e lê os alvos de novo);
    - ao salvar `CMakeLists.txt`, `*.cmake`, `CMakePresets.json` ou `CMakeUserPresets.json`. Esperar 1 s depois do último salvamento, para não configurar a cada Ctrl+S seguido.
 3. **Andamento:**
    - A barra de status mostra "CMake: configurando…".
@@ -179,7 +179,7 @@ O VS Code não tem atalhos padrão para escolher configuração, alvo ou reconfi
 |---|---|
 | Projeto: Selecionar configuração | nenhum (paleta / barra de status) |
 | Projeto: Selecionar alvo | nenhum (paleta / barra de status) |
-| Projeto: Reconfigurar CMake | nenhum (paleta) |
+| Projeto: Reconfigurar | nenhum (paleta) |
 | Ferramentas: Verificar e instalar | nenhum (paleta / menu Ajuda); ver [ferramentas.md](ferramentas.md) |
 
 ## Critérios de aceite

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{Error, ErrorKind, Platform, Result};
+use crate::{Error, ErrorKind, Platform, Problem, Result};
 
 const EXPORT_COMPILE_COMMANDS: &str = "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON";
 
@@ -242,6 +242,100 @@ pub fn parse_cmake_error(line: &str) -> Option<CMakeProblem> {
     Some(CMakeProblem {
         file: file.into(),
         line: line.parse().ok()?,
+    })
+}
+
+/// Argumentos do `dotnet msbuild` que leem `OutputType`, `TargetPath` e `TargetFrameworks`.
+/// `framework` escolhe um dos `TargetFrameworks`: só com ele o MSBuild informa o `TargetPath`.
+pub fn dotnet_property_args(
+    project: &Path,
+    config: BuildConfig,
+    framework: Option<&str>,
+) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec![
+        "msbuild".into(),
+        project.into(),
+        "-getProperty:OutputType".into(),
+        "-getProperty:TargetPath".into(),
+        "-getProperty:TargetFrameworks".into(),
+        format!("-p:Configuration={}", config.name()).into(),
+    ];
+    args.extend(framework.map(|framework| format!("-p:TargetFramework={framework}").into()));
+    args
+}
+
+/// O que `dotnet msbuild -getProperty` informa de um projeto.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DotnetProperties {
+    pub output_type: String,
+    /// Vazio quando o projeto tem `TargetFrameworks` e nenhum foi escolhido.
+    pub target_path: String,
+    pub target_frameworks: String,
+}
+
+impl DotnetProperties {
+    /// Só `Exe` e `WinExe` rodam; bibliotecas não são alvo.
+    pub fn is_executable(&self) -> bool {
+        ["Exe", "WinExe"]
+            .iter()
+            .any(|kind| self.output_type.eq_ignore_ascii_case(kind))
+    }
+
+    /// O primeiro de `TargetFrameworks` (`"net10.0;net8.0"`), o que o MVP usa.
+    pub fn first_framework(&self) -> Option<&str> {
+        self.target_frameworks
+            .split(';')
+            .map(str::trim)
+            .find(|framework| !framework.is_empty())
+    }
+}
+
+/// Lê a saída de `dotnet msbuild` com várias `-getProperty`: um JSON `{"Properties": {...}}`.
+/// O que vier antes ou depois do JSON (avisos do SDK) é ignorado.
+pub fn parse_dotnet_properties(output: &str) -> Option<DotnetProperties> {
+    let json = &output[output.find('{')?..=output.rfind('}')?];
+    let value: Value = serde_json::from_str(json).ok()?;
+    let property = |name: &str| value["Properties"][name].as_str().map(str::to_owned);
+    Some(DotnetProperties {
+        output_type: property("OutputType")?,
+        target_path: property("TargetPath")?,
+        target_frameworks: property("TargetFrameworks")?,
+    })
+}
+
+/// Os `.csproj` da saída de `dotnet sln <sln> list`, relativos à pasta da solução. O cabeçalho
+/// muda com o idioma do SDK, por isso vale o fim da linha.
+pub fn parse_solution_projects(output: &str) -> Vec<PathBuf> {
+    output
+        .lines()
+        .filter(|line| has_extension(line, "csproj"))
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// `true` se o nome termina em `.<extension>`, sem diferenciar maiúsculas.
+pub(crate) fn has_extension(name: &str, extension: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
+}
+
+/// Lê uma linha de erro do MSBuild (`<arquivo>(<linha>,<coluna>): error <CÓDIGO>: <texto>`).
+/// O arquivo fica como o MSBuild escreveu: relativo à pasta do projeto ou absoluto.
+pub fn parse_msbuild_error(line: &str) -> Option<Problem> {
+    let (place, message) = line.trim().split_once("): error ")?;
+    // Corta pelo último `(`: a pasta também pode ter parênteses ("Program Files (x86)").
+    let (file, position) = place.rsplit_once('(')?;
+    let line = position.split(',').next()?.parse().ok()?;
+    // O MSBuild põe o projeto no fim: " [/caminho/app.csproj]".
+    let message = match message.strip_suffix(']') {
+        Some(rest) => rest.rsplit_once(" [").map_or(message, |(text, _)| text),
+        None => message,
+    };
+    Some(Problem {
+        file: file.into(),
+        line,
+        message: message.into(),
     })
 }
 
@@ -486,6 +580,130 @@ mod tests {
         );
         assert_eq!(
             parse_cmake_error("  Unknown CMake command \"add_executabl\"."),
+            None
+        );
+    }
+
+    #[test]
+    fn dotnet_property_args_are_exact() {
+        let project = Path::new("/proj/app.csproj");
+        let expected = |config: &str| -> Vec<OsString> {
+            vec![
+                "msbuild".into(),
+                project.into(),
+                "-getProperty:OutputType".into(),
+                "-getProperty:TargetPath".into(),
+                "-getProperty:TargetFrameworks".into(),
+                format!("-p:Configuration={config}").into(),
+            ]
+        };
+        assert_eq!(
+            dotnet_property_args(project, BuildConfig::Debug, None),
+            expected("Debug")
+        );
+        let mut release = expected("Release");
+        release.push("-p:TargetFramework=net8.0".into());
+        assert_eq!(
+            dotnet_property_args(project, BuildConfig::Release, Some("net8.0")),
+            release
+        );
+    }
+
+    #[test]
+    fn dotnet_properties_come_from_the_msbuild_json() {
+        // Saída real do SDK 10.0.113 com o hello-cs (Debug); a pasta da máquina virou /projeto.
+        let output = "{\n  \"Properties\": {\n    \"OutputType\": \"Exe\",\n    \"TargetPath\": \
+                      \"/projeto/hello-cs/bin/Debug/net10.0/hello-cs.dll\",\n    \
+                      \"TargetFrameworks\": \"\"\n  }\n}\n";
+        let hello = DotnetProperties {
+            output_type: "Exe".into(),
+            target_path: "/projeto/hello-cs/bin/Debug/net10.0/hello-cs.dll".into(),
+            target_frameworks: String::new(),
+        };
+        assert_eq!(parse_dotnet_properties(output), Some(hello.clone()));
+        // Um aviso do SDK antes do JSON não atrapalha.
+        let noisy = format!("An issue was encountered verifying workloads.\n{output}");
+        assert_eq!(parse_dotnet_properties(&noisy), Some(hello.clone()));
+        assert!(hello.is_executable());
+        assert_eq!(hello.first_framework(), None);
+
+        assert_eq!(parse_dotnet_properties(""), None);
+        assert_eq!(parse_dotnet_properties("{\"Properties\": {}}"), None);
+    }
+
+    #[test]
+    fn only_exe_and_winexe_run_and_the_first_framework_counts() {
+        let properties = |output_type: &str, frameworks: &str| DotnetProperties {
+            output_type: output_type.into(),
+            target_frameworks: frameworks.into(),
+            ..DotnetProperties::default()
+        };
+        assert!(properties("WinExe", "").is_executable());
+        assert!(!properties("Library", "").is_executable());
+        assert_eq!(
+            properties("Exe", " net10.0 ; net8.0").first_framework(),
+            Some("net10.0")
+        );
+        assert_eq!(properties("Exe", ";").first_framework(), None);
+    }
+
+    #[test]
+    fn solution_projects_come_from_sln_list_in_any_language() {
+        // Saída real do SDK 10.0.113, em inglês e com DOTNET_CLI_UI_LANGUAGE=pt-BR.
+        let english = "Project(s)\n----------\nsrc/hello/hello-cs.csproj\n../multi/multi.csproj\n";
+        assert_eq!(
+            parse_solution_projects(english),
+            paths(&["src/hello/hello-cs.csproj", "../multi/multi.csproj"])
+        );
+        let portuguese = "Projetos\r\n--------\r\nsrc/hello/hello-cs.csproj\r\nlib/a.fsproj\r\n";
+        assert_eq!(
+            parse_solution_projects(portuguese),
+            paths(&["src/hello/hello-cs.csproj"])
+        );
+    }
+
+    #[test]
+    fn msbuild_errors_become_problems_with_file_and_line() {
+        let problem = |file: &str, line, message: &str| {
+            Some(Problem {
+                file: file.into(),
+                line,
+                message: message.into(),
+            })
+        };
+        // Saída real do `dotnet restore` com o fechamento de uma tag trocado.
+        assert_eq!(
+            parse_msbuild_error(
+                "/projeto/bad/bad.csproj(9,5): error MSB4025: The project file could not be \
+                 loaded. Line 9, position 5."
+            ),
+            problem(
+                "/projeto/bad/bad.csproj",
+                9,
+                "MSB4025: The project file could not be loaded. Line 9, position 5."
+            )
+        );
+        assert_eq!(
+            parse_msbuild_error(
+                "  C:\\Program Files (x86)\\a\\Program.cs(3,10,3,11): error CS1002: ; expected \
+                 [C:\\a\\a.csproj]"
+            ),
+            problem(
+                "C:\\Program Files (x86)\\a\\Program.cs",
+                3,
+                "CS1002: ; expected"
+            )
+        );
+        assert_eq!(
+            parse_msbuild_error("a.csproj(4): error NU1101: [x] not found"),
+            problem("a.csproj", 4, "NU1101: [x] not found")
+        );
+        assert_eq!(
+            parse_msbuild_error("Program.cs(3,10): warning CS0168: unused"),
+            None
+        );
+        assert_eq!(
+            parse_msbuild_error("MSBUILD : error MSB1009: Project file does not exist."),
             None
         );
     }

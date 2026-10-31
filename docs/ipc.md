@@ -97,14 +97,14 @@ type TerminalEvent =
 type ProjectKind = 'cmake' | 'cmakePresets' | 'dotnetSolution' | 'dotnetProjects' | 'editOnly';
 
 type ProjectStatus =
-  | { kind: 'idle' }                      // nada a configurar: sem projeto, ou .NET (ainda não nesta versão)
-  | { kind: 'configuring' }               // "CMake: configurando…"
+  | { kind: 'idle' }                      // nada a configurar: sem projeto
+  | { kind: 'configuring' }               // "CMake: configurando…" / ".NET: configurando…"
   | { kind: 'ready' }                     // configurado: `targets` vale
-  | { kind: 'failed'; message: string };  // "CMake: erro (ver Saída)"; `message` já vem pronta
+  | { kind: 'failed'; message: string };  // "CMake: erro (ver Saída)" / ".NET: erro (ver Saída)"; `message` já vem pronta
 
 interface CMakeTarget {
   name: string; // 'app'
-  path: Path;   // caminho absoluto do executável (pode ainda não existir antes de compilar)
+  path: Path;   // absoluto, pode ainda não existir antes de compilar. CMake: o executável; .NET: o TargetPath (o .dll)
 }
 
 interface Problem {
@@ -117,17 +117,17 @@ interface ProjectState {
   root: Path | null;          // null sem pasta aberta
   kind: ProjectKind;
   warning: string | null;     // ex.: "Também há um projeto .NET aqui…"
-  configs: string[];          // CMake: ['Debug', 'Release']; com presets: os nomes do `cmake --list-presets`
+  configs: string[];          // CMake e .NET: ['Debug', 'Release']; com presets: os nomes do `cmake --list-presets`
   config: string | null;      // a configuração ativa
   status: ProjectStatus;
-  buildDir: Path | null;      // a pasta de build da última configuração pronta
+  buildDir: Path | null;      // CMake: a pasta de build da última configuração pronta; .NET: sempre null
   targets: CMakeTarget[];     // só executáveis; vazio enquanto configura ou com erro
   target: string | null;      // o nome do alvo ativo
-  problems: Problem[];        // os erros da configuração atual
+  problems: Problem[];        // os erros da configuração atual (CMake, ou MSBuild/restore no .NET)
 }
 
 type ProjectEvent =
-  | { kind: 'output'; line: string }          // uma linha do canal CMake da Saída, sem o fim de linha
+  | { kind: 'output'; line: string }          // uma linha da Saída, sem o fim de linha: canal CMake (kind cmake/cmakePresets) ou dotnet (dotnetSolution/dotnetProjects)
   | { kind: 'state'; state: ProjectState };  // o estado novo inteiro: substitua o anterior
 
 type ToolStatus =
@@ -278,28 +278,30 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - **Fechar:** `terminal_close` encerra o shell e o que roda nele. Chame também para um terminal cujo shell já terminou, para liberá-lo. Depois do `close` ainda chega o `exited`; ignore-o.
 - **Fechar a IDE:** o núcleo encerra todos os terminais sozinho. A interface não precisa fechar um por um.
 
-### Projeto (CMake)
+### Projeto (CMake e .NET)
 
 | Comando | Parâmetros | Retorno | Erros |
 |---|---|---|---|
 | `project_state` | — | `ProjectState` | — |
 | `project_select_config` | `{ config: string }` | `void` | `invalidInput` (fora de `configs`); `other` (falha ao gravar a escolha) |
 | `project_select_target` | `{ target: string }` | `void` | `invalidInput` (fora de `targets`); `other` |
-| `project_reconfigure` | — | `void` | `invalidInput` (a pasta aberta não é CMake) |
+| `project_reconfigure` | — | `void` | `invalidInput` (a pasta aberta não tem projeto CMake nem .NET) |
 
-- **Ao abrir a pasta:** `open_folder` detecta o projeto e, se for CMake, começa a configurar em segundo plano, sem atrasar a resposta. Acompanhe pelo evento `project-event`. Ao iniciar a interface, ou ao abrir a pasta, chame `project_state` uma vez para ter o estado inicial.
-- **Barra de status:** `kind` (`cmake`/`cmakePresets` → "CMake"), `config` e `target`. Com `status.kind === 'configuring'`, mostre "CMake: configurando…". Com `failed`, mostre "CMake: erro (ver Saída)" e abra o painel Saída no canal CMake. Com `kind: 'editOnly'`, "Sem projeto (só edição)". Com `warning`, mostre o aviso uma vez.
+- **Ao abrir a pasta:** `open_folder` detecta o projeto e, se for CMake ou .NET, começa a configurar em segundo plano, sem atrasar a resposta. Acompanhe pelo evento `project-event`. Ao iniciar a interface, ou ao abrir a pasta, chame `project_state` uma vez para ter o estado inicial.
+- **Barra de status:** `kind` (`cmake`/`cmakePresets` → "CMake"; `dotnetSolution`/`dotnetProjects` → ".NET"), `config` e `target`. Com `status.kind === 'configuring'`, mostre "CMake: configurando…" (ou ".NET: configurando…"). Com `failed`, mostre "CMake: erro (ver Saída)" (ou ".NET: erro (ver Saída)") e abra o painel Saída no canal do projeto. Com `kind: 'editOnly'`, "Sem projeto (só edição)". Com `warning`, mostre o aviso uma vez.
 - **Configurações:**
   - Sem presets: `Debug` e `Release`, com build em `<raiz>/build/debug` ou `<raiz>/build/release`.
   - Com presets: `configs` só chega depois da primeira configuração (vem do `cmake --list-presets`). A pasta de build é a do `binaryDir` do preset.
+  - .NET: `Debug` e `Release`. Trocar relê os alvos.
+- **.NET:** configurar é rodar `dotnet restore` (a solução da raiz, ou cada `.csproj`), listar os projetos (`dotnet sln <sln> list`) e ler `OutputType`, `TargetPath` e `TargetFrameworks` de cada um com `dotnet msbuild -getProperty`. Os alvos são os projetos `Exe`/`WinExe`, com o nome do `.csproj` sem extensão e o `TargetPath` (o `.dll`, que roda com `dotnet <dll>`). Com vários frameworks-alvo, vale o primeiro. Salvar arquivos do projeto não reconfigura: use `project_reconfigure`. Os `dotnet` que a IDE roda têm `DOTNET_CLI_TELEMETRY_OPTOUT=1` e `DOTNET_NOLOGO=1`.
 - **Selecionar configuração:** `project_select_config` guarda a escolha da pasta e configura de novo. Responde quando a configuração termina; o resultado (pronto ou erro) vem no estado, não como erro do comando.
 - **Selecionar alvo:** `project_select_target` só aceita um nome de `targets` e guarda a escolha. Não configura.
 - **Escolha guardada:** a configuração e o alvo ficam salvos por pasta, na pasta de dados do app. Ao reabrir, valem se ainda existirem; senão, o primeiro da lista.
-- **Uma configuração por vez:** pedir outra (trocar configuração, reconfigurar ou salvar um arquivo do CMake) durante uma em andamento cancela a atual. O cmake e o que ele iniciou morrem antes de a nova começar, e nada da antiga chega depois do aviso da nova.
+- **Uma configuração por vez:** pedir outra (trocar configuração, reconfigurar ou salvar um arquivo do CMake) durante uma em andamento cancela a atual. O cmake/dotnet e o que ele iniciou morrem antes de a nova começar, e nada da antiga chega depois do aviso da nova.
 - **Reconfigurar ao salvar:** salvar `CMakeLists.txt`, `*.cmake`, `CMakePresets.json` ou `CMakeUserPresets.json` dentro da pasta aberta reconfigura 1 s depois do último salvamento. O que o próprio CMake grava nas pastas de build não conta. A interface não precisa fazer nada.
-- **Canal CMake:** cada `output` é uma linha. A primeira de cada execução é o comando, começando com `> `. Limpe o canal quando quiser (ex.: a cada `configuring`); o núcleo não guarda o histórico.
-- **Problemas:** cada linha `CMake Error at <arquivo>:<linha>` vira um item de `problems`, com o arquivo absoluto. Clicar abre o arquivo na linha (`read_file`). A lista é zerada a cada configuração, então o erro some quando a configuração seguinte passa.
-- **Fechar a pasta ou a IDE:** a configuração em andamento é cancelada, e o cmake não sobrevive.
+- **Canal da Saída:** o evento não diz o canal: ele é o do `kind` do estado (CMake ou dotnet). Um estado novo sempre chega antes das linhas da configuração dele. Cada `output` é uma linha. A primeira de cada execução é o comando, começando com `> `. No .NET, só o `dotnet restore` vai ao vivo; a lista de projetos e a leitura das propriedades só aparecem se derem erro. Limpe o canal quando quiser (ex.: a cada `configuring`); o núcleo não guarda o histórico.
+- **Problemas:** cada linha `CMake Error at <arquivo>:<linha>` (CMake) ou `<arquivo>(<linha>,<coluna>): error <CÓDIGO>: <texto>` (MSBuild/restore, quando o dotnet falha) vira um item de `problems`, com o arquivo absoluto. Clicar abre o arquivo na linha (`read_file`). A lista é zerada a cada configuração, então o erro some quando a configuração seguinte passa.
+- **Fechar a pasta ou a IDE:** a configuração em andamento é cancelada, e o cmake/dotnet não sobrevive.
 
 ### Ferramentas
 
@@ -356,7 +358,7 @@ Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
 
 ### `project-event`
 
-Payload: `ProjectEvent`. As linhas do canal CMake (`output`) e cada mudança do projeto (`state`), na ordem em que acontecem. Veja [Projeto (CMake)](#projeto-cmake).
+Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake ou dotnet) e cada mudança do projeto (`state`), na ordem em que acontecem. Veja [Projeto (CMake e .NET)](#projeto-cmake-e-net).
 
 ## Fluxos
 
@@ -376,7 +378,7 @@ Payload: `ProjectEvent`. As linhas do canal CMake (`output`) e cada mudança do 
   - Mudanças no `.git/info/exclude` só valem depois de reabrir a pasta, porque o observador ignora `.git`.
 - Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
 - Projeto:
-  - .NET: a pasta é detectada (`kind`), mas ainda não há restore, configurações nem alvos (`status: idle`).
+  - .NET: salvar `.csproj`/`.sln` não reconfigura (use `project_reconfigure`), e erros de restore sem linha e coluna (ex.: `NU1101`) só aparecem na Saída.
   - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`), a busca de ferramentas não olha `C:\Program Files\LLVM\bin`, e cancelar a configuração mata o cmake mas não os processos que ele iniciou.
   - No macOS, a reconfiguração ao salvar depende dos caminhos do `fs-changed`, que vêm canônicos (veja abaixo).
   - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, aberta pelo Finder, ela não tem o `PATH` do `~/.zprofile` (Homebrew).
