@@ -99,3 +99,11 @@ pub trait TerminalProcess: Send + Sync {
 pub trait PtySpawner: Send + Sync {
     fn spawn(&self, program: &Path, cwd: &Path, size: TerminalSize) -> io::Result<SpawnedTerminal>;
 }
+
+/// Busca de ferramentas externas (cmake, clangd…).
+pub trait ToolProbe: Send + Sync {
+    /// Os caminhos de `program`, na ordem de busca da IDE: `PATH`, caminhos conhecidos, pasta da IDE.
+    fn find(&self, program: &str) -> Vec<PathBuf>;
+    /// O que `<path> --version` escreve.
+    fn version_output(&self, path: &Path) -> io::Result<String>;
+}
