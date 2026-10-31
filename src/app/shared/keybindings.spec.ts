@@ -2,6 +2,7 @@ import { bindingsFor } from './commands';
 import {
   formatAccelerator,
   formatChord,
+  learnKeyLabel,
   parseChord,
   Platform,
   ShortcutDispatcher,
@@ -89,6 +90,23 @@ describe('atalhos', () => {
     expect(chord('Mod+Shift+S', 'mac')).toBe('⇧⌘S');
     expect(chord('Mod+Alt+Right', 'mac')).toBe('⌥⌘→');
     expect(chord('Mod+/', 'windows')).toBe('Ctrl+/');
+  });
+
+  it('mostra o caractere que a tecla à esquerda do 1 produz no layout, como o VS Code', () => {
+    const terminal = () => formatChord(parseChord('Ctrl+`', 'linux'), 'linux');
+    const press = (keyText: string, modifiers: KeyboardEventInit = {}) =>
+      learnKeyLabel(
+        new KeyboardEvent('keydown', { code: 'Backquote', key: keyText, ...modifiers }),
+      );
+
+    expect(terminal()).toBe('Ctrl+`');
+    press('Dead');
+    press('"', { shiftKey: true });
+    expect(terminal()).toBe('Ctrl+`');
+    // ABNT2: a tecla física do Backquote escreve '.
+    press("'", { ctrlKey: true });
+    expect(terminal()).toBe("Ctrl+'");
+    press('`');
   });
 
   it('escreve o atalho do menu nativo no formato do Tauri', () => {

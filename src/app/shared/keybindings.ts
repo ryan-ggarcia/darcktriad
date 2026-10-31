@@ -1,5 +1,7 @@
 /** Atalhos de teclado: leitura de eventos, texto do atalho e acordes (Ctrl+K …). */
 
+import { signal } from '@angular/core';
+
 export type Platform = 'windows' | 'mac' | 'linux';
 
 export const PLATFORM: Platform = navigator.userAgent.includes('Mac')
@@ -37,9 +39,27 @@ const LABELS: Record<string, string> = {
   BracketLeft: '[',
   BracketRight: ']',
   Slash: '/',
-  Backquote: '`',
   Escape: 'Esc',
 };
+
+/** O caractere da tecla à esquerda do 1 no layout do usuário (`'` no ABNT2), como o VS Code mostra. */
+const backquoteLabel = signal('`');
+
+/** Lê o layout onde há `navigator.keyboard.getLayoutMap()` (WebView2); o WebKitGTK não tem. */
+export async function loadKeyboardLayout(): Promise<void> {
+  const keyboard = (navigator as { keyboard?: { getLayoutMap?(): Promise<Map<string, string>> } })
+    .keyboard;
+  const key = (await keyboard?.getLayoutMap?.())?.get('Backquote');
+  if (key) backquoteLabel.set(key);
+}
+
+/** Sem o mapa do layout, aprende o caractere na primeira vez que a tecla é apertada. */
+export function learnKeyLabel(event: KeyboardEvent): void {
+  // Shift e AltGr dão outro caractere; tecla morta vem como "Dead".
+  if (event.code === 'Backquote' && !event.shiftKey && !event.altKey && event.key.length === 1) {
+    backquoteLabel.set(event.key);
+  }
+}
 
 /** `Mod` é Ctrl, ou ⌘ no macOS; as partes de um acorde são separadas por espaço. */
 export function parseChord(text: string, platform: Platform): KeyStroke[] {
@@ -65,7 +85,10 @@ export function formatChord(chord: KeyStroke[], platform: Platform): string {
 }
 
 export function formatStroke(stroke: KeyStroke, platform: Platform): string {
-  const key = LABELS[stroke.code] ?? stroke.code.replace(/^(Key|Digit)/, '');
+  const key =
+    stroke.code === 'Backquote'
+      ? backquoteLabel()
+      : (LABELS[stroke.code] ?? stroke.code.replace(/^(Key|Digit)/, ''));
   if (platform === 'mac') {
     const mods = `${stroke.ctrl ? '⌃' : ''}${stroke.alt ? '⌥' : ''}${stroke.shift ? '⇧' : ''}`;
     return `${mods}${stroke.meta ? '⌘' : ''}${key}`;

@@ -38,7 +38,8 @@ export class XtermScreens extends TerminalScreens {
     const terminal = new Terminal({
       scrollback: 10_000,
       fontSize: 14,
-      fontFamily: "Menlo, Monaco, Consolas, 'Droid Sans Mono', 'Courier New', monospace",
+      fontFamily:
+        "Menlo, Monaco, Consolas, 'Droid Sans Mono', 'Adwaita Mono', 'DejaVu Sans Mono', 'Liberation Mono', 'Ubuntu Mono', 'Courier New', monospace",
       theme: { background: '#181818', foreground: '#cccccc' },
     });
     const fitAddon = new FitAddon();

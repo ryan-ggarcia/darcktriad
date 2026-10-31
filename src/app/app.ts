@@ -24,7 +24,7 @@ import { Commands } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
 import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
-import { PLATFORM } from './shared/keybindings';
+import { learnKeyLabel, loadKeyboardLayout, PLATFORM } from './shared/keybindings';
 import { CurrentFolder } from './workspace/current-folder';
 import { TerminalPanel } from './terminal/terminal-panel';
 import { Terminals } from './terminal/terminals';
@@ -81,6 +81,7 @@ export class App {
 
   constructor() {
     this.registerCommands();
+    void loadKeyboardLayout();
     inject(MainMenu).start();
     void this.project.start();
     void this.workspace.start().then(() => {
@@ -91,6 +92,7 @@ export class App {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    learnKeyLabel(event);
     // Recarregar a página (F5, Ctrl+R) apagaria as edições não salvas.
     if (event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.code === 'KeyR')) {
       event.preventDefault();
