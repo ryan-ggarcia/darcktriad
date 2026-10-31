@@ -1,6 +1,6 @@
-# Contrato IPC: núcleo ↔ interface (v0.2)
+# Contrato IPC: núcleo ↔ interface (v0.4)
 
-Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md). A implementação está em `src-tauri/src/main.rs`.
+Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md) e [terminal.md](specs/terminal.md). A implementação está em `src-tauri/src/main.rs`.
 
 - **Comandos:** `invoke<T>('nome', { ...parâmetros })`, de `@tauri-apps/api/core`. Todos são assíncronos e rodam fora da thread de UI.
 - **Eventos:** `listen<T>('nome', handler)`, de `@tauri-apps/api/event`.
@@ -84,6 +84,15 @@ type MenuEntry =
 
 /** Ação de edição nativa; só faz diferença no macOS (ver `set_menu`). */
 type EditRole = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll';
+
+interface TerminalInfo {
+  id: number;
+  name: string; // nome do shell para a lista: 'pwsh', 'powershell', 'bash', 'zsh'…
+}
+
+type TerminalEvent =
+  | { kind: 'output'; data: string }        // texto com as sequências de escape intactas: passe direto ao xterm.js
+  | { kind: 'exited'; code: number | null }; // o shell terminou; sempre o último evento do terminal
 ```
 
 Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com uma **string**, não com `AppError`. Trate os dois casos no tratador de erros.
@@ -193,6 +202,31 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - **Linux:** o WebKitGTK não tem atalhos de navegador próprios (recarregar, imprimir e localizar são do navegador que o usa). O inspetor só existe com as ferramentas de desenvolvedor ligadas.
 - **Ferramentas de desenvolvedor:** ligadas só no build de depuração, nos três sistemas. No build de release não existem.
 
+### Terminal
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `terminal_create` | `{ cols: number, rows: number, onEvent: Channel<TerminalEvent> }` | `TerminalInfo` | `invalidInput` (`cols` ou `rows` zero); `notFound` ou `other` (o shell não iniciou) |
+| `terminal_write` | `{ id: number, data: string }` | `void` | `notFound` (terminal fechado); `other` (o shell já terminou) |
+| `terminal_resize` | `{ id: number, cols: number, rows: number }` | `void` | `invalidInput`, `notFound` |
+| `terminal_close` | `{ id: number }` | `void` | `notFound` |
+
+- **Criar:** `onEvent` é um `Channel` de `@tauri-apps/api/core` (`const onEvent = new Channel<TerminalEvent>(); onEvent.onmessage = …`). Crie o canal e trate as mensagens antes de chamar `terminal_create`: a primeira saída pode chegar antes da resposta.
+- **Shell e pasta:**
+  - O shell é o padrão do sistema (Windows: `pwsh` se estiver no PATH, senão `powershell.exe`; macOS e Linux: `$SHELL`, ou `/bin/sh`).
+  - Começa na raiz da pasta aberta, ou na pasta do usuário sem pasta aberta.
+  - O ambiente é o da IDE, com `TERM=xterm-256color` e `COLORTERM=truecolor`.
+- **Falha ao iniciar:** a `message` já diz qual shell foi tentado ("Não foi possível iniciar o terminal com /bin/zsh: …"). Mostre-a no lugar do terminal. A IDE segue normal.
+- **Saída:**
+  - Chega em lotes, no máximo um a cada ~16 ms. Chame `term.write(data)` a cada `output`.
+  - Os caracteres UTF-8 nunca chegam partidos entre dois lotes.
+  - O limite de 10.000 linhas de histórico fica no xterm.js (`scrollback: 10000`).
+- **Teclado:** mande o `onData` do xterm.js para `terminal_write` sem mexer (Enter é `\r`, Ctrl+C é `\x03`). Colar também vai por `terminal_write`. As teclas que vão para a IDE (spec do terminal) são filtradas na interface, antes do xterm.js.
+- **Tamanho:** chame `terminal_resize` sempre que o painel mudar de tamanho (ex.: com o `FitAddon`). O programa que roda no terminal recebe o tamanho novo.
+- **Fim do shell:** com `exited`, escreva "Processo encerrado com código N" (sem o número quando `code` é `null`). Mantenha o terminal na lista para leitura. Não há mais saída depois de `exited`.
+- **Fechar:** `terminal_close` encerra o shell e o que roda nele. Chame também para um terminal cujo shell já terminou, para liberá-lo. Depois do `close` ainda chega o `exited`; ignore-o.
+- **Fechar a IDE:** o núcleo encerra todos os terminais sozinho. A interface não precisa fechar um por um.
+
 ### Diálogos nativos
 
 | Comando | Parâmetros | Retorno | Erros |
@@ -249,3 +283,6 @@ Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
   - Com `watchError`, o índice não acompanha as mudanças até a pasta ser aberta de novo.
   - Mudanças no `.git/info/exclude` só valem depois de reabrir a pasta, porque o observador ignora `.git`.
 - Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
+- Terminal:
+  - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).
+  - No macOS e no Linux, fechar o terminal manda SIGHUP ao shell e ao programa em primeiro plano. O bash repassa o SIGHUP aos programas em segundo plano. Um shell que ignora o SIGHUP é encerrado à força depois de 0,5 s. Um programa que ignora o SIGHUP e se desligou do terminal (ex.: `nohup … &`) continua rodando.

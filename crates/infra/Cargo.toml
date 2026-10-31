@@ -9,5 +9,11 @@ darktriad-core.workspace = true
 # Índice do Abrir rápido: percorre a pasta respeitando .gitignore/.ignore (docs/STACK.md).
 ignore = "0.4"
 notify = "8"
+# Terminal integrado: ConPTY no Windows, PTY no Unix (docs/STACK.md).
+portable-pty = "0.9"
 serde_json = "1"
 trash = "5"
+
+# Encerrar à força o shell que ignora o SIGHUP ao fechar o terminal.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

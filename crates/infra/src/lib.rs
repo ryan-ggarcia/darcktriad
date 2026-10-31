@@ -2,11 +2,13 @@
 
 mod local_fs;
 mod project_walker;
+mod pty;
 mod state_store;
 mod watcher;
 
 pub use local_fs::LocalFileSystem;
 pub use project_walker::IgnoreWalker;
+pub use pty::{PortablePty, detect_default_shell};
 pub use state_store::JsonStateStore;
 pub use watcher::NotifyWatcher;
 

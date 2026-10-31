@@ -1,6 +1,6 @@
 //! Portas: o que o núcleo precisa do mundo de fora. Os adaptadores ficam em `darktriad-infra`.
 
-use std::io;
+use std::io::{self, Read, Write};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
@@ -67,4 +67,35 @@ pub trait ProjectWalker: Send + Sync {
         scope: &[PathBuf],
         found: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
     );
+}
+
+/// Tamanho do terminal em células.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalSize {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Um shell recém-criado num pseudo-terminal.
+pub struct SpawnedTerminal {
+    /// O que o processo escreve no terminal. Chega ao fim quando o terminal é encerrado.
+    pub output: Box<dyn Read + Send>,
+    /// O que o usuário digita.
+    pub input: Box<dyn Write + Send>,
+    pub process: Box<dyn TerminalProcess>,
+}
+
+/// O processo do shell e o pseudo-terminal dele.
+pub trait TerminalProcess: Send + Sync {
+    fn pid(&self) -> Option<u32>;
+    fn resize(&self, size: TerminalSize) -> io::Result<()>;
+    /// Encerra o shell e o que roda nele. Volta quando eles terminaram ou foram forçados a terminar.
+    fn kill(&self) -> io::Result<()>;
+    /// Espera o shell terminar e devolve o código de saída.
+    fn wait(&self) -> io::Result<u32>;
+}
+
+/// Criação de pseudo-terminais (ConPTY no Windows, PTY no Unix).
+pub trait PtySpawner: Send + Sync {
+    fn spawn(&self, program: &Path, cwd: &Path, size: TerminalSize) -> io::Result<SpawnedTerminal>;
 }

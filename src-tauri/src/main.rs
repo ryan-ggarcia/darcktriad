@@ -10,17 +10,22 @@ use std::path::PathBuf;
 
 use darktriad_core::{
     Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, OpenedFolder,
-    ProjectFiles, RecentFolderView, Session, Workspace, validate_name, validate_path,
+    ProjectFiles, RecentFolderView, Session, TerminalEvent, TerminalInfo, TerminalSize, Terminals,
+    Workspace, validate_name, validate_path,
 };
-use darktriad_infra::{IgnoreWalker, JsonStateStore, LocalFileSystem, NotifyWatcher};
+use darktriad_infra::{
+    IgnoreWalker, JsonStateStore, LocalFileSystem, NotifyWatcher, PortablePty, detect_default_shell,
+};
 use menu::MenuEntry;
-use tauri::{AppHandle, Emitter, Manager, Window, Wry};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Window, Wry};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 
 type AppExplorer = Explorer<LocalFileSystem>;
 type AppEditor = Editor<LocalFileSystem>;
 type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
 type AppIndex = FileIndex<IgnoreWalker>;
+type AppTerminals = Terminals<PortablePty>;
 
 const MAIN_WINDOW: &str = "main";
 /// Evento com as mudanças no disco dentro da pasta aberta.
@@ -191,6 +196,51 @@ async fn save_session(app: AppHandle, session: Session) -> Result<(), Error> {
     blocking(move || app.state::<AppWorkspace>().save_session(session)).await
 }
 
+/// Abre um shell na raiz do projeto (ou na pasta do usuário, sem projeto). A saída e o fim do
+/// shell chegam por `on_event`.
+#[tauri::command]
+async fn terminal_create(
+    app: AppHandle,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<TerminalInfo, Error> {
+    blocking(move || {
+        let cwd = match app.state::<AppWorkspace>().root() {
+            Ok(root) => root,
+            Err(_) => app
+                .path()
+                .home_dir()
+                .map_err(|error| Error::new(ErrorKind::NotFound, error.to_string()))?,
+        };
+        app.state::<AppTerminals>()
+            .create(&cwd, TerminalSize { cols, rows }, move |event| {
+                // Só falha com a interface já fechada, quando não há mais quem avisar.
+                let _ = on_event.send(event);
+            })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn terminal_write(app: AppHandle, id: u32, data: String) -> Result<(), Error> {
+    blocking(move || app.state::<AppTerminals>().write(id, &data)).await
+}
+
+#[tauri::command]
+async fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) -> Result<(), Error> {
+    blocking(move || {
+        app.state::<AppTerminals>()
+            .resize(id, TerminalSize { cols, rows })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn terminal_close(app: AppHandle, id: u32) -> Result<(), Error> {
+    blocking(move || app.state::<AppTerminals>().close(id)).await
+}
+
 #[tauri::command]
 async fn pick_folder(window: Window) -> Result<Option<PathBuf>, Error> {
     pick(window, |dialog| dialog.blocking_pick_folder()).await
@@ -276,6 +326,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Explorer::new(LocalFileSystem))
         .manage(Editor::new(LocalFileSystem))
+        .manage(Terminals::new(PortablePty, detect_default_shell()))
         .on_menu_event(|app, event| on_menu_command(app, event.id().as_ref()))
         .setup(|app| {
             let handle = app.handle().clone();
@@ -316,10 +367,20 @@ fn main() {
             save_session,
             project_files,
             set_menu,
+            terminal_create,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
             pick_folder,
             pick_file,
             pick_save_path,
         ])
-        .run(tauri::generate_context!())
-        .expect("falha ao iniciar o Dark Triad");
+        .build(tauri::generate_context!())
+        .expect("falha ao iniciar o Dark Triad")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Nenhum shell (nem o que roda nele) sobrevive à IDE.
+                app.state::<AppTerminals>().close_all();
+            }
+        });
 }
