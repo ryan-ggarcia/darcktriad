@@ -10,13 +10,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use darktriad_core::{
-    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, OpenedFolder, Project,
-    ProjectFiles, ProjectState, RecentFolderView, Session, TerminalEvent, TerminalInfo,
-    TerminalSize, Terminals, ToolCheck, Workspace, check_tools, validate_name, validate_path,
+    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, Language,
+    LanguageEvent, LanguageServers, OpenedFolder, Project, ProjectEvent, ProjectFiles,
+    ProjectState, RecentFolderView, Session, TerminalEvent, TerminalInfo, TerminalSize, Terminals,
+    ToolCheck, Workspace, check_tools, validate_name, validate_path,
 };
 use darktriad_infra::{
     IgnoreWalker, JsonStateStore, LocalFileApi, LocalFileSystem, NotifyWatcher, PortablePty,
-    StdProcessRunner, SystemToolProbe, detect_default_shell,
+    StdProcessRunner, StdServerSpawner, SystemToolProbe, detect_default_shell,
 };
 use menu::MenuEntry;
 use tauri::ipc::Channel;
@@ -29,6 +30,7 @@ type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
 type AppIndex = FileIndex<IgnoreWalker>;
 type AppTerminals = Terminals<PortablePty>;
 type AppProject = Arc<Project<LocalFileSystem, StdProcessRunner, LocalFileApi, SystemToolProbe>>;
+type AppLanguages = Arc<LanguageServers<StdServerSpawner, SystemToolProbe>>;
 
 const MAIN_WINDOW: &str = "main";
 /// Evento com as mudanças no disco dentro da pasta aberta.
@@ -139,6 +141,8 @@ async fn open_folder(app: AppHandle, path: PathBuf) -> Result<OpenedFolder, Erro
     validate_path(&path)?;
     let worker = app.clone();
     let (opened, job, choice) = blocking(move || {
+        // Os servidores de linguagem eram da pasta anterior.
+        worker.state::<AppLanguages>().stop_all();
         let workspace = worker.state::<AppWorkspace>();
         let opened = workspace.open(&path)?;
         let job = worker.state::<AppIndex>().start(&path);
@@ -168,6 +172,7 @@ async fn close_folder(app: AppHandle) -> Result<(), Error> {
         app.state::<AppWorkspace>().close();
         app.state::<AppIndex>().clear();
         app.state::<AppProject>().close();
+        app.state::<AppLanguages>().stop_all();
         Ok(())
     })
     .await
@@ -312,6 +317,42 @@ async fn terminal_close(app: AppHandle, id: u32) -> Result<(), Error> {
     blocking(move || app.state::<AppTerminals>().close(id)).await
 }
 
+/// Inicia o servidor da linguagem (`cpp` ou `csharp`) para o projeto aberto, no lugar do que já
+/// estivesse rodando. Estado, mensagens do LSP e log chegam por `on_event`.
+#[tauri::command]
+async fn language_start(
+    app: AppHandle,
+    language: Language,
+    on_event: Channel<LanguageEvent>,
+) -> Result<(), Error> {
+    blocking(move || {
+        let project = app.state::<AppProject>().state();
+        app.state::<AppLanguages>()
+            .start(language, &project, move |event| {
+                // Só falha com a interface já fechada, quando não há mais quem avisar.
+                let _ = on_event.send(event);
+            })
+    })
+    .await
+}
+
+// Síncrono de propósito, como o `terminal_write`: as mensagens chegam ao servidor na ordem em que
+// foram enviadas, e o comando só põe a mensagem na fila.
+#[tauri::command]
+fn language_send(app: AppHandle, language: Language, message: String) -> Result<(), Error> {
+    app.state::<AppLanguages>().send(language, &message)
+}
+
+#[tauri::command]
+async fn language_restart(app: AppHandle, language: Language) -> Result<(), Error> {
+    blocking(move || app.state::<AppLanguages>().restart(language)).await
+}
+
+#[tauri::command]
+async fn language_stop(app: AppHandle, language: Language) -> Result<(), Error> {
+    blocking(move || app.state::<AppLanguages>().stop(language)).await
+}
+
 #[tauri::command]
 async fn pick_folder(window: Window) -> Result<Option<PathBuf>, Error> {
     pick(window, |dialog| dialog.blocking_pick_folder()).await
@@ -400,6 +441,11 @@ fn main() {
         .manage(Terminals::new(PortablePty, detect_default_shell()))
         .on_menu_event(|app, event| on_menu_command(app, event.id().as_ref()))
         .setup(|app| {
+            let tools_dir = app.path().app_data_dir()?.join("tools");
+            app.manage::<AppLanguages>(Arc::new(LanguageServers::new(
+                StdServerSpawner,
+                SystemToolProbe::new(tools_dir.clone()),
+            )));
             let handle = app.handle().clone();
             app.manage(FileIndex::new(IgnoreWalker, move || {
                 let _ = handle.emit(PROJECT_FILES_CHANGED, ());
@@ -409,8 +455,16 @@ fn main() {
                 LocalFileSystem,
                 StdProcessRunner,
                 LocalFileApi,
-                SystemToolProbe::new(app.path().app_data_dir()?.join("tools")),
+                SystemToolProbe::new(tools_dir),
                 move |event| {
+                    if let ProjectEvent::State { state } = &event {
+                        // O clangd segue a pasta de build ativa; fora do lock do projeto.
+                        let handle = handle.clone();
+                        let state = state.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            handle.state::<AppLanguages>().project_changed(&state);
+                        });
+                    }
                     let _ = handle.emit(PROJECT_EVENT, &event);
                 },
             );
@@ -459,6 +513,10 @@ fn main() {
             project_select_target,
             project_reconfigure,
             tools_check,
+            language_start,
+            language_send,
+            language_restart,
+            language_stop,
             pick_folder,
             pick_file,
             pick_save_path,
@@ -467,9 +525,10 @@ fn main() {
         .expect("falha ao iniciar o Dark Triad")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                // Nenhum shell (nem o que roda nele) nem cmake sobrevive à IDE.
+                // Nenhum shell (nem o que roda nele), cmake ou servidor de linguagem sobrevive à IDE.
                 app.state::<AppTerminals>().close_all();
                 app.state::<AppProject>().close();
+                app.state::<AppLanguages>().stop_all();
             }
         });
 }

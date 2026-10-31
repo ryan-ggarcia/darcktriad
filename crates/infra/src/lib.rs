@@ -11,7 +11,7 @@ mod watcher;
 
 pub use file_api::LocalFileApi;
 pub use local_fs::LocalFileSystem;
-pub use process::StdProcessRunner;
+pub use process::{StdProcessRunner, StdServerSpawner};
 pub use project_walker::IgnoreWalker;
 pub use pty::{PortablePty, detect_default_shell};
 pub use state_store::JsonStateStore;

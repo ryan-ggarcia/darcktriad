@@ -1,6 +1,6 @@
 # Contrato IPC: núcleo ↔ interface (v0.4)
 
-Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md) e [projeto.md](specs/projeto.md) (parte CMake). A implementação está em `src-tauri/src/main.rs`.
+Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md), [projeto.md](specs/projeto.md) (parte CMake e .NET) e [linguagem.md](specs/linguagem.md) (servidores de linguagem). A implementação está em `src-tauri/src/main.rs`.
 
 - **Comandos:** `invoke<T>('nome', { ...parâmetros })`, de `@tauri-apps/api/core`. Todos são assíncronos e rodam fora da thread de UI.
 - **Eventos:** `listen<T>('nome', handler)`, de `@tauri-apps/api/event`.
@@ -142,6 +142,19 @@ interface ToolCheck {
   install: string;        // o passo a passo manual
   status: ToolStatus;
 }
+
+type Language = 'cpp' | 'csharp'; // C e C++ (clangd) | C# (Roslyn)
+
+type ServerState =
+  | { kind: 'starting' }                  // "C++: iniciando…"
+  | { kind: 'running' }                   // processo de pé: faça o `initialize` (de novo, a cada `running`)
+  | { kind: 'stopped'; reason: string }   // "C++: parado" com o botão Reiniciar; `reason` já vem pronta
+  | { kind: 'noProject' };                // só C#: "C#: sem projeto"
+
+type LanguageEvent =
+  | { kind: 'message'; message: string }    // uma mensagem do LSP: o JSON, sem o cabeçalho Content-Length
+  | { kind: 'log'; line: string }           // uma linha do canal clangd ou C# da Saída
+  | { kind: 'state'; state: ServerState };
 ```
 
 Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com uma **string**, não com `AppError`. Trate os dois casos no tratador de erros.
@@ -317,6 +330,31 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - `present`: ✓ com `path` e `version`. `outdated`: "versão antiga (mínimo `minimum`)". `missing`: ✗ com `purpose` e `install`.
 - Cada chamada roda `--version` de cada ferramenta encontrada (até 5 s cada). "Verificar de novo" é chamar de novo.
 
+### Linguagem (LSP)
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `language_start` | `{ language: Language, onEvent: Channel<LanguageEvent> }` | `void` | `notFound` (o clangd ou o roslyn-language-server não foi encontrado; `message` diz para quê e como instalar) |
+| `language_send` | `{ language: Language, message: string }` | `void` | `notFound` (servidor não iniciado ou parado com `language_stop`); `other` (o servidor não está rodando) |
+| `language_restart` | `{ language: Language }` | `void` | `notFound` |
+| `language_stop` | `{ language: Language }` | `void` | `notFound` |
+
+- **Quem fala LSP é a interface.** O núcleo só inicia o processo, põe e tira a moldura `Content-Length` e repassa o JSON como texto, sem olhar dentro. `initialize`, `initialized`, ids de pedido, `$/cancelRequest`, `shutdown`: tudo é da interface.
+- **Iniciar:** chame `language_start` ao abrir o primeiro arquivo da linguagem na pasta (`.c`, `.cpp`, `.h`… → `cpp`; `.cs` → `csharp`). Crie o canal e trate as mensagens antes da chamada: o estado `starting` chega antes da resposta. Chamar de novo troca o servidor (e o canal) da linguagem.
+  - `cpp`: `clangd`, com `--compile-commands-dir=<buildDir>` quando o projeto CMake tem pasta de build pronta (`ProjectState.buildDir`); sem ela, sem o argumento. Roda na raiz da pasta aberta.
+  - `csharp`: `roslyn-language-server --stdio --autoLoadProjects`, só em pasta .NET (`dotnetSolution`/`dotnetProjects`). Fora dela, nenhum processo: chega `noProject`. Se a pasta for detectada como .NET depois (a detecção do projeto corre em segundo plano ao abrir), o servidor inicia sozinho.
+  - Ferramenta ausente: `language_start` falha com `notFound`. Mostre `message`.
+- **Estados:** `starting` → `running`. Em cada `running`, o processo é novo: refaça o `initialize`/`initialized` e reabra (`didOpen`) as abas da linguagem. Descarte respostas pendentes do processo anterior.
+- **Enviar:** `language_send` com o JSON da mensagem (`JSON.stringify(...)`). Como o `terminal_write`, só põe na fila e responde na hora; as mensagens chegam ao servidor na ordem em que foram enviadas.
+- **Receber:** cada `message` é uma mensagem inteira (`JSON.parse(message)`): resposta, notificação ou pedido do servidor ao cliente. Responda aos pedidos do servidor (ex.: `workspace/configuration`, `client/registerCapability`, `window/workDoneProgress/create`), senão ele pode esperar para sempre.
+- **Log:** cada `log` é uma linha para o canal **clangd** ou **C#** da Saída. A primeira de cada processo é o comando, começando com `> ` (ex.: `> /usr/bin/clangd --compile-commands-dir=/proj/build/release`). Quando o servidor cai, chega "O clangd terminou com código N.".
+- **Queda:** o núcleo reinicia sozinho até 3 vezes em 5 minutos (`starting` → `running` de novo). Na 4ª queda dentro da janela, chega `stopped` com "O clangd parou várias vezes. Veja o canal clangd na Saída." (ou "O Roslyn … canal C#"). Mostre o botão **Reiniciar**, que chama `language_restart` e zera a contagem. Também é o comando da paleta "Linguagem: Reiniciar servidor C/C++ / C#".
+- **Configuração (Debug/Release):** quando o projeto CMake termina de configurar numa pasta de build diferente, o clangd reinicia sozinho com a pasta nova. A interface só vê `starting` → `running`.
+- **Diagnósticos:**
+  - clangd publica (`textDocument/publishDiagnostics`).
+  - Roslyn não publica: ele só responde ao `textDocument/diagnostic` (pull). Declare `capabilities.textDocument.diagnostic.dynamicRegistration: true` no `initialize`: o Roslyn registra (`client/registerCapability`) um provedor por categoria (`identifier`: `syntax`, `DocumentCompilerSemantic`, `DocumentAnalyzerSyntax`…). Peça cada categoria registrada depois de abrir ou alterar o arquivo. Os erros do compilador (ex.: `CS0029`) vêm em `DocumentCompilerSemantic`. Antes da notificação `workspace/projectInitializationComplete`, o arquivo ainda não tem as referências do projeto.
+- **Parar:** `language_stop` encerra o servidor e o que ele iniciou. Nenhum evento chega depois. Abrir outra pasta, `close_folder` e fechar a IDE param todos os servidores sozinhos; depois de abrir outra pasta, chame `language_start` de novo.
+
 ### Diálogos nativos
 
 | Comando | Parâmetros | Retorno | Erros |
@@ -382,7 +420,13 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
   - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`), a busca de ferramentas não olha `C:\Program Files\LLVM\bin`, e cancelar a configuração mata o cmake mas não os processos que ele iniciou.
   - No macOS, a reconfiguração ao salvar depende dos caminhos do `fs-changed`, que vêm canônicos (veja abaixo).
   - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, aberta pelo Finder, ela não tem o `PATH` do `~/.zprofile` (Homebrew).
+- Linguagem:
+  - Windows: o ambiente do MSVC ainda não é passado ao clangd, e parar o Roslyn não encerra os processos que ele iniciou (BuildHost).
+  - A busca do clangd e do Roslyn roda `--version` ao iniciar (até 5 s cada candidato); a ferramenta instalada com a IDE aberta só é achada se o `PATH` da IDE já a incluía.
+  - O núcleo encerra o servidor à força (sem `shutdown`/`exit` do LSP). Hoje isso não perde nada, porque nenhum dos dois grava estado ao sair.
+  - Cada mudança de estado do projeto é tratada numa thread própria no `main.rs`. Dois estados `ready` quase simultâneos (ex.: trocar Debug/Release duas vezes muito rápido) podem ser aplicados fora de ordem, e o clangd ficar com a pasta de build da configuração anterior até a próxima mudança ou um `language_restart`.
 - Terminal:
+  - Não há controle de fluxo na saída: um programa que escreve sem parar (ex.: `yes`, ~36 MB/s) entrega tudo à interface, que pode ficar lenta. Com `seq 100000` a interface travou no máximo ~0,3 s no teste na janela.
   - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).
   - No macOS e no Linux, fechar o terminal manda SIGHUP a todos os processos da sessão do shell (o shell e o que ele iniciou, em primeiro ou segundo plano). Se o shell não sair em 0,5 s, todos eles levam SIGKILL. Um programa que ignora o SIGHUP (ex.: `nohup … &`) continua rodando se o shell saiu com o SIGHUP, porque depois disso o núcleo não manda mais sinais (o PID do shell pode ser de outro processo). Programas que saíram da sessão (`setsid`, daemons) também continuam.
   - No macOS o shell não é de login: quem abre a IDE pelo Finder não tem no terminal o PATH do `~/.zprofile` (Homebrew, CMake, dotnet).

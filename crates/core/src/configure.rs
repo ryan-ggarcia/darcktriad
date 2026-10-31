@@ -699,7 +699,7 @@ fn run_error(program: &str, error: std::io::Error) -> String {
     format!("Não foi possível rodar o {program}: {error}")
 }
 
-fn command_line(program: &Path, args: &[OsString]) -> String {
+pub(crate) fn command_line(program: &Path, args: &[OsString]) -> String {
     std::iter::once(program.as_os_str())
         .chain(args.iter().map(OsString::as_os_str))
         .map(OsStr::to_string_lossy)

@@ -7,6 +7,7 @@ mod error;
 mod explorer;
 mod file_index;
 mod input;
+mod language;
 mod ports;
 mod project;
 mod terminal;
@@ -19,10 +20,11 @@ pub use error::{Error, ErrorKind, Result};
 pub use explorer::{Entry, Explorer, is_hidden};
 pub use file_index::{FileIndex, IndexJob, ProjectFiles};
 pub use input::{validate_name, validate_path};
+pub use language::{Language, LanguageEvent, LanguageServers, ServerState};
 pub use ports::{
     EntryWriter, FileApi, FileStat, FileStore, FileSystem, FolderWatcher, ProcessRunner,
-    ProjectWalker, PtySpawner, SpawnedTerminal, StateStore, TerminalProcess, TerminalSize,
-    ToolProbe, Trash,
+    ProjectWalker, PtySpawner, ServerProcess, ServerSpawner, SpawnedServer, SpawnedTerminal,
+    StateStore, TerminalProcess, TerminalSize, ToolProbe, Trash,
 };
 pub use project::{
     BuildConfig, CMakeProblem, CMakeTarget, DetectedProject, DotnetProperties, ProjectKind,

@@ -1,4 +1,5 @@
-//! Processos externos (cmake…) com `std::process`, linha a linha e canceláveis.
+//! Processos externos com `std::process`: os que rodam até o fim (cmake…), linha a linha e
+//! canceláveis, e os servidores de linguagem, que falam pelo stdio.
 
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read};
@@ -6,10 +7,11 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use darktriad_core::ProcessRunner;
+use darktriad_core::{ProcessRunner, ServerProcess, ServerSpawner, SpawnedServer};
 
 /// De quanto em quanto tempo o pedido de cancelamento é conferido.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
@@ -27,22 +29,7 @@ impl ProcessRunner for StdProcessRunner {
         cancel: &AtomicBool,
         on_line: &mut dyn FnMut(&str),
     ) -> io::Result<bool> {
-        let mut command = Command::new(program);
-        command
-            .args(args)
-            .current_dir(cwd)
-            // Os dotnet que a IDE roda não mandam telemetria em nome do usuário nem põem o banner na Saída.
-            .envs(DOTNET_QUIET)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // Grupo próprio: cancelar mata também o que o cmake iniciou (compilador, ninja).
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut command, 0);
-        // Sem a janela de console que o Windows abriria para um app sem console (build de release).
-        #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
-        let mut child = command.spawn()?;
+        let mut child = command(program, args, cwd).stdin(Stdio::null()).spawn()?;
 
         let (sender, lines) = mpsc::channel();
         let stdout = child
@@ -74,6 +61,70 @@ impl ProcessRunner for StdProcessRunner {
     }
 }
 
+/// O processo com stdout e stderr ligados à IDE.
+fn command(program: &Path, args: &[OsString], cwd: &Path) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(cwd)
+        // Os dotnet que a IDE roda não mandam telemetria em nome do usuário nem põem o banner na Saída.
+        .envs(DOTNET_QUIET)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Grupo próprio: encerrar mata também o que o processo iniciou (compilador, ninja, BuildHost do Roslyn).
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    // Sem a janela de console que o Windows abriria para um app sem console (build de release).
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    command
+}
+
+/// Servidores de linguagem (clangd, Roslyn) falando pelo stdio.
+pub struct StdServerSpawner;
+
+impl ServerSpawner for StdServerSpawner {
+    fn spawn(&self, program: &Path, args: &[OsString], cwd: &Path) -> io::Result<SpawnedServer> {
+        let mut child = command(program, args, cwd).stdin(Stdio::piped()).spawn()?;
+        let missing = || io::Error::other("o servidor iniciou sem stdio");
+        Ok(SpawnedServer {
+            stdout: Box::new(child.stdout.take().ok_or_else(missing)?),
+            stderr: Box::new(child.stderr.take().ok_or_else(missing)?),
+            stdin: Box::new(child.stdin.take().ok_or_else(missing)?),
+            process: Box::new(ServerChild(Mutex::new(child))),
+        })
+    }
+}
+
+/// O `wait` consulta o processo aos poucos, soltando o lock entre uma consulta e outra, para o
+/// `kill` poder entrar no meio.
+struct ServerChild(Mutex<Child>);
+
+impl ServerProcess for ServerChild {
+    fn kill(&self) -> io::Result<()> {
+        let mut child = lock(&self.0);
+        // Depois de recolhido, o PID pode ser de outro processo.
+        if child.try_wait()?.is_some() {
+            return Ok(());
+        }
+        kill(&mut child);
+        Ok(())
+    }
+
+    fn wait(&self) -> io::Result<Option<i32>> {
+        loop {
+            if let Some(status) = lock(&self.0).try_wait()? {
+                return Ok(status.code());
+            }
+            thread::sleep(CANCEL_POLL);
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// Manda cada linha, sem o fim de linha. Texto que não é UTF-8 vira �, sem parar a leitura.
 fn read_lines(pipe: Box<dyn Read + Send>, sender: &Sender<String>) {
     let mut reader = BufReader::new(pipe);
@@ -97,7 +148,7 @@ fn kill(child: &mut Child) {
     unsafe {
         libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
     }
-    // shortcut: no Windows só o cmake morre, não os filhos dele; usar um Job Object ao ligar o vcvars.
+    // shortcut: no Windows só o processo morre, não os filhos dele (cmake, Roslyn); usar um Job Object ao ligar o vcvars.
     #[cfg(windows)]
     let _ = child.kill();
     let _ = child.wait();
@@ -105,6 +156,7 @@ fn kill(child: &mut Child) {
 
 #[cfg(all(test, unix))]
 mod tests {
+    use std::io::Write;
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -180,6 +232,48 @@ mod tests {
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
         assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
         // O `sleep` é filho do sh: depois do SIGKILL vira zumbi até o init recolhê-lo.
+        let start = Instant::now();
+        while is_alive(grandchild) && !is_zombie(grandchild) {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "o filho continua vivo"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn server_talks_through_stdio_and_kill_ends_it_and_its_children() {
+        let script = "echo log >&2; sleep 30 & echo $!; cat";
+        let spawned = StdServerSpawner
+            .spawn(
+                Path::new("/bin/sh"),
+                &["-c".into(), script.into()],
+                &std::env::temp_dir(),
+            )
+            .unwrap();
+        let mut stdin = spawned.stdin;
+        stdin.write_all(b"ola\n").unwrap();
+        stdin.flush().unwrap();
+        let mut stdout = BufReader::new(spawned.stdout);
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        let grandchild: libc::pid_t = line.trim().parse().unwrap();
+        line.clear();
+        stdout.read_line(&mut line).unwrap();
+        assert_eq!(line, "ola\n");
+        line.clear();
+        BufReader::new(spawned.stderr).read_line(&mut line).unwrap();
+        assert_eq!(line, "log\n");
+
+        let process: Arc<dyn ServerProcess> = Arc::from(spawned.process);
+        let waiter = {
+            let process = Arc::clone(&process);
+            thread::spawn(move || process.wait())
+        };
+        process.kill().unwrap();
+        assert_eq!(waiter.join().unwrap().unwrap(), None);
+        process.kill().unwrap();
         let start = Instant::now();
         while is_alive(grandchild) && !is_zombie(grandchild) {
             assert!(
