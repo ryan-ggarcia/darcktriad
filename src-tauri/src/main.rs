@@ -7,14 +7,16 @@
 mod menu;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use darktriad_core::{
-    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, OpenedFolder,
-    ProjectFiles, RecentFolderView, Session, TerminalEvent, TerminalInfo, TerminalSize, Terminals,
-    Workspace, validate_name, validate_path,
+    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, OpenedFolder, Project,
+    ProjectFiles, ProjectState, RecentFolderView, Session, TerminalEvent, TerminalInfo,
+    TerminalSize, Terminals, ToolCheck, Workspace, check_tools, validate_name, validate_path,
 };
 use darktriad_infra::{
-    IgnoreWalker, JsonStateStore, LocalFileSystem, NotifyWatcher, PortablePty, detect_default_shell,
+    IgnoreWalker, JsonStateStore, LocalFileApi, LocalFileSystem, NotifyWatcher, PortablePty,
+    StdProcessRunner, SystemToolProbe, detect_default_shell,
 };
 use menu::MenuEntry;
 use tauri::ipc::Channel;
@@ -26,6 +28,7 @@ type AppEditor = Editor<LocalFileSystem>;
 type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
 type AppIndex = FileIndex<IgnoreWalker>;
 type AppTerminals = Terminals<PortablePty>;
+type AppProject = Arc<Project<LocalFileSystem, StdProcessRunner, LocalFileApi, SystemToolProbe>>;
 
 const MAIN_WINDOW: &str = "main";
 /// Evento com as mudanças no disco dentro da pasta aberta.
@@ -34,6 +37,8 @@ const FS_CHANGED: &str = "fs-changed";
 const PROJECT_FILES_CHANGED: &str = "project-files-changed";
 /// Evento com o id do comando escolhido no menu nativo.
 const MENU_COMMAND: &str = "menu-command";
+/// Evento do projeto: uma linha do canal CMake ou o estado novo.
+const PROJECT_EVENT: &str = "project-event";
 
 /// Roda `job` numa thread de I/O: nem a thread de UI nem o runtime assíncrono esperam o disco.
 async fn blocking<T: Send + 'static>(
@@ -133,13 +138,27 @@ async fn default_eol() -> Eol {
 async fn open_folder(app: AppHandle, path: PathBuf) -> Result<OpenedFolder, Error> {
     validate_path(&path)?;
     let worker = app.clone();
-    let (opened, job) = blocking(move || {
-        let opened = worker.state::<AppWorkspace>().open(&path)?;
-        Ok((opened, worker.state::<AppIndex>().start(&path)))
+    let (opened, job, choice) = blocking(move || {
+        let workspace = worker.state::<AppWorkspace>();
+        let opened = workspace.open(&path)?;
+        let job = worker.state::<AppIndex>().start(&path);
+        Ok((opened, job, workspace.project_choice()))
     })
     .await?;
-    // A pasta abre sem esperar o índice; o Abrir rápido mostra "Indexando…" até ele terminar.
-    tauri::async_runtime::spawn_blocking(move || app.state::<AppIndex>().run(job));
+    // A pasta abre sem esperar o índice nem o CMake: os dois avisam quando terminam.
+    let worker = app.clone();
+    tauri::async_runtime::spawn_blocking(move || worker.state::<AppIndex>().run(job));
+    let root = opened.path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Outra pasta pode ter sido aberta enquanto esta thread esperava a vez.
+        if app
+            .state::<AppWorkspace>()
+            .root()
+            .is_ok_and(|open| open == root)
+        {
+            app.state::<AppProject>().open(&root, choice);
+        }
+    });
     Ok(opened)
 }
 
@@ -148,6 +167,7 @@ async fn close_folder(app: AppHandle) -> Result<(), Error> {
     blocking(move || {
         app.state::<AppWorkspace>().close();
         app.state::<AppIndex>().clear();
+        app.state::<AppProject>().close();
         Ok(())
     })
     .await
@@ -194,6 +214,58 @@ async fn save_session(app: AppHandle, session: Session) -> Result<(), Error> {
         validate_path(path)?;
     }
     blocking(move || app.state::<AppWorkspace>().save_session(session)).await
+}
+
+#[tauri::command]
+async fn project_state(app: AppHandle) -> Result<ProjectState, Error> {
+    blocking(move || Ok(app.state::<AppProject>().state())).await
+}
+
+/// Troca a configuração, guarda a escolha da pasta e configura. Responde quando a configuração
+/// termina; o resultado chega pelo estado.
+#[tauri::command]
+async fn project_select_config(app: AppHandle, config: String) -> Result<(), Error> {
+    blocking(move || {
+        let project = app.state::<AppProject>();
+        project.select_config(&config)?;
+        save_project_choice(&app)?;
+        project.configure()
+    })
+    .await
+}
+
+#[tauri::command]
+async fn project_select_target(app: AppHandle, target: String) -> Result<(), Error> {
+    blocking(move || {
+        app.state::<AppProject>().select_target(&target)?;
+        save_project_choice(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn project_reconfigure(app: AppHandle) -> Result<(), Error> {
+    blocking(move || app.state::<AppProject>().configure()).await
+}
+
+fn save_project_choice(app: &AppHandle) -> Result<(), Error> {
+    let choice = app.state::<AppProject>().choice();
+    app.state::<AppWorkspace>().save_project_choice(choice)
+}
+
+#[tauri::command]
+async fn tools_check(app: AppHandle) -> Result<Vec<ToolCheck>, Error> {
+    blocking(move || Ok(check_tools(&tool_probe(&app)?))).await
+}
+
+/// Lê o `PATH` a cada chamada: "Verificar de novo" acha o que foi instalado com a IDE aberta só
+/// se o PATH da IDE já o incluía.
+fn tool_probe(app: &AppHandle) -> Result<SystemToolProbe, Error> {
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| Error::new(ErrorKind::NotFound, error.to_string()))?;
+    Ok(SystemToolProbe::new(data.join("tools")))
 }
 
 /// Abre um shell na raiz do projeto (ou na pasta do usuário, sem projeto). A saída e o fim do
@@ -333,11 +405,23 @@ fn main() {
                 let _ = handle.emit(PROJECT_FILES_CHANGED, ());
             }));
             let handle = app.handle().clone();
+            let project = Project::new(
+                LocalFileSystem,
+                StdProcessRunner,
+                LocalFileApi,
+                SystemToolProbe::new(app.path().app_data_dir()?.join("tools")),
+                move |event| {
+                    let _ = handle.emit(PROJECT_EVENT, &event);
+                },
+            );
+            app.manage::<AppProject>(Arc::new(project));
+            let handle = app.handle().clone();
             let watcher = NotifyWatcher::new(move |batch| {
                 // Só falha com o app fechando, quando não há mais quem avisar.
                 let _ = handle.emit(FS_CHANGED, &batch);
                 let handle = handle.clone();
                 tauri::async_runtime::spawn_blocking(move || {
+                    handle.state::<AppProject>().files_changed(&batch.paths);
                     handle.state::<AppIndex>().update(&batch);
                 });
             });
@@ -370,6 +454,11 @@ fn main() {
             terminal_write,
             terminal_resize,
             terminal_close,
+            project_state,
+            project_select_config,
+            project_select_target,
+            project_reconfigure,
+            tools_check,
             pick_folder,
             pick_file,
             pick_save_path,
@@ -378,8 +467,9 @@ fn main() {
         .expect("falha ao iniciar o Dark Triad")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                // Nenhum shell (nem o que roda nele) sobrevive à IDE.
+                // Nenhum shell (nem o que roda nele) nem cmake sobrevive à IDE.
                 app.state::<AppTerminals>().close_all();
+                app.state::<AppProject>().close();
             }
         });
 }

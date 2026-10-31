@@ -2,10 +2,12 @@
 
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::ToolProbe;
 
 /// Uma ferramenta que a IDE procura.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Tool {
     pub program: &'static str,
     pub purpose: &'static str,
@@ -71,7 +73,8 @@ pub const TOOLS: [Tool; 8] = [
     },
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ToolStatus {
     Present {
         path: PathBuf,
@@ -83,6 +86,33 @@ pub enum ToolStatus {
         version: Option<String>,
     },
     Missing,
+}
+
+/// Uma linha da tela de ferramentas.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ToolCheck {
+    #[serde(flatten)]
+    pub tool: Tool,
+    pub status: ToolStatus,
+}
+
+/// Confere todas as ferramentas da tabela.
+pub fn check_tools(probe: &impl ToolProbe) -> Vec<ToolCheck> {
+    TOOLS
+        .iter()
+        .map(|tool| ToolCheck {
+            tool: *tool,
+            status: tool.check(probe),
+        })
+        .collect()
+}
+
+/// A ferramenta da tabela com esse programa.
+pub(crate) fn tool(program: &str) -> &'static Tool {
+    TOOLS
+        .iter()
+        .find(|tool| tool.program == program)
+        .expect("ferramenta fora da tabela")
 }
 
 impl Tool {
@@ -162,10 +192,6 @@ mod tests {
                 .map(|text| text.to_string())
                 .ok_or_else(|| io::Error::other("sem saída"))
         }
-    }
-
-    fn tool(program: &str) -> Tool {
-        *TOOLS.iter().find(|tool| tool.program == program).unwrap()
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Contrato IPC: núcleo ↔ interface (v0.4)
 
-Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md) e [terminal.md](specs/terminal.md). A implementação está em `src-tauri/src/main.rs`.
+Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md) e [projeto.md](specs/projeto.md) (parte CMake). A implementação está em `src-tauri/src/main.rs`.
 
 - **Comandos:** `invoke<T>('nome', { ...parâmetros })`, de `@tauri-apps/api/core`. Todos são assíncronos e rodam fora da thread de UI.
 - **Eventos:** `listen<T>('nome', handler)`, de `@tauri-apps/api/event`.
@@ -93,6 +93,55 @@ interface TerminalInfo {
 type TerminalEvent =
   | { kind: 'output'; data: string }        // texto com as sequências de escape intactas: passe direto ao xterm.js
   | { kind: 'exited'; code: number | null }; // o shell terminou; sempre o último evento do terminal
+
+type ProjectKind = 'cmake' | 'cmakePresets' | 'dotnetSolution' | 'dotnetProjects' | 'editOnly';
+
+type ProjectStatus =
+  | { kind: 'idle' }                      // nada a configurar: sem projeto, ou .NET (ainda não nesta versão)
+  | { kind: 'configuring' }               // "CMake: configurando…"
+  | { kind: 'ready' }                     // configurado: `targets` vale
+  | { kind: 'failed'; message: string };  // "CMake: erro (ver Saída)"; `message` já vem pronta
+
+interface CMakeTarget {
+  name: string; // 'app'
+  path: Path;   // caminho absoluto do executável (pode ainda não existir antes de compilar)
+}
+
+interface Problem {
+  file: Path;      // absoluto
+  line: number;    // a partir de 1
+  message: string; // a primeira linha do texto do erro
+}
+
+interface ProjectState {
+  root: Path | null;          // null sem pasta aberta
+  kind: ProjectKind;
+  warning: string | null;     // ex.: "Também há um projeto .NET aqui…"
+  configs: string[];          // CMake: ['Debug', 'Release']; com presets: os nomes do `cmake --list-presets`
+  config: string | null;      // a configuração ativa
+  status: ProjectStatus;
+  buildDir: Path | null;      // a pasta de build da última configuração pronta
+  targets: CMakeTarget[];     // só executáveis; vazio enquanto configura ou com erro
+  target: string | null;      // o nome do alvo ativo
+  problems: Problem[];        // os erros da configuração atual
+}
+
+type ProjectEvent =
+  | { kind: 'output'; line: string }          // uma linha do canal CMake da Saída, sem o fim de linha
+  | { kind: 'state'; state: ProjectState };  // o estado novo inteiro: substitua o anterior
+
+type ToolStatus =
+  | { kind: 'present'; path: Path; version: string | null }
+  | { kind: 'outdated'; path: Path; version: string | null } // abaixo da versão mínima ou sem versão legível
+  | { kind: 'missing' };
+
+interface ToolCheck {
+  program: string;        // 'cmake', 'clangd'…
+  purpose: string;        // "para quê"
+  minimum: string | null; // versão mínima
+  install: string;        // o passo a passo manual
+  status: ToolStatus;
+}
 ```
 
 Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com uma **string**, não com `AppError`. Trate os dois casos no tratador de erros.
@@ -229,6 +278,43 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - **Fechar:** `terminal_close` encerra o shell e o que roda nele. Chame também para um terminal cujo shell já terminou, para liberá-lo. Depois do `close` ainda chega o `exited`; ignore-o.
 - **Fechar a IDE:** o núcleo encerra todos os terminais sozinho. A interface não precisa fechar um por um.
 
+### Projeto (CMake)
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `project_state` | — | `ProjectState` | — |
+| `project_select_config` | `{ config: string }` | `void` | `invalidInput` (fora de `configs`); `other` (falha ao gravar a escolha) |
+| `project_select_target` | `{ target: string }` | `void` | `invalidInput` (fora de `targets`); `other` |
+| `project_reconfigure` | — | `void` | `invalidInput` (a pasta aberta não é CMake) |
+
+- **Ao abrir a pasta:** `open_folder` detecta o projeto e, se for CMake, começa a configurar em segundo plano, sem atrasar a resposta. Acompanhe pelo evento `project-event`. Ao iniciar a interface, ou ao abrir a pasta, chame `project_state` uma vez para ter o estado inicial.
+- **Barra de status:** `kind` (`cmake`/`cmakePresets` → "CMake"), `config` e `target`. Com `status.kind === 'configuring'`, mostre "CMake: configurando…". Com `failed`, mostre "CMake: erro (ver Saída)" e abra o painel Saída no canal CMake. Com `kind: 'editOnly'`, "Sem projeto (só edição)". Com `warning`, mostre o aviso uma vez.
+- **Configurações:**
+  - Sem presets: `Debug` e `Release`, com build em `<raiz>/build/debug` ou `<raiz>/build/release`.
+  - Com presets: `configs` só chega depois da primeira configuração (vem do `cmake --list-presets`). A pasta de build é a do `binaryDir` do preset.
+- **Selecionar configuração:** `project_select_config` guarda a escolha da pasta e configura de novo. Responde quando a configuração termina; o resultado (pronto ou erro) vem no estado, não como erro do comando.
+- **Selecionar alvo:** `project_select_target` só aceita um nome de `targets` e guarda a escolha. Não configura.
+- **Escolha guardada:** a configuração e o alvo ficam salvos por pasta, na pasta de dados do app. Ao reabrir, valem se ainda existirem; senão, o primeiro da lista.
+- **Uma configuração por vez:** pedir outra (trocar configuração, reconfigurar ou salvar um arquivo do CMake) durante uma em andamento cancela a atual. O cmake e o que ele iniciou morrem antes de a nova começar, e nada da antiga chega depois do aviso da nova.
+- **Reconfigurar ao salvar:** salvar `CMakeLists.txt`, `*.cmake`, `CMakePresets.json` ou `CMakeUserPresets.json` dentro da pasta aberta reconfigura 1 s depois do último salvamento. O que o próprio CMake grava nas pastas de build não conta. A interface não precisa fazer nada.
+- **Canal CMake:** cada `output` é uma linha. A primeira de cada execução é o comando, começando com `> `. Limpe o canal quando quiser (ex.: a cada `configuring`); o núcleo não guarda o histórico.
+- **Problemas:** cada linha `CMake Error at <arquivo>:<linha>` vira um item de `problems`, com o arquivo absoluto. Clicar abre o arquivo na linha (`read_file`). A lista é zerada a cada configuração, então o erro some quando a configuração seguinte passa.
+- **Fechar a pasta ou a IDE:** a configuração em andamento é cancelada, e o cmake não sobrevive.
+
+### Ferramentas
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `tools_check` | — | `ToolCheck[]` | `notFound` (sem pasta de dados do app) |
+
+- Uma linha por ferramenta, na ordem da tabela de [projeto.md](specs/projeto.md): `cmake`, `ninja`, `clangd`, `lldb-dap`, `gdb`, `dotnet`, `roslyn-language-server`, `netcoredbg`.
+- **Onde procura:** `PATH`, depois os caminhos conhecidos, depois `<dados do app>/tools/`. Vale a primeira que atende a versão mínima.
+  - Linux: `clangd-<N>` e `lldb-dap-<N>` do `PATH`, da maior versão para a menor.
+  - macOS: `xcrun --find` (só com as Command Line Tools instaladas), `/opt/homebrew/opt/llvm/bin` e `/usr/local/opt/llvm/bin`.
+  - `dotnet`: `DOTNET_ROOT` e `~/.dotnet`. `roslyn-language-server`: `~/.dotnet/tools`.
+- `present`: ✓ com `path` e `version`. `outdated`: "versão antiga (mínimo `minimum`)". `missing`: ✗ com `purpose` e `install`.
+- Cada chamada roda `--version` de cada ferramenta encontrada (até 5 s cada). "Verificar de novo" é chamar de novo.
+
 ### Diálogos nativos
 
 | Comando | Parâmetros | Retorno | Erros |
@@ -268,6 +354,10 @@ Sem payload (`null`). A lista de `project_files` mudou ou terminou de ser montad
 
 Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
 
+### `project-event`
+
+Payload: `ProjectEvent`. As linhas do canal CMake (`output`) e cada mudança do projeto (`state`), na ordem em que acontecem. Veja [Projeto (CMake)](#projeto-cmake).
+
 ## Fluxos
 
 - **Ao iniciar:** chame `recent_folders()`. Se a primeira tem `exists: true`, chame `open_folder`. Se não, mostre a tela inicial. Clicar numa recente riscada chama `remove_recent_folder`.
@@ -285,6 +375,11 @@ Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
   - Com `watchError`, o índice não acompanha as mudanças até a pasta ser aberta de novo.
   - Mudanças no `.git/info/exclude` só valem depois de reabrir a pasta, porque o observador ignora `.git`.
 - Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
+- Projeto:
+  - .NET: a pasta é detectada (`kind`), mas ainda não há restore, configurações nem alvos (`status: idle`).
+  - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`), a busca de ferramentas não olha `C:\Program Files\LLVM\bin`, e cancelar a configuração mata o cmake mas não os processos que ele iniciou.
+  - No macOS, a reconfiguração ao salvar depende dos caminhos do `fs-changed`, que vêm canônicos (veja abaixo).
+  - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, aberta pelo Finder, ela não tem o `PATH` do `~/.zprofile` (Homebrew).
 - Terminal:
   - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).
   - No macOS e no Linux, fechar o terminal manda SIGHUP a todos os processos da sessão do shell (o shell e o que ele iniciou, em primeiro ou segundo plano). Se o shell não sair em 0,5 s, todos eles levam SIGKILL. Um programa que ignora o SIGHUP (ex.: `nohup … &`) continua rodando se o shell saiu com o SIGHUP, porque depois disso o núcleo não manda mais sinais (o PID do shell pode ser de outro processo). Programas que saíram da sessão (`setsid`, daemons) também continuam.

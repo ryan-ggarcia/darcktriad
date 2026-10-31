@@ -15,12 +15,22 @@ pub struct Session {
     pub active_file: Option<PathBuf>,
 }
 
+/// A configuração e o alvo escolhidos numa pasta. `None` usa o primeiro da lista.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProjectChoice {
+    pub config: Option<String>,
+    pub target: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentFolder {
     pub path: PathBuf,
     #[serde(default)]
     pub session: Session,
+    #[serde(default)]
+    pub project: ProjectChoice,
 }
 
 /// O que o app guarda entre execuções. A primeira pasta recente é a última usada.
@@ -103,6 +113,7 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
             None => RecentFolder {
                 path: path.into(),
                 session: Session::default(),
+                project: ProjectChoice::default(),
             },
         };
         let session = recent.session.clone();
@@ -158,6 +169,27 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
 
     /// Guarda as abas da pasta aberta.
     pub fn save_session(&self, session: Session) -> Result<()> {
+        self.update_open_folder(|recent| recent.session = session)
+    }
+
+    /// A configuração e o alvo guardados para a pasta aberta.
+    pub fn project_choice(&self) -> ProjectChoice {
+        let inner = self.lock();
+        inner
+            .state
+            .recent_folders
+            .iter()
+            .find(|recent| Some(&recent.path) == inner.root.as_ref())
+            .map(|recent| recent.project.clone())
+            .unwrap_or_default()
+    }
+
+    /// Guarda a configuração e o alvo da pasta aberta.
+    pub fn save_project_choice(&self, choice: ProjectChoice) -> Result<()> {
+        self.update_open_folder(|recent| recent.project = choice)
+    }
+
+    fn update_open_folder(&self, update: impl FnOnce(&mut RecentFolder)) -> Result<()> {
         let mut inner = self.lock();
         let root = inner.root.clone().ok_or_else(no_folder_open)?;
         if let Some(recent) = inner
@@ -166,7 +198,7 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
             .iter_mut()
             .find(|recent| recent.path == root)
         {
-            recent.session = session;
+            update(recent);
         }
         Ok(self.store.save(&inner.state)?)
     }
@@ -339,6 +371,31 @@ mod tests {
         let reopened = workspace.open(Path::new("a")).unwrap();
 
         assert_eq!(reopened.session, session);
+    }
+
+    #[test]
+    fn project_choice_is_saved_per_folder_and_survives_a_restart() {
+        let workspace = workspace_with(&["a", "b"]);
+        let choice = ProjectChoice {
+            config: Some("Release".into()),
+            target: Some("tool".into()),
+        };
+        workspace.open(Path::new("a")).unwrap();
+        workspace.save_project_choice(choice.clone()).unwrap();
+        workspace.open(Path::new("b")).unwrap();
+        assert_eq!(workspace.project_choice(), ProjectChoice::default());
+
+        let saved = workspace.store.saved.lock().unwrap().clone();
+        let restarted = Workspace::new(
+            FakeFolders::new(&["a", "b"]),
+            FakeWatcher::default(),
+            FakeStore {
+                saved: Mutex::new(saved),
+                unreadable: false,
+            },
+        );
+        restarted.open(Path::new("a")).unwrap();
+        assert_eq!(restarted.project_choice(), choice);
     }
 
     #[test]

@@ -1,15 +1,21 @@
 //! Adaptadores: implementações concretas das portas definidas em `darktriad-core`.
 
+mod file_api;
 mod local_fs;
+mod process;
 mod project_walker;
 mod pty;
 mod state_store;
+mod tool_probe;
 mod watcher;
 
+pub use file_api::LocalFileApi;
 pub use local_fs::LocalFileSystem;
+pub use process::StdProcessRunner;
 pub use project_walker::IgnoreWalker;
 pub use pty::{PortablePty, detect_default_shell};
 pub use state_store::JsonStateStore;
+pub use tool_probe::SystemToolProbe;
 pub use watcher::NotifyWatcher;
 
 #[cfg(test)]

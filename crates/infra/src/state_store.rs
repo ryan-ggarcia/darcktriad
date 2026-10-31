@@ -37,7 +37,7 @@ impl StateStore for JsonStateStore {
 
 #[cfg(test)]
 mod tests {
-    use darktriad_core::{RecentFolder, Session};
+    use darktriad_core::{ProjectChoice, RecentFolder, Session};
 
     use super::*;
     use crate::test_support::TempDir;
@@ -61,6 +61,10 @@ mod tests {
                 session: Session {
                     open_files: vec![root.join("hello-cpp/app/main.cpp")],
                     active_file: Some(root.join("hello-cpp/app/main.cpp")),
+                },
+                project: ProjectChoice {
+                    config: Some("Release".into()),
+                    target: Some("tool".into()),
                 },
             }],
         };

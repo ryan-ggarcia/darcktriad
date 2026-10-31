@@ -1,10 +1,12 @@
 //! Portas: o que o núcleo precisa do mundo de fora. Os adaptadores ficam em `darktriad-infra`.
 
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
-use crate::{AppState, Entry};
+use crate::{AppState, CMakeTarget, Entry, Result};
 
 /// Leitura de pastas.
 pub trait FileSystem: Send + Sync {
@@ -106,4 +108,27 @@ pub trait ToolProbe: Send + Sync {
     fn find(&self, program: &str) -> Vec<PathBuf>;
     /// O que `<path> --version` escreve.
     fn version_output(&self, path: &Path) -> io::Result<String>;
+}
+
+/// Processos externos que rodam até o fim (cmake…).
+pub trait ProcessRunner: Send + Sync {
+    /// Roda `program` em `cwd` e entrega a `on_line` cada linha da saída (stdout e stderr) assim
+    /// que ela sai. Volta quando o processo termina: `true` se ele terminou com sucesso.
+    /// Quando `cancel` fica verdadeiro, mata o processo e os que ele iniciou e devolve `Interrupted`.
+    fn run(
+        &self,
+        program: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        cancel: &AtomicBool,
+        on_line: &mut dyn FnMut(&str),
+    ) -> io::Result<bool>;
+}
+
+/// A File API do CMake numa pasta de build.
+pub trait FileApi: Send + Sync {
+    /// Cria a consulta (`file_api_query`) e as pastas que faltarem. `true` se ela não existia.
+    fn write_query(&self, build_dir: &Path) -> io::Result<bool>;
+    /// Os alvos executáveis da última resposta (`file_api_executables`).
+    fn executables(&self, build_dir: &Path) -> Result<Vec<CMakeTarget>>;
 }

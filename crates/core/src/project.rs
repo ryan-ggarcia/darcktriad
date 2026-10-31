@@ -4,19 +4,24 @@ use std::ffi::{OsStr, OsString};
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::{Error, ErrorKind, Platform, Result};
 
 const EXPORT_COMPILE_COMMANDS: &str = "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ProjectKind {
+    #[serde(rename = "cmake")]
     CMake,
+    #[serde(rename = "cmakePresets")]
     CMakePresets,
     DotnetSolution,
     DotnetProjects,
     /// Sem projeto: só edição.
+    #[default]
     EditOnly,
 }
 
@@ -120,7 +125,7 @@ pub fn file_api_query(build_dir: &Path) -> PathBuf {
 }
 
 /// Um alvo executável do CMake.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CMakeTarget {
     pub name: String,
     /// Caminho absoluto do programa.

@@ -123,7 +123,7 @@ Os critérios das specs citam estes projetos, que o QA cria em `tests/fixtures/`
 |---|---|
 | `hello-c` | `CMakeLists.txt` com `project(hello C)` e o executável `hello`; `main.c` lê um inteiro com `scanf` e imprime o dobro. |
 | `hello-cpp` | `CMakeLists.txt` com dois executáveis (`app`, `tool`) e uma biblioteca estática `core`, que expõe `int soma(int a, int b)`; `app/main.cpp` chama `soma` e usa `std::string`. Sem presets. |
-| `hello-cpp-presets` | Igual a `hello-cpp`, com `CMakePresets.json` contendo os presets de configuração `debug` e `release`. |
+| `hello-cpp-presets` | Igual a `hello-cpp`, com `CMakePresets.json` contendo os presets de configuração `debug` e `release`, com `binaryDir` em `out/build/<preset>` (diferente do `build/<config>` sem presets). |
 | `hello-cs` | Projeto de console `.csproj` (gerado por `dotnet new console`); `Program.cs` lê uma linha com `Console.ReadLine` e a imprime invertida. |
 | `grande` | Gerado pelo teste: um arquivo `.cpp` de 10.000 linhas e uma pasta com 5.000 arquivos. |
 
