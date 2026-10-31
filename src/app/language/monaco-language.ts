@@ -101,9 +101,7 @@ export function connectMonaco(monaco: MonacoApi, injector: Injector): void {
       (onCleanup) => {
         const client = languages.client(language);
         if (!client) return;
-        const registered = untracked(() =>
-          registerProviders(monaco, client, MONACO_IDS[language], uriOf),
-        );
+        const registered = untracked(() => registerProviders(monaco, client, language, uriOf));
         onCleanup(() => registered.forEach((item) => item.dispose()));
       },
       { injector },
@@ -115,9 +113,10 @@ export function connectMonaco(monaco: MonacoApi, injector: Injector): void {
 function registerProviders(
   monaco: MonacoApi,
   client: LspClient,
-  ids: string[],
+  language: Language,
   uriOf: (model: Model) => string | null,
 ): Monaco.IDisposable[] {
+  const ids = MONACO_IDS[language];
   const { completionProvider, signatureHelpProvider, hoverProvider } = client.capabilities;
   const at = (model: Model, position: Monaco.Position) => {
     const uri = uriOf(model);
@@ -162,7 +161,14 @@ function registerProviders(
           const items = Array.isArray(result) ? result : result.items;
           return {
             incomplete: !Array.isArray(result) && !!result.isIncomplete,
-            suggestions: items.map((item) => toSuggestion(monaco, item, range)),
+            suggestions: items.map((item) =>
+              toSuggestion(
+                monaco,
+                item,
+                range,
+                language === 'cpp' ? { model, position } : undefined,
+              ),
+            ),
           };
         },
         resolveCompletionItem: completionProvider.resolveProvider
@@ -268,10 +274,16 @@ interface SignatureHelp {
   activeParameter?: number;
 }
 
-function toSuggestion(
+/**
+ * `typed` (só no clangd): o filterText vira o texto já digitado no range, como no vscode-clangd.
+ * O clangd filtra do lado dele; assim todo item empata na pontuação do Monaco e vale o sortText.
+ * O Roslyn manda a lista inteira e precisa do filtro do cliente.
+ */
+export function toSuggestion(
   monaco: MonacoApi,
   item: CompletionItem,
   wordRange: Monaco.IRange,
+  typed?: { model: Pick<Model, 'getValueInRange'>; position: Monaco.IPosition },
 ): Suggestion {
   const { CompletionItemKind, CompletionItemInsertTextRule } = monaco.languages;
   const edit = item.textEdit;
@@ -292,7 +304,9 @@ function toSuggestion(
     detail: item.detail,
     documentation: markdown(item.documentation),
     sortText: item.sortText,
-    filterText: item.filterText,
+    filterText: typed
+      ? typedIn(monaco, typed, 'replace' in range ? range.replace : range)
+      : item.filterText,
     preselect: item.preselect,
     insertText: edit?.newText ?? item.insertText ?? item.label,
     insertTextRules:
@@ -325,4 +339,15 @@ function abortOn(token: Monaco.CancellationToken): AbortSignal {
   if (token.isCancellationRequested) controller.abort();
   else token.onCancellationRequested(() => controller.abort());
   return controller.signal;
+}
+
+/** O texto do início do range até o cursor. */
+function typedIn(
+  monaco: MonacoApi,
+  { model, position }: { model: Pick<Model, 'getValueInRange'>; position: Monaco.IPosition },
+  { startLineNumber, startColumn }: Monaco.IRange,
+): string {
+  return model.getValueInRange(
+    new monaco.Range(startLineNumber, startColumn, position.lineNumber, position.column),
+  );
 }
