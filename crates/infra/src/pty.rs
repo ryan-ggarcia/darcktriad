@@ -344,10 +344,12 @@ mod tests {
     fn closing_after_the_shell_exited_signals_nobody() {
         let folder = TempDir::new("terminal-pid");
         let size = TerminalSize { cols: 80, rows: 24 };
-        let stranger = PortablePty
+        let spawned = PortablePty
             .spawn(&detect_default_shell(), &folder, size)
             .unwrap();
-        let stranger: Arc<dyn TerminalProcess> = Arc::from(stranger.process);
+        // Como na IDE, alguém lê a saída: no macOS o shell não termina de sair com saída presa no PTY.
+        collect(spawned.output);
+        let stranger: Arc<dyn TerminalProcess> = Arc::from(spawned.process);
         let stranger_waiter = {
             let stranger = Arc::clone(&stranger);
             thread::spawn(move || stranger.wait())

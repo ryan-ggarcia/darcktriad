@@ -16,6 +16,9 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 const MIN_GAP: Duration = Duration::from_millis(14);
 /// `seq 100000` leva ~0,1 s aqui; o limite deixa folga para CI lento e build sem otimização.
 const HUNDRED_K_LINES_BUDGET: Duration = Duration::from_secs(5);
+/// O bash 3.2 do macOS expande o `!` de `$!` como histórico ("event not found"); vai em linha
+/// própria porque a expansão acontece antes de a linha rodar.
+const NO_HISTORY: &str = "set +H 2>/dev/null\r";
 
 type Events = Arc<Mutex<Vec<(Instant, TerminalEvent)>>>;
 
@@ -36,6 +39,7 @@ impl Terminal {
             })
             .unwrap()
             .id;
+        terminals.write(id, NO_HISTORY).unwrap();
         Self {
             terminals,
             events,
@@ -162,6 +166,7 @@ fn closing_the_ide_ends_every_shell_and_program() {
             })
             .unwrap()
             .id;
+        terminals.write(id, NO_HISTORY).unwrap();
         let command = "sleep 1000 & echo bg=$!; echo sh=$$; sh -c 'echo fg=$$; exec sleep 1000'\r";
         terminals.write(id, command).unwrap();
         for tag in ["sh=", "bg=", "fg="] {

@@ -12,6 +12,8 @@ jobs:
       matrix:
         platform: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
+    # Um teste de PTY travado não pode segurar o job pelas 6 h padrão.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
