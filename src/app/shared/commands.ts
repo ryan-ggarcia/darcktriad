@@ -61,11 +61,13 @@ export type CommandId =
   | 'explorerNewFolder'
   | 'explorerRefresh'
   | 'explorerCollapseAll'
+  | 'toggleTerminal'
+  | 'newTerminal'
   | 'keyboardShortcuts';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
- * explorador.md e paleta-de-comandos.md). Menu, botões, paleta e teclado partem daqui.
+ * explorador.md, paleta-de-comandos.md e terminal.md). Menu, botões, paleta e teclado partem daqui.
  */
 export const COMMANDS: Record<CommandId, CommandSpec> = {
   newFile: { title: 'Arquivo: Novo arquivo', keys: ['Mod+N'] },
@@ -166,6 +168,9 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   explorerNewFolder: { title: 'Explorador: Nova pasta', when: 'folderOpen' },
   explorerRefresh: { title: 'Explorador: Atualizar', when: 'folderOpen' },
   explorerCollapseAll: { title: 'Explorador: Recolher tudo', when: 'folderOpen' },
+  // ⌃` também no macOS, como no VS Code.
+  toggleTerminal: { title: 'Ver: Terminal', keys: ['Ctrl+`'] },
+  newTerminal: { title: 'Terminal: Novo terminal', keys: ['Ctrl+Shift+`'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
 };
 
@@ -237,6 +242,11 @@ export class Commands {
 
   available(): CommandId[] {
     return (Object.keys(COMMANDS) as CommandId[]).filter((id) => this.isAvailable(id));
+  }
+
+  /** Um acorde (Ctrl+K …) espera a segunda tecla no despachante. */
+  chordWaiting(): boolean {
+    return this.dispatcher.waiting;
   }
 
   /** Executa se o comando estiver disponível; `false` se não estava. */

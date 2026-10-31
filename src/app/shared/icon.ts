@@ -12,6 +12,7 @@ const PATHS: Record<string, string> = {
   refresh: 'M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3',
   'collapse-all': 'M4.5 2.5h9v9M1.5 5.5h9v9h-9zM3.5 10h5',
   close: 'M4 4l8 8M12 4l-8 8',
+  add: 'M8 2.5v11M2.5 8h11',
   dot: 'M8 8h0',
   files: 'M5.5 1.5h5l3 3v8h-8zM10.5 1.5v3h3M3.5 4.5v10h7',
 };

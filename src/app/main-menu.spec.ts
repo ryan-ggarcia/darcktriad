@@ -41,6 +41,10 @@ describe('menu principal', () => {
       accelerator: null,
     });
     expect(item(submenu(menu, 'Ver'), 'Paleta de comandos')?.accelerator).toBe('Ctrl+Shift+P');
+    expect(item(submenu(menu, 'Ver'), 'Terminal')?.accelerator).toBe('Ctrl+`');
+    expect(item(submenu(buildMenu(recents, 'mac'), 'Ver'), 'Terminal')?.accelerator).toBe(
+      'Ctrl+Backquote',
+    );
     expect(item(submenu(menu, 'Editar'), 'Copiar')).toEqual({
       kind: 'command',
       id: 'copy',

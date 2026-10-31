@@ -28,6 +28,7 @@ const CODES: Record<string, string> = {
   '[': 'BracketLeft',
   ']': 'BracketRight',
   '/': 'Slash',
+  '`': 'Backquote',
 };
 
 const LABELS: Record<string, string> = {
@@ -36,6 +37,7 @@ const LABELS: Record<string, string> = {
   BracketLeft: '[',
   BracketRight: ']',
   Slash: '/',
+  Backquote: '`',
   Escape: 'Esc',
 };
 
@@ -87,7 +89,7 @@ export function formatAccelerator(chord: KeyStroke[], platform: Platform): strin
     .join('+');
 }
 
-function matches(event: KeyboardEvent, stroke: KeyStroke): boolean {
+export function matches(event: KeyboardEvent, stroke: KeyStroke): boolean {
   return (
     event.code === stroke.code &&
     event.ctrlKey === stroke.ctrl &&
@@ -108,6 +110,11 @@ export class ShortcutDispatcher<Id extends string> {
   private pending: Binding<Id>[] | null = null;
 
   constructor(private readonly bindings: Binding<Id>[]) {}
+
+  /** A primeira tecla de um acorde já veio e a próxima completa o atalho. */
+  get waiting(): boolean {
+    return this.pending !== null;
+  }
 
   /** `available` filtra os atalhos cujo comando não vale agora (condição de disponibilidade). */
   handle(event: KeyboardEvent, available: (id: Id) => boolean = () => true): KeyResult<Id> {

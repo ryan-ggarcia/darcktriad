@@ -1,0 +1,153 @@
+import { inject, Injectable, signal } from '@angular/core';
+import { errorMessage, TerminalEvent } from '../ipc';
+import { Commands } from '../shared/commands';
+import { PLATFORM } from '../shared/keybindings';
+import { TerminalService } from '../terminal.service';
+import { terminalKey } from './terminal-keys';
+import { TerminalScreen, TerminalScreens } from './terminal-screen';
+
+export function exitMessage(code: number | null): string {
+  return code === null ? 'Processo encerrado' : `Processo encerrado com código ${code}`;
+}
+
+/** Um terminal da lista: a tela e o shell do núcleo. */
+export class TerminalSession {
+  /** O nome do shell, depois que o núcleo o inicia. */
+  readonly name = signal('Terminal');
+  /** O shell não iniciou: a mensagem aparece no lugar da tela. */
+  readonly error = signal<string | null>(null);
+  /** Nulo até o núcleo responder ao `terminal_create`. */
+  id: number | null = null;
+  exited = false;
+  closed = false;
+
+  constructor(readonly screen: TerminalScreen) {}
+
+  /** O shell ainda recebe teclas e tamanhos. */
+  get running(): boolean {
+    return this.id !== null && !this.exited && !this.closed;
+  }
+}
+
+/** Os terminais do painel inferior (docs/specs/terminal.md). */
+@Injectable({ providedIn: 'root' })
+export class Terminals {
+  private readonly service = inject(TerminalService);
+  private readonly screens = inject(TerminalScreens);
+  private readonly commands = inject(Commands);
+  readonly sessions = signal<TerminalSession[]>([]);
+  readonly active = signal<TerminalSession | null>(null);
+  readonly visible = signal(false);
+  /** O primeiro terminal está sendo criado: o Ctrl+` não cria outro enquanto isso. */
+  private creating = false;
+
+  /** Ctrl+`: mostra ou esconde o painel; sem nenhum terminal, cria um. */
+  toggle(): void {
+    if (this.visible()) {
+      this.visible.set(false);
+    } else if (this.sessions().length || this.creating) {
+      this.visible.set(true);
+    } else {
+      void this.create();
+    }
+  }
+
+  /** Cria um terminal com o shell padrão e o ativa. */
+  async create(): Promise<void> {
+    this.visible.set(true);
+    this.creating = true;
+    const screen = await this.screens
+      .create()
+      .catch(warn)
+      .finally(() => (this.creating = false));
+    // O xterm.js não carregou: sem tela não há terminal para mostrar.
+    if (!screen) return this.visible.set(this.sessions().length > 0);
+    const session = new TerminalSession(screen);
+    this.sessions.update((list) => [...list, session]);
+    this.active.set(session);
+    screen.attachCustomKeyEventHandler((event) => this.onKey(screen, event));
+    // O que a tela manda antes da resposta do núcleo espera aqui. No Windows, o ConPTY pede a
+    // posição do cursor (ESC[6n) ao iniciar e só mostra algo depois que a resposta do xterm.js chega.
+    let queued: string | null = '';
+    screen.onData((data) => {
+      if (queued !== null) queued += data;
+      else if (session.running) this.service.write(session.id!, data).catch(warn);
+    });
+    screen.onResize(({ cols, rows }) => {
+      if (session.running) this.service.resize(session.id!, cols, rows).catch(warn);
+    });
+    // A tela pode ser ajustada ao painel antes da resposta; o tamanho novo vai logo depois dela.
+    const { cols, rows } = screen;
+    try {
+      const info = await this.service.create(cols, rows, (event) => this.onEvent(session, event));
+      session.id = info.id;
+      const pending = queued;
+      queued = null;
+      if (session.closed) return void this.service.close(info.id).catch(warn);
+      session.name.set(info.name);
+      if (pending && !session.exited) this.service.write(info.id, pending).catch(warn);
+      if (screen.cols !== cols || screen.rows !== rows) {
+        this.service.resize(info.id, screen.cols, screen.rows).catch(warn);
+      }
+    } catch (error) {
+      queued = null;
+      session.error.set(errorMessage(error));
+    }
+  }
+
+  /** Encerra o shell e tudo o que roda nele; sem terminais, o painel se esconde. */
+  close(session: TerminalSession): void {
+    if (session.closed) return;
+    session.closed = true;
+    if (session.id !== null) this.service.close(session.id).catch(warn);
+    session.screen.dispose();
+    const list = this.sessions();
+    const rest = list.filter((item) => item !== session);
+    this.sessions.set(rest);
+    if (this.active() === session) {
+      this.active.set(rest[Math.min(list.indexOf(session), rest.length - 1)] ?? null);
+    }
+    if (!rest.length) this.visible.set(false);
+  }
+
+  private onEvent(session: TerminalSession, event: TerminalEvent): void {
+    // Depois do `terminal_close` ainda chega o `exited`, e a tela já foi descartada.
+    if (session.closed) return;
+    if (event.kind === 'output') {
+      session.screen.write(event.data);
+    } else {
+      session.exited = true;
+      session.screen.write(`\r\n\r\n${exitMessage(event.code)}\r\n`);
+    }
+  }
+
+  /** O filtro do xterm.js: `false` faz ele ignorar a tecla. */
+  private onKey(screen: TerminalScreen, event: KeyboardEvent): boolean {
+    const action = terminalKey(event, PLATFORM, {
+      hasSelection: screen.hasSelection(),
+      altBuffer: screen.buffer.active.type === 'alternate',
+      chordWaiting: this.commands.chordWaiting(),
+    });
+    // O xterm.js deixa subir as teclas que não usa (ex.: Ctrl+Shift+S); elas são do processo.
+    if (action === 'shell') {
+      if (event.type === 'keydown') event.stopPropagation();
+      return true;
+    }
+    if (action === 'page') return false;
+    event.preventDefault();
+    if (event.type !== 'keydown') return false;
+    if (action === 'copy') {
+      navigator.clipboard.writeText(screen.getSelection()).catch(warn);
+    } else if (action === 'paste') {
+      // Colar passa pelo xterm.js, que avisa o programa (bracketed paste) e chama `onData`.
+      navigator.clipboard.readText().then((text) => screen.paste(text), warn);
+    } else {
+      screen.scrollPages(action === 'pageUp' ? -1 : 1);
+    }
+    return false;
+  }
+}
+
+function warn(error: unknown): void {
+  console.warn('Terminal:', errorMessage(error));
+}

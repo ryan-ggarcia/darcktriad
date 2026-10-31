@@ -23,14 +23,16 @@ import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
 import { PLATFORM } from './shared/keybindings';
 import { CurrentFolder } from './workspace/current-folder';
+import { TerminalPanel } from './terminal/terminal-panel';
+import { Terminals } from './terminal/terminals';
 import { WelcomeView } from './workspace/welcome-view';
 import { Workspace } from './workspace/workspace';
 
-/** A janela: barra de atividades, explorador, editores e barra de status (docs/specs/README.md). */
+/** A janela: barra de atividades, explorador, editores, painel inferior e barra de status (docs/specs/README.md). */
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DialogHost, EditorArea, ExplorerView, Icon, QuickOpen, WelcomeView],
+  imports: [DialogHost, EditorArea, ExplorerView, Icon, QuickOpen, TerminalPanel, WelcomeView],
   host: {
     '(window:keydown)': 'onKeydown($event)',
     '(window:keyup)': 'onKeyup($event)',
@@ -44,6 +46,7 @@ export class App {
   private readonly workspace = inject(Workspace);
   private readonly folder = inject(CurrentFolder);
   private readonly tree = inject(ExplorerTree);
+  private readonly terminals = inject(Terminals);
   private readonly dialogs = inject(Dialogs);
   private readonly injector = inject(Injector);
   private readonly explorer = viewChild(ExplorerView);
@@ -138,6 +141,8 @@ export class App {
       explorerNewFolder: inExplorer(() => this.tree.startCreate('dir')),
       explorerRefresh: () => this.tree.refresh(),
       explorerCollapseAll: () => this.tree.collapseAll(),
+      toggleTerminal: () => this.terminals.toggle(),
+      newTerminal: () => this.terminals.create(),
     });
   }
 }

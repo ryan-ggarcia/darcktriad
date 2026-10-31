@@ -67,6 +67,15 @@ export type MenuEntry =
   | { kind: 'submenu'; label: string; items: MenuEntry[] }
   | { kind: 'separator' };
 
+export interface TerminalInfo {
+  id: number;
+  /** Nome do shell para a lista: 'pwsh', 'bash', 'zsh'… */
+  name: string;
+}
+
+export type TerminalEvent =
+  { kind: 'output'; data: string } | { kind: 'exited'; code: number | null };
+
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;
 }

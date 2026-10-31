@@ -1,0 +1,76 @@
+<div
+  class="panel-sash"
+  role="separator"
+  aria-orientation="horizontal"
+  aria-label="Altura do painel"
+  title="Arraste para mudar a altura do painel (ou use as setas)"
+  tabindex="0"
+  [attr.aria-valuenow]="height()"
+  (pointerdown)="startResize($event)"
+  (keydown.arrowup)="resizeTo(height() + 20)"
+  (keydown.arrowdown)="resizeTo(height() - 20)"
+></div>
+
+<header class="panel-header">
+  <div role="tablist" aria-label="Abas do painel">
+    <span role="tab" class="panel-tab active" aria-selected="true">Terminal</span>
+  </div>
+  <div class="panel-actions" role="toolbar" aria-label="Ações do terminal">
+    <button
+      type="button"
+      class="icon-button"
+      aria-label="Novo terminal"
+      [title]="commands.hint('Novo terminal', 'newTerminal')"
+      (click)="terminals.create()"
+    >
+      <app-icon name="add" />
+    </button>
+    <button
+      type="button"
+      class="icon-button"
+      aria-label="Ocultar painel"
+      [title]="commands.hint('Ocultar painel', 'toggleTerminal')"
+      (click)="terminals.visible.set(false)"
+    >
+      <app-icon name="close" />
+    </button>
+  </div>
+</header>
+
+<div class="panel-body" role="tabpanel" aria-label="Terminal">
+  <div #area class="terminal-area">
+    @for (session of terminals.sessions(); track session) {
+      <div class="terminal-screen" [hidden]="session !== terminals.active()">
+        @if (session.error(); as error) {
+          <p class="terminal-error" role="alert">{{ error }}</p>
+        }
+        <div #screen class="terminal-host" [hidden]="session.error()"></div>
+      </div>
+    }
+  </div>
+
+  <ul class="terminal-list" aria-label="Terminais">
+    @for (session of terminals.sessions(); track session) {
+      <li class="terminal-item" [class.active]="session === terminals.active()">
+        <button
+          type="button"
+          class="terminal-name"
+          [attr.aria-current]="session === terminals.active()"
+          [title]="'Mostrar o terminal ' + session.name()"
+          (click)="terminals.active.set(session)"
+        >
+          {{ session.name() }}
+        </button>
+        <button
+          type="button"
+          class="icon-button"
+          title="Fechar terminal"
+          [attr.aria-label]="'Fechar terminal ' + session.name()"
+          (click)="terminals.close(session)"
+        >
+          <app-icon name="close" />
+        </button>
+      </li>
+    }
+  </ul>
+</div>

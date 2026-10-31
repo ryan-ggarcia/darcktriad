@@ -4,7 +4,7 @@ import { Platform } from './keybindings';
 
 const PLATFORMS: Platform[] = ['windows', 'linux', 'mac'];
 /** Categorias em pt-BR das specs; uma nova entra aqui junto com a spec que a cria. */
-const CATEGORIES = ['Arquivo', 'Editar', 'Ver', 'Ir', 'Explorador', 'Ajuda'];
+const CATEGORIES = ['Arquivo', 'Editar', 'Ver', 'Ir', 'Explorador', 'Terminal', 'Ajuda'];
 
 function key(code: string, modifiers: KeyboardEventInit = {}): KeyboardEvent {
   return new KeyboardEvent('keydown', { code, key: code.replace(/^Key/, ''), ...modifiers });

@@ -120,7 +120,11 @@ kbd {
 /* Layout fixo: barra de atividades | barra lateral | editores, e a barra de status embaixo. */
 app-root {
   display: grid;
-  grid-template: 'activity side main' 1fr 'status status status' 22px / 48px auto 1fr;
+  grid-template:
+    'activity side main' 1fr
+    'activity side panel' auto
+    'status status status' 22px
+    / 48px auto 1fr;
   height: 100vh;
 }
 
@@ -571,6 +575,116 @@ app-root {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Painel inferior: aba Terminal, tela do terminal ativo e lista de terminais à direita */
+.panel {
+  grid-area: panel;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-side);
+  border-top: 1px solid var(--border);
+}
+
+.panel-sash {
+  position: absolute;
+  z-index: 1;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.panel-sash:hover,
+.panel-sash:focus-visible {
+  background: var(--focus);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  height: 35px;
+  padding: 0 8px 0 12px;
+}
+
+.panel-header [role='tablist'] {
+  flex: 1;
+}
+
+.panel-tab {
+  display: inline-block;
+  padding: 4px 0 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.panel-tab.active {
+  color: var(--fg-strong);
+  border-bottom: 1px solid var(--fg-strong);
+}
+
+.panel-actions {
+  display: flex;
+}
+
+.panel-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.terminal-area {
+  flex: 1;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.terminal-screen,
+.terminal-host {
+  height: 100%;
+}
+
+.terminal-error {
+  margin: 0;
+  padding: 8px 0;
+  color: var(--error);
+}
+
+.terminal-list {
+  width: 160px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  border-left: 1px solid var(--border);
+}
+
+.terminal-item {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding-right: 4px;
+}
+
+.terminal-item:hover,
+.terminal-item.active {
+  background: var(--bg-hover);
+}
+
+.terminal-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
 }
 
 /* Paleta de comandos, Abrir rápido e Ir para linha */

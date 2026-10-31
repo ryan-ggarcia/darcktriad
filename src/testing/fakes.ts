@@ -15,9 +15,13 @@ import {
   ProjectFiles,
   RecentFolder,
   Session,
+  TerminalEvent,
+  TerminalInfo,
 } from '../app/ipc';
 import { basename, dirname, replacePrefix } from '../app/paths';
 import { Dialogs } from '../app/shared/dialogs';
+import { TerminalScreen, TerminalScreens } from '../app/terminal/terminal-screen';
+import { TerminalService } from '../app/terminal.service';
 import { WorkspaceService } from '../app/workspace.service';
 
 function fail(kind: AppError['kind'], message: string): Promise<never> {
@@ -326,11 +330,143 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
   }
 }
 
+/** Shell em memória: guarda o que a interface pediu e deixa o teste mandar saída e fim. */
+export class FakeTerminalService implements Partial<TerminalService> {
+  readonly created: { id: number; cols: number; rows: number }[] = [];
+  readonly writes: { id: number; data: string }[] = [];
+  readonly resizes: { id: number; cols: number; rows: number }[] = [];
+  readonly closed: number[] = [];
+  /** Os eventos de cada terminal, como o `Channel` do núcleo. */
+  readonly events = new Map<number, (event: TerminalEvent) => void>();
+  /** Erro devolvido pelo próximo `terminal_create`. */
+  createError: AppError | null = null;
+  shell = 'bash';
+  private nextId = 1;
+  private held: Promise<void> | null = null;
+
+  /** Segura as respostas do `terminal_create` até o teste chamar a função devolvida. */
+  holdCreate(): () => void {
+    let release!: () => void;
+    this.held = new Promise((done) => (release = done));
+    return release;
+  }
+
+  create(cols: number, rows: number, onEvent: (event: TerminalEvent) => void) {
+    if (this.createError) return Promise.reject(this.createError);
+    const id = this.nextId++;
+    this.created.push({ id, cols, rows });
+    // Como o `Channel`, os eventos já chegam antes da resposta.
+    this.events.set(id, onEvent);
+    const info: TerminalInfo = { id, name: this.shell };
+    return this.held ? this.held.then(() => info) : Promise.resolve(info);
+  }
+
+  write(id: number, data: string): Promise<void> {
+    this.writes.push({ id, data });
+    return Promise.resolve();
+  }
+
+  resize(id: number, cols: number, rows: number): Promise<void> {
+    this.resizes.push({ id, cols, rows });
+    return Promise.resolve();
+  }
+
+  close(id: number): Promise<void> {
+    this.closed.push(id);
+    return Promise.resolve();
+  }
+}
+
+/** Tela do xterm.js em memória: o teste digita, redimensiona e lê o que foi escrito. */
+export class FakeScreen implements TerminalScreen {
+  cols = 80;
+  rows = 24;
+  readonly buffer = { active: { type: 'normal' } } as TerminalScreen['buffer'];
+  text = '';
+  selection = '';
+  pasted: string[] = [];
+  scrolled = 0;
+  opened: HTMLElement | null = null;
+  disposed = false;
+  /** O tamanho que `fit()` adota, como se o painel medisse isso. */
+  fitSize = { cols: 80, rows: 24 };
+  keyHandler: (event: KeyboardEvent) => boolean = () => true;
+  private dataHandler: (data: string) => void = () => undefined;
+  private resizeHandler: (size: { cols: number; rows: number }) => void = () => undefined;
+
+  readonly onData = ((handler: (data: string) => void) => {
+    this.dataHandler = handler;
+    return { dispose: () => undefined };
+  }) as TerminalScreen['onData'];
+
+  readonly onResize = ((handler: (size: { cols: number; rows: number }) => void) => {
+    this.resizeHandler = handler;
+    return { dispose: () => undefined };
+  }) as TerminalScreen['onResize'];
+
+  /** O usuário digitando no terminal. */
+  type(data: string): void {
+    this.dataHandler(data);
+  }
+
+  attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+    this.keyHandler = handler;
+  }
+
+  open(parent: HTMLElement): void {
+    this.opened = parent;
+  }
+
+  fit(): void {
+    if (this.cols === this.fitSize.cols && this.rows === this.fitSize.rows) return;
+    ({ cols: this.cols, rows: this.rows } = this.fitSize);
+    this.resizeHandler(this.fitSize);
+  }
+
+  write(data: string | Uint8Array): void {
+    this.text += data;
+  }
+
+  focus(): void {}
+
+  hasSelection(): boolean {
+    return this.selection !== '';
+  }
+
+  getSelection(): string {
+    return this.selection;
+  }
+
+  paste(data: string): void {
+    this.pasted.push(data);
+  }
+
+  scrollPages(pages: number): void {
+    this.scrolled += pages;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
+export class FakeScreens extends TerminalScreens {
+  readonly screens: FakeScreen[] = [];
+
+  async create(): Promise<FakeScreen> {
+    const screen = new FakeScreen();
+    this.screens.push(screen);
+    return screen;
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
   explorer: FakeExplorer;
   workspace: FakeWorkspaceService;
+  terminals: FakeTerminalService;
+  screens: FakeScreens;
   providers: Provider[];
 }
 
@@ -339,17 +475,23 @@ export function createFakes(): Fakes {
   const dialogs = new FakeDialogs();
   const explorer = new FakeExplorer();
   const workspace = new FakeWorkspaceService();
+  const terminals = new FakeTerminalService();
+  const screens = new FakeScreens();
   return {
     files,
     dialogs,
     explorer,
     workspace,
+    terminals,
+    screens,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
       { provide: ExplorerService, useValue: explorer },
       { provide: WorkspaceService, useValue: workspace },
       { provide: TextBuffers, useClass: FakeBuffers },
+      { provide: TerminalService, useValue: terminals },
+      { provide: TerminalScreens, useValue: screens },
     ],
   };
 }
