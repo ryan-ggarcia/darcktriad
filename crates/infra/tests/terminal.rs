@@ -112,7 +112,14 @@ fn hundred_thousand_lines_arrive_whole_in_batches_of_one_per_frame() {
     let output = terminal.output();
     let numbers: Vec<u32> = output
         .split("\r\n")
-        .filter_map(|line| line.rsplit('\r').next()?.parse().ok())
+        // Sob carga o macOS às vezes manda "\r\r\n"; o `\r` a mais não muda o que a tela mostra.
+        .filter_map(|line| {
+            line.trim_end_matches('\r')
+                .rsplit('\r')
+                .next()?
+                .parse()
+                .ok()
+        })
         .filter(|&n| n >= 1)
         .collect();
     let expected: Vec<u32> = (1..=100_000).collect();
