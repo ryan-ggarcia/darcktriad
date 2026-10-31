@@ -724,7 +724,8 @@ mod tests {
                 move |event| lock(&sink).push(event),
             );
             project.platform = Platform::Unix;
-            project.delay = Duration::from_millis(100);
+            // Folga larga sobre os 25 ms entre salvamentos do teste: no runner do macOS um sleep atrasa.
+            project.delay = Duration::from_millis(500);
             Self {
                 project: Arc::new(project),
                 log,
@@ -748,7 +749,8 @@ mod tests {
             lock(&self.events)
                 .iter()
                 .filter_map(|event| match event {
-                    ProjectEvent::Output { line } => Some(line.clone()),
+                    // Com `/` em todo sistema, como em `log`.
+                    ProjectEvent::Output { line } => Some(line.replace('\\', "/")),
                     ProjectEvent::State { .. } => None,
                 })
                 .collect()
@@ -1165,10 +1167,10 @@ mod tests {
             build.join("CMakeFiles/4.0/CMakeCXXCompiler.cmake"),
             "/outro/CMakeLists.txt".into(),
         ]);
-        thread::sleep(Duration::from_millis(300));
+        thread::sleep(Duration::from_millis(700));
         assert!(fixture.log().is_empty(), "{:?}", fixture.log());
 
-        // Salvamentos a cada 25 ms por 200 ms, com espera de 100 ms: cada um adia a reconfiguração.
+        // Salvamentos a cada 25 ms por 200 ms, com espera de 500 ms: cada um adia a reconfiguração.
         for path in [
             "/proj/CMakeLists.txt",
             "/proj/cmake/opcoes.cmake",
@@ -1181,8 +1183,8 @@ mod tests {
             fixture.project.files_changed(&[path.into()]);
             thread::sleep(Duration::from_millis(25));
         }
-        wait_until(|| fixture.log().len() == 2);
-        thread::sleep(Duration::from_millis(300));
+        wait_until(|| fixture.log().len() >= 2);
+        thread::sleep(Duration::from_millis(700));
         assert_eq!(fixture.log().len(), 2, "{:?}", fixture.log());
     }
 }
