@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -76,8 +76,16 @@ pub struct TerminalInfo {
 }
 
 struct Session {
-    input: Mutex<Box<dyn Write + Send>>,
+    /// Fila da thread que escreve no terminal: as escritas chegam ao processo na ordem pedida, e
+    /// quem pede não espera um programa que não lê a entrada.
+    requests: Sender<Request>,
     process: Arc<dyn TerminalProcess>,
+    exited: Arc<AtomicBool>,
+}
+
+enum Request {
+    Write(String),
+    Resize(TerminalSize),
 }
 
 /// Caso de uso: os terminais abertos na IDE.
@@ -116,12 +124,22 @@ impl<P: PtySpawner> Terminals<P> {
             .spawn(&self.shell, cwd, size)
             .map_err(|error| spawn_error(&self.shell, error))?;
         let process: Arc<dyn TerminalProcess> = Arc::from(process);
-        start_pump(output, Arc::clone(&process), Box::new(on_event));
+        let exited = Arc::new(AtomicBool::new(false));
+        start_pump(
+            output,
+            Arc::clone(&process),
+            Arc::clone(&exited),
+            Box::new(on_event),
+        );
+        let (requests, receiver) = mpsc::channel();
+        let target = Arc::clone(&process);
+        thread::spawn(move || serve_requests(input, &*target, &receiver));
 
         let id = self.last_id.fetch_add(1, Ordering::Relaxed) + 1;
         let session = Session {
-            input: Mutex::new(input),
+            requests,
             process,
+            exited,
         };
         lock(&self.sessions).insert(id, Arc::new(session));
         Ok(TerminalInfo {
@@ -131,18 +149,23 @@ impl<P: PtySpawner> Terminals<P> {
     }
 
     /// Envia ao processo o que o usuário digitou ou colou.
+    /// Só põe na fila: volta na hora, mesmo que o programa não esteja lendo a entrada.
     pub fn write(&self, id: u32, data: &str) -> Result<()> {
-        let session = self.session(id)?;
-        let mut input = lock(&session.input);
-        input.write_all(data.as_bytes())?;
-        input.flush()?;
-        Ok(())
+        self.send(id, Request::Write(data.to_owned()))
     }
 
+    /// Vai pela mesma fila das escritas: o último tamanho pedido é o que fica.
     pub fn resize(&self, id: u32, size: TerminalSize) -> Result<()> {
         validate_size(size)?;
-        self.session(id)?.process.resize(size)?;
-        Ok(())
+        self.send(id, Request::Resize(size))
+    }
+
+    fn send(&self, id: u32, request: Request) -> Result<()> {
+        let session = self.session(id)?;
+        if session.exited.load(Ordering::Acquire) {
+            return Err(shell_ended());
+        }
+        session.requests.send(request).map_err(|_| shell_ended())
     }
 
     /// Encerra o shell e tudo o que roda nele.
@@ -187,6 +210,27 @@ fn spawn_error(program: &Path, error: io::Error) -> Error {
     error
 }
 
+fn shell_ended() -> Error {
+    Error::new(ErrorKind::Other, "O shell deste terminal já terminou")
+}
+
+/// Atende a fila de um terminal, em ordem, até o terminal ser fechado.
+fn serve_requests(
+    mut input: Box<dyn Write + Send>,
+    process: &dyn TerminalProcess,
+    requests: &Receiver<Request>,
+) {
+    for request in requests {
+        // Um erro aqui é o shell terminando, e isso já chega à interface como `exited`.
+        let _ = match request {
+            Request::Write(data) => input
+                .write_all(data.as_bytes())
+                .and_then(|()| input.flush()),
+            Request::Resize(size) => process.resize(size),
+        };
+    }
+}
+
 fn not_found() -> Error {
     Error::new(ErrorKind::NotFound, "Este terminal já foi fechado")
 }
@@ -201,6 +245,7 @@ enum Message {
 fn start_pump(
     mut output: Box<dyn Read + Send>,
     process: Arc<dyn TerminalProcess>,
+    exited: Arc<AtomicBool>,
     on_event: Box<dyn Fn(TerminalEvent) + Send>,
 ) {
     let (sender, receiver) = mpsc::channel();
@@ -208,6 +253,8 @@ fn start_pump(
     thread::spawn(move || read_output(&mut *output, &reader));
     thread::spawn(move || {
         let code = process.wait().ok();
+        // Antes do aviso: quando a interface recebe `exited`, escrever já dá erro.
+        exited.store(true, Ordering::Release);
         let _ = sender.send(Message::Exited(code));
     });
     thread::spawn(move || deliver(&receiver, &*on_event));
@@ -477,8 +524,20 @@ mod tests {
             }
         }
 
+        fn wait_for_input(&self, expected: &[u8]) {
+            wait_until(|| *lock(&self.ends(0)[0].input.0) == expected);
+        }
+
         fn wait_for_exit(&self) {
             self.wait_until(|events| matches!(events.last(), Some(TerminalEvent::Exited { .. })));
+        }
+    }
+
+    fn wait_until(done: impl Fn() -> bool) {
+        let start = Instant::now();
+        while !done() {
+            assert!(start.elapsed() < TIMEOUT, "o tempo acabou");
+            thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -560,7 +619,36 @@ mod tests {
         let fixture = Fixture::new();
         let info = fixture.create().unwrap();
         fixture.terminals.write(info.id, "ls -la\r").unwrap();
-        assert_eq!(*lock(&fixture.ends(0)[0].input.0), b"ls -la\r");
+        fixture.wait_for_input(b"ls -la\r");
+    }
+
+    #[test]
+    fn writes_reach_the_process_in_the_order_they_were_made() {
+        let fixture = Fixture::new();
+        let info = fixture.create().unwrap();
+        let mut expected = Vec::new();
+        for i in 0..2000 {
+            let text = format!("a{i}\n");
+            fixture.terminals.write(info.id, &text).unwrap();
+            expected.extend_from_slice(text.as_bytes());
+        }
+        fixture.wait_for_input(&expected);
+    }
+
+    #[test]
+    fn writing_or_resizing_after_the_shell_exited_is_an_error() {
+        let fixture = Fixture::new();
+        let info = fixture.create().unwrap();
+        fixture.ends(0)[0].process.exit(0);
+        fixture.wait_for_exit();
+
+        let write = fixture.terminals.write(info.id, "x").unwrap_err();
+        let resize = fixture.terminals.resize(info.id, SIZE).unwrap_err();
+        assert_eq!(
+            (write.kind, resize.kind),
+            (ErrorKind::Other, ErrorKind::Other)
+        );
+        assert!(lock(&fixture.ends(0)[0].input.0).is_empty());
     }
 
     #[test]
@@ -612,13 +700,14 @@ mod tests {
     fn resize_reaches_the_process_and_rejects_an_empty_size() {
         let fixture = Fixture::new();
         let info = fixture.create().unwrap();
-        let size = TerminalSize {
-            cols: 120,
-            rows: 40,
-        };
-        fixture.terminals.resize(info.id, size).unwrap();
+        let sizes: Vec<_> = (1..=50)
+            .map(|rows| TerminalSize { cols: 120, rows })
+            .collect();
+        for &size in &sizes {
+            fixture.terminals.resize(info.id, size).unwrap();
+        }
 
-        assert_eq!(*lock(&fixture.ends(0)[0].process.sizes), [size]);
+        wait_until(|| *lock(&fixture.ends(0)[0].process.sizes) == sizes);
         let empty = TerminalSize { cols: 0, rows: 40 };
         let error = fixture.terminals.resize(info.id, empty).unwrap_err();
         assert_eq!(error.kind, ErrorKind::InvalidInput);

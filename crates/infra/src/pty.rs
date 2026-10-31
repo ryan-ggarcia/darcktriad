@@ -8,7 +8,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use darktriad_core::{
     Platform, PtySpawner, SpawnedTerminal, TerminalProcess, TerminalSize, default_shell,
 };
-use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+#[cfg(windows)]
+use portable_pty::ChildKiller;
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 /// O shell padrão deste computador (regras em [`default_shell`]).
 pub fn detect_default_shell() -> PathBuf {
@@ -47,6 +49,7 @@ impl PtySpawner for PortablePty {
             input,
             process: Box::new(PtyProcess {
                 pid: child.process_id(),
+                #[cfg(windows)]
                 killer: Mutex::new(child.clone_killer()),
                 child: Mutex::new(child),
                 master: Mutex::new(Some(pair.master)),
@@ -66,13 +69,17 @@ fn pty_size(size: TerminalSize) -> PtySize {
 }
 
 struct PtyProcess {
+    /// No Unix é também o id da sessão: o shell é o líder da sessão do PTY.
     pid: Option<u32>,
+    #[cfg(windows)]
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    /// Preso pelo `wait` enquanto o shell roda; por isso o `kill` usa o `killer`.
+    /// Preso pelo `wait` enquanto o shell roda; por isso o `kill` não passa por ele.
     child: Mutex<Box<dyn Child + Send + Sync>>,
-    /// `None` depois de fechado. Soltar o lado mestre desliga o terminal: no Unix o sistema manda
-    /// SIGHUP ao programa em primeiro plano; no Windows o ConPTY encerra os programas ligados a ele.
+    /// `None` depois de fechado. No Windows, soltar o ConPTY encerra os programas ligados a ele.
+    /// No Unix não desliga o terminal (o leitor e o escritor seguram cópias do descritor), por isso
+    /// o `kill` sinaliza a sessão do shell.
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    /// O shell já foi recolhido pelo `wait`: o PID pode ter ido para outro processo.
     exited: AtomicBool,
 }
 
@@ -87,7 +94,6 @@ impl PtyProcess {
         use std::time::{Duration, Instant};
 
         const GRACE: Duration = Duration::from_millis(500);
-        let Some(pid) = self.pid else { return };
         let deadline = Instant::now() + GRACE;
         while Instant::now() < deadline {
             if self.exited.load(Ordering::Acquire) {
@@ -95,10 +101,50 @@ impl PtyProcess {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        // SAFETY: só envia um sinal. `exited` falso garante que o processo ainda não foi
-        // recolhido pelo `wait`, então o PID ainda é dele.
-        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        self.signal_session(libc::SIGKILL);
     }
+
+    /// Sinaliza o shell e todo processo da sessão dele, inclusive os trabalhos em segundo plano,
+    /// que o controle de trabalhos põe em outros grupos de processos.
+    #[cfg(unix)]
+    fn signal_session(&self, signal: libc::c_int) {
+        let Some(session) = self.pid.map(|pid| pid as libc::pid_t) else {
+            return;
+        };
+        // Com o shell recolhido, o PID (e o id da sessão) pode ser de outro processo.
+        if self.exited.load(Ordering::Acquire) {
+            return;
+        }
+        // SAFETY: só consulta a sessão e envia sinais.
+        for pid in all_pids() {
+            if unsafe { libc::getsid(pid) } == session {
+                unsafe { libc::kill(pid, signal) };
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn all_pids() -> Vec<libc::pid_t> {
+    std::fs::read_dir("/proc")
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
+fn all_pids() -> Vec<libc::pid_t> {
+    // SAFETY: com buffer nulo só conta os processos; depois preenche no máximo `pids.len()`.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    // Folga para os processos que nascerem entre as duas chamadas.
+    let mut pids: Vec<libc::pid_t> = vec![0; count.max(0) as usize + 64];
+    let bytes = (pids.len() * size_of::<libc::pid_t>()) as libc::c_int;
+    let filled = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    pids.truncate(filled.max(0) as usize);
+    pids
 }
 
 impl TerminalProcess for PtyProcess {
@@ -113,12 +159,19 @@ impl TerminalProcess for PtyProcess {
         }
     }
 
+    #[cfg(unix)]
     fn kill(&self) -> io::Result<()> {
-        // No Unix é um SIGHUP, que o shell repassa aos programas que ele iniciou.
+        // O SIGHUP de um terminal que desliga.
+        self.signal_session(libc::SIGHUP);
+        self.close_terminal();
+        self.force_kill_after_grace();
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn kill(&self) -> io::Result<()> {
         let result = lock(&self.killer).kill();
         self.close_terminal();
-        #[cfg(unix)]
-        self.force_kill_after_grace();
         match result {
             Err(_) if self.exited.load(Ordering::Acquire) => Ok(()),
             other => other,
@@ -214,6 +267,15 @@ mod tests {
         };
         let mut input = spawned.input;
 
+        // O ConPTY pede a posição do cursor e não mostra nada até a resposta (na IDE, o xterm.js
+        // responde). No Unix ninguém pergunta.
+        #[cfg(windows)]
+        {
+            let asked = || lock(&output).windows(4).any(|bytes| bytes == b"\x1b[6n");
+            wait_until("o pedido da posição do cursor", asked);
+            input.write_all(b"\x1b[1;1R").unwrap();
+        }
+
         // As aspas fazem o eco do que foi digitado diferir da saída do comando (sh, zsh e pwsh).
         input.write_all(b"echo dark-\"triad\"\r").unwrap();
         input.flush().unwrap();
@@ -274,5 +336,44 @@ mod tests {
         wait_until("o shell terminar", || waiter.is_finished());
         // SAFETY: o sinal 0 só consulta se o processo existe.
         wait_until("o sleep terminar", || unsafe { libc::kill(sleep, 0) } != 0);
+    }
+
+    /// Um shell que já terminou e foi recolhido não leva sinal: o PID dele pode ser de outro
+    /// processo. Aqui o PID é o de outro terminal, que precisa continuar vivo.
+    #[cfg(unix)]
+    #[test]
+    fn closing_after_the_shell_exited_signals_nobody() {
+        let folder = TempDir::new("terminal-pid");
+        let size = TerminalSize { cols: 80, rows: 24 };
+        let stranger = PortablePty
+            .spawn(&detect_default_shell(), &folder, size)
+            .unwrap();
+        let stranger: Arc<dyn TerminalProcess> = Arc::from(stranger.process);
+        let stranger_waiter = {
+            let stranger = Arc::clone(&stranger);
+            thread::spawn(move || stranger.wait())
+        };
+
+        let pair = native_pty_system().openpty(pty_size(size)).unwrap();
+        let child = pair
+            .slave
+            .spawn_command(CommandBuilder::new("true"))
+            .unwrap();
+        let exited = PtyProcess {
+            pid: stranger.pid(),
+            child: Mutex::new(child),
+            master: Mutex::new(Some(pair.master)),
+            exited: AtomicBool::new(false),
+        };
+        exited.wait().unwrap();
+        exited.kill().unwrap();
+
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            !stranger_waiter.is_finished(),
+            "o sinal atingiu outro processo"
+        );
+        stranger.kill().unwrap();
+        stranger_waiter.join().unwrap().unwrap();
     }
 }

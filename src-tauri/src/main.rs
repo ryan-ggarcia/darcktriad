@@ -222,18 +222,17 @@ async fn terminal_create(
     .await
 }
 
+// Síncronos de propósito: rodam na thread principal, na ordem em que chegam, e só põem o pedido
+// na fila do terminal, sem esperar o processo.
 #[tauri::command]
-async fn terminal_write(app: AppHandle, id: u32, data: String) -> Result<(), Error> {
-    blocking(move || app.state::<AppTerminals>().write(id, &data)).await
+fn terminal_write(app: AppHandle, id: u32, data: String) -> Result<(), Error> {
+    app.state::<AppTerminals>().write(id, &data)
 }
 
 #[tauri::command]
-async fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) -> Result<(), Error> {
-    blocking(move || {
-        app.state::<AppTerminals>()
-            .resize(id, TerminalSize { cols, rows })
-    })
-    .await
+fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) -> Result<(), Error> {
+    app.state::<AppTerminals>()
+        .resize(id, TerminalSize { cols, rows })
 }
 
 #[tauri::command]

@@ -89,7 +89,7 @@ Fonte principal: [Terminal basics](https://code.visualstudio.com/docs/terminal/b
 
 | Ação no Dark Triad | Windows | Linux | macOS | Comando VS Code e fonte |
 |---|---|---|---|---|
-| Ver: Mostrar/ocultar terminal | Ctrl+\` | Ctrl+\` | ⌃\` | `workbench.action.terminal.toggleTerminal` ([default keybindings](https://code.visualstudio.com/docs/reference/default-keybindings)) |
+| Ver: Terminal | Ctrl+\` | Ctrl+\` | ⌃\` | `workbench.action.terminal.toggleTerminal` ([default keybindings](https://code.visualstudio.com/docs/reference/default-keybindings)) |
 | Terminal: Novo terminal | Ctrl+Shift+\` | Ctrl+Shift+\` | ⌃⇧\` | `workbench.action.terminal.new` ([terminalActions.ts](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalActions.ts), MIT) |
 | Terminal: Copiar seleção | Ctrl+C (com seleção) | Ctrl+Shift+C | ⌘C | `workbench.action.terminal.copySelection` |
 | Terminal: Colar | Ctrl+V | Ctrl+Shift+V | ⌘V | `workbench.action.terminal.paste` |

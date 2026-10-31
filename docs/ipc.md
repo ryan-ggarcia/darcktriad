@@ -208,7 +208,7 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 |---|---|---|---|
 | `terminal_create` | `{ cols: number, rows: number, onEvent: Channel<TerminalEvent> }` | `TerminalInfo` | `invalidInput` (`cols` ou `rows` zero); `notFound` ou `other` (o shell não iniciou) |
 | `terminal_write` | `{ id: number, data: string }` | `void` | `notFound` (terminal fechado); `other` (o shell já terminou) |
-| `terminal_resize` | `{ id: number, cols: number, rows: number }` | `void` | `invalidInput`, `notFound` |
+| `terminal_resize` | `{ id: number, cols: number, rows: number }` | `void` | `invalidInput`, `notFound`; `other` (o shell já terminou) |
 | `terminal_close` | `{ id: number }` | `void` | `notFound` |
 
 - **Criar:** `onEvent` é um `Channel` de `@tauri-apps/api/core` (`const onEvent = new Channel<TerminalEvent>(); onEvent.onmessage = …`). Crie o canal e trate as mensagens antes de chamar `terminal_create`: a primeira saída pode chegar antes da resposta.
@@ -222,8 +222,10 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
   - Os caracteres UTF-8 nunca chegam partidos entre dois lotes.
   - O limite de 10.000 linhas de histórico fica no xterm.js (`scrollback: 10000`).
 - **Teclado:** mande o `onData` do xterm.js para `terminal_write` sem mexer (Enter é `\r`, Ctrl+C é `\x03`). Colar também vai por `terminal_write`. As teclas que vão para a IDE (spec do terminal) são filtradas na interface, antes do xterm.js.
+- **Ordem:** as escritas chegam ao processo na ordem em que `terminal_write` foi chamado, e `terminal_resize` segue a mesma fila: o último tamanho pedido é o que fica. Os dois só enfileiram e respondem na hora, mesmo quando o programa não lê a entrada (ex.: colar 1 MiB). Não é preciso esperar uma chamada para fazer a próxima.
+- **Respostas do terminal (Windows):** o ConPTY pede a posição do cursor (`ESC[6n`) assim que o shell abre e não mostra nada até receber a resposta (`ESC[linha;colunaR`). O xterm.js responde sozinho pelo `onData`, que já vai para `terminal_write`; não filtre essas respostas. Sem isso o terminal fica em branco.
 - **Tamanho:** chame `terminal_resize` sempre que o painel mudar de tamanho (ex.: com o `FitAddon`). O programa que roda no terminal recebe o tamanho novo.
-- **Fim do shell:** com `exited`, escreva "Processo encerrado com código N" (sem o número quando `code` é `null`). Mantenha o terminal na lista para leitura. Não há mais saída depois de `exited`.
+- **Fim do shell:** com `exited`, escreva "Processo encerrado com código N" (sem o número quando `code` é `null`). Mantenha o terminal na lista para leitura. Não há mais saída depois de `exited`, e `terminal_write` e `terminal_resize` passam a dar `other`.
 - **Fechar:** `terminal_close` encerra o shell e o que roda nele. Chame também para um terminal cujo shell já terminou, para liberá-lo. Depois do `close` ainda chega o `exited`; ignore-o.
 - **Fechar a IDE:** o núcleo encerra todos os terminais sozinho. A interface não precisa fechar um por um.
 
@@ -285,4 +287,5 @@ Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
 - Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
 - Terminal:
   - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).
-  - No macOS e no Linux, fechar o terminal manda SIGHUP ao shell e ao programa em primeiro plano. O bash repassa o SIGHUP aos programas em segundo plano. Um shell que ignora o SIGHUP é encerrado à força depois de 0,5 s. Um programa que ignora o SIGHUP e se desligou do terminal (ex.: `nohup … &`) continua rodando.
+  - No macOS e no Linux, fechar o terminal manda SIGHUP a todos os processos da sessão do shell (o shell e o que ele iniciou, em primeiro ou segundo plano). Se o shell não sair em 0,5 s, todos eles levam SIGKILL. Um programa que ignora o SIGHUP (ex.: `nohup … &`) continua rodando se o shell saiu com o SIGHUP, porque depois disso o núcleo não manda mais sinais (o PID do shell pode ser de outro processo). Programas que saíram da sessão (`setsid`, daemons) também continuam.
+  - No macOS o shell não é de login: quem abre a IDE pelo Finder não tem no terminal o PATH do `~/.zprofile` (Homebrew, CMake, dotnet).
