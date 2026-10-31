@@ -64,6 +64,8 @@ pub struct ProjectState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
+// Cada evento vive só até ser enviado à interface; caixa no estado seria só ruído (o lint dispara no Windows).
+#[allow(clippy::large_enum_variant)]
 pub enum ProjectEvent {
     /// Uma linha do canal CMake da Saída.
     Output { line: String },

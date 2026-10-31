@@ -160,8 +160,6 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
-    use darktriad_core::{TOOLS, ToolStatus};
-
     use super::*;
     use crate::test_support::TempDir;
 
@@ -182,8 +180,12 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     fn clangd() -> &'static darktriad_core::Tool {
-        TOOLS.iter().find(|tool| tool.program == "clangd").unwrap()
+        darktriad_core::TOOLS
+            .iter()
+            .find(|tool| tool.program == "clangd")
+            .unwrap()
     }
 
     #[cfg(target_os = "linux")]
@@ -236,6 +238,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn clangd_off_the_path_is_missing_and_clangd_16_is_outdated() {
+        use darktriad_core::ToolStatus;
+
         let root = TempDir::new("probe-clangd");
         assert_eq!(clangd().check(&probe(&root, &["bin"])), ToolStatus::Missing);
 
