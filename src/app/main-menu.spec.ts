@@ -52,6 +52,12 @@ describe('menu principal', () => {
       accelerator: 'Ctrl+C',
       role: 'copy',
     });
+    expect(item(submenu(menu, 'Ajuda'), 'Verificar e instalar ferramentas')).toEqual({
+      kind: 'command',
+      id: 'checkTools',
+      label: 'Verificar e instalar ferramentas',
+      accelerator: null,
+    });
     const ids = menu.flatMap((entry) => (entry as Submenu).items);
     for (const entry of ids) {
       if (entry.kind === 'command') expect(isCommandId(entry.id), entry.id).toBe(true);

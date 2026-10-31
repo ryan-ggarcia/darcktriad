@@ -1,6 +1,7 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
 import { EditorTabs } from '../editor/editor-tabs';
 import { ExplorerTree } from '../explorer/explorer-tree';
+import { Project } from '../project/project';
 import { FileService } from '../file.service';
 import { ChangeBatch, errorMessage, Path, RecentFolder, Session } from '../ipc';
 import { Dialogs } from '../shared/dialogs';
@@ -16,6 +17,7 @@ export class Workspace {
   private readonly tree = inject(ExplorerTree);
   private readonly dialogs = inject(Dialogs);
   private readonly folder = inject(CurrentFolder);
+  private readonly project = inject(Project);
 
   readonly recents = signal<RecentFolder[]>([]);
   /** Enquanto a pasta abre, a lista de abas está pela metade e não pode virar sessão. */
@@ -98,7 +100,7 @@ export class Workspace {
     this.folder.path.set(null);
     this.folder.watchError.set(null);
     await this.service.closeFolder();
-    await this.loadRecents();
+    await Promise.all([this.project.refresh(), this.loadRecents()]);
   }
 
   /** Arquivo: Sair. A mesma pergunta do botão fechar; depois fecha a janela. */

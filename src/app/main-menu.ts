@@ -50,7 +50,7 @@ const MENUS: [string, Item[]][] = [
     ],
   ],
   ['Ver', ['showCommands', 'quickOpen', '-', 'showExplorer', 'toggleTerminal', 'toggleSidebar']],
-  ['Ajuda', ['keyboardShortcuts']],
+  ['Ajuda', ['keyboardShortcuts', 'checkTools']],
 ];
 
 /** O menu nativo a partir do registro: rótulo sem a categoria, atalho do sistema e `role`. */
@@ -73,12 +73,12 @@ export function buildMenu(recents: RecentFolder[], platform: Platform): MenuEntr
     }
     // No macOS, o Sair fica no menu do app, que o núcleo monta.
     if (item === 'quit' && platform === 'mac') return null;
-    const { title, role } = COMMANDS[item];
+    const { title, role, menu } = COMMANDS[item];
     const binding = bindings.find((candidate) => candidate.id === item);
     return {
       kind: 'command',
       id: item,
-      label: title.slice(title.indexOf(': ') + 2),
+      label: menu ?? title.slice(title.indexOf(': ') + 2),
       accelerator: binding ? formatAccelerator(binding.chord, platform) : null,
       ...(role && { role }),
     };

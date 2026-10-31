@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { createFakes, Fakes, settle } from '../testing/fakes';
 import { App } from './app';
+import { Commands } from './shared/commands';
 
 describe('App', () => {
   let fakes: Fakes;
@@ -103,6 +104,44 @@ describe('App', () => {
     );
     expect(page.querySelector<HTMLInputElement>('.quick-input')?.value).toBe('>');
     expect(fakes.workspace.menus.length).toBeGreaterThan(0);
+  });
+
+  it('projeto CMake: barra de status, escolha da configuração pela paleta e fechar a pasta', async () => {
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    const page = await render();
+    fakes.project.emitState({
+      root: 'C:\\proj',
+      kind: 'cmake',
+      configs: ['Debug', 'Release'],
+      config: 'Debug',
+      status: { kind: 'ready' },
+      targets: [{ name: 'app', path: 'C:\\proj\\build\\debug\\app.exe' }],
+      target: 'app',
+    });
+    await settle();
+    TestBed.tick();
+    const status = () => page.querySelector('.status-project')!.textContent!.replace(/\s+/g, ' ');
+    expect(status().trim()).toBe('CMake · Debug · ▶ app');
+    for (const button of page.querySelectorAll<HTMLElement>('.status-bar button')) {
+      expect(button.title, button.outerHTML).not.toBe('');
+    }
+
+    page.querySelector<HTMLElement>('[aria-label="Configuração: Debug"]')!.click();
+    await settle();
+    TestBed.tick();
+    const options = [...page.querySelectorAll<HTMLElement>('[role=option]')];
+    expect(options.map((option) => option.querySelector('.quick-label')!.textContent)).toEqual([
+      'Debug',
+      'Release',
+    ]);
+    options[1].click();
+    expect(fakes.project.selectedConfigs).toEqual(['Release']);
+
+    fakes.project.current = { ...fakes.project.current, root: null, kind: 'editOnly' };
+    TestBed.inject(Commands).run('closeFolder');
+    await settle();
+    TestBed.tick();
+    expect(status().trim()).toBe('');
   });
 
   it('bloqueia F5 e Ctrl+R, que recarregariam a página e perderiam o que não foi salvo', async () => {

@@ -22,15 +22,15 @@ const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 20;
 const OVERSCAN = 5;
 
-type Mode = 'files' | 'commands' | 'line';
+type Mode = 'files' | 'commands' | 'line' | 'pick';
 
-const TITLES: Record<Mode, string> = {
+const TITLES: Record<Exclude<Mode, 'pick'>, string> = {
   files: 'Abrir rápido',
   commands: 'Paleta de comandos',
   line: 'Ir para linha',
 };
 
-const PLACEHOLDERS: Record<Mode, string> = {
+const PLACEHOLDERS: Record<Exclude<Mode, 'pick'>, string> = {
   files: 'Nome do arquivo (> para comandos, : para ir a uma linha)',
   commands: 'Nome do comando',
   line: 'Linha, ou linha:coluna',
@@ -45,6 +45,17 @@ export interface QuickItem {
   /** Título do grupo que começa neste item. */
   section?: string;
   accept(): void;
+}
+
+/** Uma lista para escolher uma opção (configuração, alvo), na mesma caixa da paleta. */
+export interface Pick {
+  title: string;
+  options: string[];
+  /** A opção em uso, marcada na lista. */
+  current: string | null;
+  /** O que dizer quando não há opções. */
+  empty: string;
+  accept(option: string): void;
 }
 
 /** O texto do Ctrl+G: `linha` ou `linha:coluna`; nulo se não for isso. */
@@ -77,14 +88,22 @@ export class QuickOpen {
   /** Ajuda: Atalhos de teclado lista só os comandos que têm atalho. */
   private readonly shortcutsOnly = signal(false);
   private readonly recentCommands = signal<CommandId[]>([]);
+  private readonly picker = signal<Pick | null>(null);
   private previousFocus: HTMLElement | null = null;
 
   protected readonly mode = computed<Mode>(() => {
+    if (this.picker()) return 'pick';
     const value = this.value();
     return value.startsWith('>') ? 'commands' : value.startsWith(':') ? 'line' : 'files';
   });
-  protected readonly title = computed(() => TITLES[this.mode()]);
-  protected readonly placeholder = computed(() => PLACEHOLDERS[this.mode()]);
+  protected readonly title = computed(() => {
+    const mode = this.mode();
+    return mode === 'pick' ? this.picker()!.title : TITLES[mode];
+  });
+  protected readonly placeholder = computed(() => {
+    const mode = this.mode();
+    return mode === 'pick' ? 'Digite para filtrar' : PLACEHOLDERS[mode];
+  });
   protected readonly items = computed<QuickItem[]>(() => {
     if (!this.visible()) return [];
     const text = this.value();
@@ -93,6 +112,8 @@ export class QuickOpen {
         return this.commandItems(text.slice(1));
       case 'line':
         return this.lineItems(text.slice(1));
+      case 'pick':
+        return this.pickItems(this.picker()!, text);
       default:
         return this.fileItems(text);
     }
@@ -104,6 +125,11 @@ export class QuickOpen {
         return this.items().length ? '' : 'Nenhum comando correspondente';
       case 'line':
         return this.lineMessage();
+      case 'pick':
+        if (this.items().length) return '';
+        return this.picker()!.options.length
+          ? 'Nenhuma opção correspondente'
+          : this.picker()!.empty;
       default:
         return this.filesMessage();
     }
@@ -141,16 +167,25 @@ export class QuickOpen {
   show(prefix: string, shortcutsOnly = false): void {
     if (!this.visible()) this.previousFocus = document.activeElement as HTMLElement | null;
     this.index.watch();
+    this.picker.set(null);
     this.value.set(prefix);
     this.selected.set(0);
     this.shortcutsOnly.set(shortcutsOnly);
     this.visible.set(true);
   }
 
+  /** Abre a caixa com as opções de `pick`; Enter ou clique escolhe uma. */
+  pick(pick: Pick): void {
+    this.show('');
+    this.picker.set(pick);
+    this.selected.set(Math.max(0, pick.options.indexOf(pick.current ?? '')));
+  }
+
   /** Fecha; com `restoreFocus`, o foco volta para onde estava antes de abrir. */
   close(restoreFocus = true): void {
     if (!this.visible()) return;
     this.visible.set(false);
+    this.picker.set(null);
     this.index.unwatch();
     const previous = this.previousFocus;
     this.previousFocus = null;
@@ -234,6 +269,26 @@ export class QuickOpen {
         this.commands.run(id);
       },
     };
+  }
+
+  private pickItems(pick: Pick, query: string): QuickItem[] {
+    const prepared = prepareQuery(query);
+    return pick.options
+      .map((option) => {
+        const positions: number[] = [];
+        const score = prepared ? fuzzyScore(prepared, fold(option), 0, positions) : 0;
+        return { option, positions, score };
+      })
+      .filter((match) => match.score >= 0)
+      .map(({ option, positions }) => ({
+        label: highlight(option, positions),
+        detail: plain(option === pick.current ? 'em uso' : ''),
+        keys: '',
+        accept: () => {
+          this.close();
+          pick.accept(option);
+        },
+      }));
   }
 
   private fileItems(query: string): QuickItem[] {

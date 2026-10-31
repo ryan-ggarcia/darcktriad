@@ -16,6 +16,9 @@ import { ExplorerTree } from './explorer/explorer-tree';
 import { ExplorerView } from './explorer/explorer-view';
 import { MainMenu } from './main-menu';
 import { LANGUAGE_NAMES } from './paths';
+import { Project } from './project/project';
+import { ProjectStatus } from './project/project-status';
+import { ToolsView } from './project/tools-view';
 import { QuickOpen } from './quick-open/quick-open';
 import { Commands } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
@@ -32,7 +35,17 @@ import { Workspace } from './workspace/workspace';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DialogHost, EditorArea, ExplorerView, Icon, QuickOpen, TerminalPanel, WelcomeView],
+  imports: [
+    DialogHost,
+    EditorArea,
+    ExplorerView,
+    Icon,
+    ProjectStatus,
+    QuickOpen,
+    TerminalPanel,
+    ToolsView,
+    WelcomeView,
+  ],
   host: {
     '(window:keydown)': 'onKeydown($event)',
     '(window:keyup)': 'onKeyup($event)',
@@ -47,10 +60,12 @@ export class App {
   private readonly folder = inject(CurrentFolder);
   private readonly tree = inject(ExplorerTree);
   private readonly terminals = inject(Terminals);
+  private readonly project = inject(Project);
   private readonly dialogs = inject(Dialogs);
   private readonly injector = inject(Injector);
   private readonly explorer = viewChild(ExplorerView);
   private readonly quickOpen = viewChild.required(QuickOpen);
+  private readonly toolsView = viewChild.required(ToolsView);
 
   protected readonly sidebarVisible = signal(true);
   protected readonly status = computed(() => {
@@ -67,6 +82,7 @@ export class App {
   constructor() {
     this.registerCommands();
     inject(MainMenu).start();
+    void this.project.start();
     void this.workspace.start().then(() => {
       // Com a tela pronta, carrega o Monaco no tempo ocioso: o primeiro arquivo abre tão rápido quanto os outros.
       // shortcut: sem requestIdleCallback (WebKit antigo no macOS/Linux) não pré-carrega; usar setTimeout se lá medir lento.
@@ -115,6 +131,7 @@ export class App {
       editorOpen: () => this.tabs.active() !== null,
       textEditor: () => this.tabs.active()?.view.kind === 'text',
       folderOpen: () => this.folder.path() !== null,
+      cmakeProject: () => this.project.isCMake(),
     });
     this.commands.register({
       newFile: () => this.tabs.newUntitled(),
@@ -143,6 +160,38 @@ export class App {
       explorerCollapseAll: () => this.tree.collapseAll(),
       toggleTerminal: () => this.terminals.toggle(),
       newTerminal: () => this.terminals.create(),
+      selectConfig: () => this.pickConfig(),
+      selectTarget: () => this.pickTarget(),
+      reconfigure: () => this.project.reconfigure(),
+      checkTools: () => this.toolsView().show(),
+    });
+  }
+
+  private pickConfig(): void {
+    const { configs, config } = this.project.state();
+    this.quickOpen().pick({
+      title: 'Selecionar configuração',
+      options: configs,
+      current: config,
+      // Com presets, a lista vem do `cmake --list-presets`, na primeira configuração.
+      empty: 'Nenhuma configuração ainda: a lista aparece depois que o CMake configura.',
+      accept: (choice) => this.project.selectConfig(choice),
+    });
+  }
+
+  private pickTarget(): void {
+    const { targets, target, status } = this.project.state();
+    this.quickOpen().pick({
+      title: 'Selecionar alvo',
+      options: targets.map((item) => item.name),
+      current: target,
+      empty:
+        status.kind === 'configuring'
+          ? 'O CMake está configurando: os alvos aparecem quando ele terminar.'
+          : status.kind === 'failed'
+            ? 'A configuração falhou: veja a Saída.'
+            : 'Nenhum programa executável neste projeto.',
+      accept: (choice) => this.project.selectTarget(choice),
     });
   }
 }

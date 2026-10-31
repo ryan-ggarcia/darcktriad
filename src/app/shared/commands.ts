@@ -11,7 +11,7 @@ import {
 } from './keybindings';
 
 /** Condição de disponibilidade: o comando só aparece e só roda quando ela vale. */
-export type Condition = 'editorOpen' | 'textEditor' | 'folderOpen';
+export type Condition = 'editorOpen' | 'textEditor' | 'folderOpen' | 'cmakeProject';
 
 export interface CommandSpec {
   /** Nome em pt-BR no formato `Categoria: Ação`. */
@@ -24,6 +24,8 @@ export interface CommandSpec {
   when?: Condition;
   /** A tecla é do campo com foco (editor ou caixa de texto): o atalho só aparece, não é despachado. */
   native?: true;
+  /** Rótulo no menu quando o nome sem a categoria fica vago. */
+  menu?: string;
   /** Item nativo de edição no menu do macOS (docs/ipc.md, `set_menu`). */
   role?: EditRole;
 }
@@ -63,11 +65,15 @@ export type CommandId =
   | 'explorerCollapseAll'
   | 'toggleTerminal'
   | 'newTerminal'
+  | 'selectConfig'
+  | 'selectTarget'
+  | 'reconfigure'
+  | 'checkTools'
   | 'keyboardShortcuts';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
- * explorador.md, paleta-de-comandos.md e terminal.md). Menu, botões, paleta e teclado partem daqui.
+ * explorador.md, paleta-de-comandos.md, terminal.md e projeto.md). Menu, botões, paleta e teclado partem daqui.
  */
 export const COMMANDS: Record<CommandId, CommandSpec> = {
   newFile: { title: 'Arquivo: Novo arquivo', keys: ['Mod+N'] },
@@ -171,6 +177,14 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   // ⌃` também no macOS, como no VS Code.
   toggleTerminal: { title: 'Ver: Terminal', keys: ['Ctrl+`'] },
   newTerminal: { title: 'Terminal: Novo terminal', keys: ['Ctrl+Shift+`'] },
+  // Sem atalho, como no VS Code: ficam na paleta e na barra de status.
+  selectConfig: { title: 'Projeto: Selecionar configuração', when: 'cmakeProject' },
+  selectTarget: { title: 'Projeto: Selecionar alvo', when: 'cmakeProject' },
+  reconfigure: { title: 'Projeto: Reconfigurar CMake', when: 'cmakeProject' },
+  checkTools: {
+    title: 'Ferramentas: Verificar e instalar',
+    menu: 'Verificar e instalar ferramentas',
+  },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
 };
 

@@ -12,13 +12,17 @@ import {
   MenuEntry,
   OpenedFolder,
   Path,
+  ProjectEvent,
   ProjectFiles,
+  ProjectState,
   RecentFolder,
   Session,
   TerminalEvent,
   TerminalInfo,
+  ToolCheck,
 } from '../app/ipc';
 import { basename, dirname, replacePrefix } from '../app/paths';
+import { ProjectService } from '../app/project.service';
 import { Dialogs } from '../app/shared/dialogs';
 import { TerminalScreen, TerminalScreens } from '../app/terminal/terminal-screen';
 import { TerminalService } from '../app/terminal.service';
@@ -460,6 +464,69 @@ export class FakeScreens extends TerminalScreens {
   }
 }
 
+/** Projeto CMake em memória: o teste manda os eventos e lê o que a interface pediu. */
+export class FakeProjectService implements Partial<ProjectService> {
+  current: ProjectState = {
+    root: null,
+    kind: 'editOnly',
+    warning: null,
+    configs: [],
+    config: null,
+    status: { kind: 'idle' },
+    buildDir: null,
+    targets: [],
+    target: null,
+    problems: [],
+  };
+  readonly selectedConfigs: string[] = [];
+  readonly selectedTargets: string[] = [];
+  reconfigures = 0;
+  tools: ToolCheck[] = [];
+  toolsError: AppError | null = null;
+  toolsChecks = 0;
+  private handler: (event: ProjectEvent) => void = () => undefined;
+
+  /** O núcleo mandando um `project-event`. */
+  emit(event: ProjectEvent): void {
+    this.handler(event);
+  }
+
+  /** Um estado novo, com `change` sobre o atual. */
+  emitState(change: Partial<ProjectState>): void {
+    this.current = { ...this.current, ...change };
+    this.emit({ kind: 'state', state: this.current });
+  }
+
+  state(): Promise<ProjectState> {
+    return Promise.resolve(this.current);
+  }
+
+  selectConfig(config: string): Promise<void> {
+    this.selectedConfigs.push(config);
+    return Promise.resolve();
+  }
+
+  selectTarget(target: string): Promise<void> {
+    this.selectedTargets.push(target);
+    return Promise.resolve();
+  }
+
+  reconfigure(): Promise<void> {
+    this.reconfigures++;
+    return Promise.resolve();
+  }
+
+  checkTools(): Promise<ToolCheck[]> {
+    this.toolsChecks++;
+    return this.toolsError ? Promise.reject(this.toolsError) : Promise.resolve(this.tools);
+  }
+
+  async onEvent(handler: (event: ProjectEvent) => void) {
+    this.handler = handler;
+    return () => undefined;
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
@@ -467,6 +534,7 @@ export interface Fakes {
   workspace: FakeWorkspaceService;
   terminals: FakeTerminalService;
   screens: FakeScreens;
+  project: FakeProjectService;
   providers: Provider[];
 }
 
@@ -477,6 +545,7 @@ export function createFakes(): Fakes {
   const workspace = new FakeWorkspaceService();
   const terminals = new FakeTerminalService();
   const screens = new FakeScreens();
+  const project = new FakeProjectService();
   return {
     files,
     dialogs,
@@ -484,6 +553,7 @@ export function createFakes(): Fakes {
     workspace,
     terminals,
     screens,
+    project,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
@@ -492,6 +562,7 @@ export function createFakes(): Fakes {
       { provide: TextBuffers, useClass: FakeBuffers },
       { provide: TerminalService, useValue: terminals },
       { provide: TerminalScreens, useValue: screens },
+      { provide: ProjectService, useValue: project },
     ],
   };
 }

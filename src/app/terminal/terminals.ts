@@ -2,6 +2,7 @@ import { inject, Injectable, signal } from '@angular/core';
 import { errorMessage, TerminalEvent } from '../ipc';
 import { Commands } from '../shared/commands';
 import { PLATFORM } from '../shared/keybindings';
+import { Panel } from '../shared/panel';
 import { TerminalService } from '../terminal.service';
 import { terminalKey } from './terminal-keys';
 import { TerminalScreen, TerminalScreens } from './terminal-screen';
@@ -35,18 +36,27 @@ export class Terminals {
   private readonly service = inject(TerminalService);
   private readonly screens = inject(TerminalScreens);
   private readonly commands = inject(Commands);
+  private readonly panel = inject(Panel);
   readonly sessions = signal<TerminalSession[]>([]);
   readonly active = signal<TerminalSession | null>(null);
-  readonly visible = signal(false);
+  /** O painel inferior está à mostra (em qualquer aba). */
+  readonly visible = this.panel.visible;
   /** O primeiro terminal está sendo criado: o Ctrl+` não cria outro enquanto isso. */
   private creating = false;
 
-  /** Ctrl+`: mostra ou esconde o painel; sem nenhum terminal, cria um. */
+  /** Ctrl+`: mostra ou esconde o painel na aba Terminal; sem nenhum terminal, cria um. */
   toggle(): void {
-    if (this.visible()) {
+    if (this.visible() && this.panel.tab() === 'terminal') {
       this.visible.set(false);
-    } else if (this.sessions().length || this.creating) {
-      this.visible.set(true);
+    } else {
+      this.show();
+    }
+  }
+
+  /** Mostra a aba Terminal; sem nenhum terminal, cria um. */
+  show(): void {
+    if (this.sessions().length || this.creating) {
+      this.panel.show('terminal');
     } else {
       void this.create();
     }
@@ -54,7 +64,7 @@ export class Terminals {
 
   /** Cria um terminal com o shell padrão e o ativa. */
   async create(): Promise<void> {
-    this.visible.set(true);
+    this.panel.show('terminal');
     this.creating = true;
     const screen = await this.screens
       .create()

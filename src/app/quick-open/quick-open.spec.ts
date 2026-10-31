@@ -70,6 +70,7 @@ describe('QuickOpen', () => {
       editorOpen: () => textEditor,
       textEditor: () => textEditor,
       folderOpen: () => true,
+      cmakeProject: () => false,
     });
     fixture = TestBed.createComponent(QuickOpen);
     quick = fixture.componentInstance;
@@ -124,6 +125,44 @@ describe('QuickOpen', () => {
       expect(document.activeElement).toBe(before);
       expect(ran).toEqual([]);
       before.remove();
+    });
+  });
+
+  describe('lista de escolha (configuração, alvo)', () => {
+    function pick(options: string[], current: string | null, chosen: string[]) {
+      quick.pick({
+        title: 'Selecionar alvo',
+        options,
+        current,
+        empty: 'Nenhum programa executável neste projeto.',
+        accept: (option) => chosen.push(option),
+      });
+      return render();
+    }
+
+    it('marca a opção em uso, já escolhida, filtra e aceita com Enter', async () => {
+      const chosen: string[] = [];
+      await pick(['app', 'tool'], 'tool', chosen);
+
+      expect(input().getAttribute('aria-label')).toBe('Selecionar alvo');
+      expect(labels()).toEqual(['app', 'tool']);
+      expect(items()[1].getAttribute('aria-selected')).toBe('true');
+      expect(items()[1].querySelector('.quick-detail')?.textContent).toBe('em uso');
+
+      await type('ap');
+      expect(labels()).toEqual(['app']);
+      await press('Enter');
+
+      expect(chosen).toEqual(['app']);
+      expect(page().querySelector('[role=dialog]')).toBeNull();
+    });
+
+    it('sem opções, explica por quê; depois a paleta volta ao normal', async () => {
+      await pick([], null, []);
+      expect(message()).toBe('Nenhum programa executável neste projeto.');
+
+      await open('>');
+      expect(labels()).toContain('Ver: Mostrar Explorador');
     });
   });
 

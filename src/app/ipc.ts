@@ -76,6 +76,58 @@ export interface TerminalInfo {
 export type TerminalEvent =
   { kind: 'output'; data: string } | { kind: 'exited'; code: number | null };
 
+export type ProjectKind =
+  'cmake' | 'cmakePresets' | 'dotnetSolution' | 'dotnetProjects' | 'editOnly';
+
+export type ProjectStatus =
+  | { kind: 'idle' }
+  | { kind: 'configuring' }
+  | { kind: 'ready' }
+  | { kind: 'failed'; message: string };
+
+export interface CMakeTarget {
+  name: string;
+  /** Absoluto; pode ainda não existir antes de compilar. */
+  path: Path;
+}
+
+export interface Problem {
+  /** Absoluto. */
+  file: Path;
+  /** A partir de 1. */
+  line: number;
+  message: string;
+}
+
+export interface ProjectState {
+  root: Path | null;
+  kind: ProjectKind;
+  warning: string | null;
+  configs: string[];
+  config: string | null;
+  status: ProjectStatus;
+  buildDir: Path | null;
+  targets: CMakeTarget[];
+  target: string | null;
+  problems: Problem[];
+}
+
+export type ProjectEvent =
+  { kind: 'output'; line: string } | { kind: 'state'; state: ProjectState };
+
+export type ToolStatus =
+  | { kind: 'present'; path: Path; version: string | null }
+  | { kind: 'outdated'; path: Path; version: string | null }
+  | { kind: 'missing' };
+
+export interface ToolCheck {
+  program: string;
+  purpose: string;
+  minimum: string | null;
+  install: string;
+  status: ToolStatus;
+}
+
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;
 }

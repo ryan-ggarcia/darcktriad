@@ -12,8 +12,12 @@ import {
   viewChild,
   viewChildren,
 } from '@angular/core';
+import { OutputView } from '../project/output-view';
+import { ProblemsView } from '../project/problems-view';
+import { Project } from '../project/project';
 import { Commands } from '../shared/commands';
 import { Icon } from '../shared/icon';
+import { Panel } from '../shared/panel';
 import { Terminals, TerminalSession } from './terminals';
 
 const MIN_HEIGHT = 100;
@@ -21,18 +25,18 @@ const MIN_HEIGHT = 100;
 const EDITOR_MIN_HEIGHT = 150;
 
 /**
- * O painel inferior, por enquanto só com a aba Terminal (Problemas e Saída chegam com as specs
- * deles): a tela do terminal ativo e a lista de terminais à direita.
+ * O painel inferior, com as abas Problemas, Saída (canal CMake) e Terminal: na do terminal, a
+ * tela do terminal ativo e a lista de terminais à direita.
  */
 @Component({
   selector: 'app-terminal-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon],
+  imports: [Icon, OutputView, ProblemsView],
   host: {
     class: 'panel',
     role: 'region',
     'aria-label': 'Painel',
-    '[hidden]': '!terminals.visible()',
+    '[hidden]': '!panel.visible()',
     '[style.height.px]': 'height()',
   },
   templateUrl: './terminal-panel.html',
@@ -40,6 +44,8 @@ const EDITOR_MIN_HEIGHT = 150;
 export class TerminalPanel {
   protected readonly terminals = inject(Terminals);
   protected readonly commands = inject(Commands);
+  protected readonly panel = inject(Panel);
+  protected readonly project = inject(Project);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly height = signal(280);
@@ -50,7 +56,7 @@ export class TerminalPanel {
     // Mostrar o painel ou trocar de terminal: a tela aparece ajustada e com o foco.
     effect(() => {
       const session = this.terminals.active();
-      if (!this.terminals.visible() || !session) return;
+      if (!this.panel.visible() || this.panel.tab() !== 'terminal' || !session) return;
       untracked(() => afterNextRender(() => this.show(session), { injector: this.injector }));
     });
     afterNextRender(() => {

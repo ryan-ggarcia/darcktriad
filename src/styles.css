@@ -577,7 +577,7 @@ app-root {
   gap: 8px;
 }
 
-/* Painel inferior: aba Terminal, tela do terminal ativo e lista de terminais à direita */
+/* Painel inferior: abas Problemas, Saída e Terminal; no Terminal, a tela ativa e a lista à direita */
 .panel {
   grid-area: panel;
   position: relative;
@@ -612,19 +612,117 @@ app-root {
 
 .panel-header [role='tablist'] {
   flex: 1;
+  display: flex;
+  gap: 20px;
 }
 
 .panel-tab {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 0 3px;
   font-size: 11px;
   text-transform: uppercase;
   color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+}
+
+.panel-tab:hover {
+  color: var(--fg-strong);
+  background: transparent;
 }
 
 .panel-tab.active {
   color: var(--fg-strong);
-  border-bottom: 1px solid var(--fg-strong);
+  border-bottom-color: var(--fg-strong);
+}
+
+.panel-badge {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  text-align: center;
+}
+
+.panel-channel {
+  margin-right: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  background: var(--bg-input);
+  border-radius: 2px;
+}
+
+.panel-empty {
+  margin: 0;
+  padding: 8px 20px;
+  color: var(--fg-muted);
+}
+
+.problems-view,
+.output-view {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.problem-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problem {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  height: var(--row);
+  padding: 0 20px;
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.problem-mark {
+  color: var(--error);
+}
+
+.problem-location {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.problem-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.output-view {
+  display: flex;
+}
+
+.output-log {
+  flex: 1;
+  margin: 0;
+  padding: 4px 20px;
+  overflow: auto;
+  font:
+    12px/1.4 Consolas,
+    'Cascadia Mono',
+    Menlo,
+    'DejaVu Sans Mono',
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .panel-actions {
@@ -783,4 +881,111 @@ app-root {
 
 .status-message {
   margin-right: auto;
+}
+
+/* Projeto na barra de status: tipo, configuração e alvo, à esquerda */
+.status-project {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.status-item {
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+button.status-item:hover {
+  color: var(--fg-strong);
+  background: var(--bg-hover);
+}
+
+.status-item.status-error {
+  color: var(--error);
+}
+
+.status-pick::after {
+  content: ' ▾';
+}
+
+/* Ferramentas: Verificar e instalar */
+.dialog.tools {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 64px);
+  padding: 16px 20px;
+}
+
+.tools-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tools-title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--fg-strong);
+}
+
+.tools-status {
+  min-height: 18px;
+  margin: 4px 0;
+  color: var(--fg-muted);
+}
+
+.tools-error {
+  margin: 0 0 8px;
+  color: var(--error);
+}
+
+.tool-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tool {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.tool-mark {
+  flex: none;
+  width: 14px;
+  color: #89d185;
+}
+
+.tool-bad .tool-mark {
+  color: var(--error);
+}
+
+.tool-body {
+  min-width: 0;
+}
+
+.tool-line,
+.tool-install {
+  margin: 0;
+}
+
+.tool-summary {
+  margin-left: 8px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.tool-install {
+  color: var(--fg-muted);
+  white-space: pre-line;
 }

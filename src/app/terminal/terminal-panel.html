@@ -11,33 +11,109 @@
   (keydown.arrowdown)="resizeTo(height() - 20)"
 ></div>
 
+@let tab = panel.tab();
+@let problems = project.state().problems.length;
 <header class="panel-header">
   <div role="tablist" aria-label="Abas do painel">
-    <span role="tab" class="panel-tab active" aria-selected="true">Terminal</span>
-  </div>
-  <div class="panel-actions" role="toolbar" aria-label="Ações do terminal">
     <button
       type="button"
-      class="icon-button"
-      aria-label="Novo terminal"
-      [title]="commands.hint('Novo terminal', 'newTerminal')"
-      (click)="terminals.create()"
+      role="tab"
+      id="panel-tab-problems"
+      class="panel-tab"
+      aria-controls="panel-problems"
+      title="Problemas: os erros da configuração do CMake"
+      [class.active]="tab === 'problems'"
+      [attr.aria-selected]="tab === 'problems'"
+      (click)="panel.show('problems')"
     >
-      <app-icon name="add" />
+      Problemas
+      @if (problems) {
+        <span class="panel-badge" [attr.aria-label]="problems + ' problemas'">{{ problems }}</span>
+      }
     </button>
+    <button
+      type="button"
+      role="tab"
+      id="panel-tab-output"
+      class="panel-tab"
+      aria-controls="panel-output"
+      title="Saída: o log do CMake"
+      [class.active]="tab === 'output'"
+      [attr.aria-selected]="tab === 'output'"
+      (click)="panel.show('output')"
+    >
+      Saída
+    </button>
+    <button
+      type="button"
+      role="tab"
+      id="panel-tab-terminal"
+      class="panel-tab"
+      aria-controls="panel-terminal"
+      [title]="commands.hint('Terminal', 'toggleTerminal')"
+      [class.active]="tab === 'terminal'"
+      [attr.aria-selected]="tab === 'terminal'"
+      (click)="terminals.show()"
+    >
+      Terminal
+    </button>
+  </div>
+  <div class="panel-actions" role="toolbar" aria-label="Ações do painel">
+    @if (tab === 'output') {
+      <span class="panel-channel" title="Canal da Saída">CMake</span>
+    }
+    @if (tab === 'terminal') {
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Novo terminal"
+        [title]="commands.hint('Novo terminal', 'newTerminal')"
+        (click)="terminals.create()"
+      >
+        <app-icon name="add" />
+      </button>
+    }
     <button
       type="button"
       class="icon-button"
       aria-label="Ocultar painel"
-      [title]="commands.hint('Ocultar painel', 'toggleTerminal')"
-      (click)="terminals.visible.set(false)"
+      [title]="
+        tab === 'terminal' ? commands.hint('Ocultar painel', 'toggleTerminal') : 'Ocultar painel'
+      "
+      (click)="panel.visible.set(false)"
     >
       <app-icon name="close" />
     </button>
   </div>
 </header>
 
-<div class="panel-body" role="tabpanel" aria-label="Terminal">
+<div
+  id="panel-problems"
+  class="panel-body"
+  role="tabpanel"
+  aria-labelledby="panel-tab-problems"
+  [hidden]="tab !== 'problems'"
+>
+  <app-problems-view />
+</div>
+
+<div
+  id="panel-output"
+  class="panel-body"
+  role="tabpanel"
+  aria-labelledby="panel-tab-output"
+  [hidden]="tab !== 'output'"
+>
+  <app-output-view />
+</div>
+
+<div
+  id="panel-terminal"
+  class="panel-body"
+  role="tabpanel"
+  aria-labelledby="panel-tab-terminal"
+  [hidden]="tab !== 'terminal'"
+>
   <div #area class="terminal-area">
     @for (session of terminals.sessions(); track session) {
       <div class="terminal-screen" [hidden]="session !== terminals.active()">
