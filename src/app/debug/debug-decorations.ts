@@ -28,17 +28,8 @@ export function connectDebugDecorations(monaco: typeof Monaco, injector: Injecto
   const track = (model: Model) => {
     const entry = { ids: [] as string[], lines: [] as number[], file: '' };
     shown.set(model, entry);
-    model.onDidChangeContent(({ changes }) => {
-      // Recarregar do disco troca o texto inteiro e juntaria as bolinhas na linha 1: ficam onde estavam.
-      const last = Math.max(0, ...entry.lines);
-      const wholeText = changes.some(
-        ({ range, rangeLength }) =>
-          rangeLength > 0 &&
-          range.startLineNumber === 1 &&
-          range.startColumn === 1 &&
-          range.endLineNumber >= last,
-      );
-      if (wholeText && last) return breakpoints.list.update((list) => [...list]);
+    // Recarregar do disco troca só o trecho que mudou (MonacoBuffer.setText): as bolinhas seguem.
+    model.onDidChangeContent(() => {
       const moves: [number, number][] = [];
       entry.lines.forEach((line, i) => {
         const now = model.getDecorationRange(entry.ids[i])?.startLineNumber;

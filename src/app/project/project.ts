@@ -72,6 +72,10 @@ const CHANNELS: Partial<Record<ProjectKind, 'CMake' | 'dotnet'>> = {
   dotnetProjects: 'dotnet',
 };
 
+/** O núcleo avisa o cancelamento como `failed` com esta mensagem (docs/ipc.md). */
+// shortcut: reconhece pelo texto, igual ao de configure.rs; criar um status próprio se o texto precisar mudar.
+const CONFIGURE_CANCELLED = 'Configuração cancelada.';
+
 const NO_PROJECT: ProjectState = {
   root: null,
   kind: 'editOnly',
@@ -110,6 +114,11 @@ export class Project {
   private resultTimer?: ReturnType<typeof setTimeout>;
   /** O canal da Saída (CMake ou dotnet); null se a pasta não tem projeto que configure. */
   readonly channel = computed(() => CHANNELS[this.state().kind] ?? null);
+  /** A configuração falhou de verdade: cancelar é escolha do usuário, não erro. */
+  readonly configureFailed = computed(() => {
+    const { status } = this.state();
+    return status.kind === 'failed' && status.message !== CONFIGURE_CANCELLED;
+  });
   private warnedRoot: string | null = null;
   private eventSeen = false;
 
@@ -234,8 +243,7 @@ export class Project {
     );
     // Cada configuração começa com o canal limpo; a primeira linha é o comando.
     if (state.status.kind === 'configuring' && before !== 'configuring') this.output.set([]);
-    if (state.status.kind === 'failed' && before !== 'failed')
-      this.panel.showOutput(this.channel());
+    if (this.configureFailed() && before !== 'failed') this.panel.showOutput(this.channel());
     if (state.warning && state.root !== this.warnedRoot) {
       this.warnedRoot = state.root;
       void this.dialogs.tell(state.warning);

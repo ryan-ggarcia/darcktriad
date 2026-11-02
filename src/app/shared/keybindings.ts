@@ -47,8 +47,16 @@ const LABELS: Record<string, string> = {
 /** O caractere da tecla à esquerda do 1 no layout do usuário (`'` no ABNT2), como o VS Code mostra. */
 const backquoteLabel = signal('`');
 
-/** Lê o layout onde há `navigator.keyboard.getLayoutMap()` (WebView2); o WebKitGTK não tem. */
+/** Guardado entre aberturas, na pasta de dados do app. */
+const LEARNED_LABEL = 'backquoteLabel';
+
+/**
+ * Lê o layout onde há `navigator.keyboard.getLayoutMap()` (WebView2); o WebKitGTK não tem, e vale
+ * o caractere aprendido numa abertura anterior.
+ */
 export async function loadKeyboardLayout(): Promise<void> {
+  const learned = localStorage.getItem(LEARNED_LABEL);
+  if (learned) backquoteLabel.set(learned);
   const keyboard = (navigator as { keyboard?: { getLayoutMap?(): Promise<Map<string, string>> } })
     .keyboard;
   const key = (await keyboard?.getLayoutMap?.())?.get('Backquote');
@@ -60,6 +68,7 @@ export function learnKeyLabel(event: KeyboardEvent): void {
   // Shift e AltGr dão outro caractere; tecla morta vem como "Dead".
   if (event.code === 'Backquote' && !event.shiftKey && !event.altKey && event.key.length === 1) {
     backquoteLabel.set(event.key);
+    localStorage.setItem(LEARNED_LABEL, event.key);
   }
 }
 

@@ -84,6 +84,25 @@ describe('projeto', () => {
       expect(panel.tab()).toBe('output');
     });
 
+    it('cancelar a configuração não é erro: sem vermelho e sem abrir a Saída', async () => {
+      const { page, stable } = render(ProjectStatus);
+      fakes.project.emitState({ ...CMAKE, status: { kind: 'configuring' } });
+      panel.show('terminal');
+      panel.visible.set(false);
+
+      fakes.project.emitState({
+        status: { kind: 'failed', message: 'Configuração cancelada.' },
+      });
+      await stable();
+
+      expect(page.querySelector('.status-error')).toBeNull();
+      const kind = page.querySelector('.status-item')!;
+      expect(text(kind)).toBe('CMake');
+      expect(kind.getAttribute('title')).toContain('Configuração cancelada.');
+      expect(panel.visible()).toBe(false);
+      expect(panel.tab()).toBe('terminal');
+    });
+
     it('clicar na configuração ou no alvo abre a escolha pelos comandos', async () => {
       const ran: string[] = [];
       const commands = TestBed.inject(Commands);

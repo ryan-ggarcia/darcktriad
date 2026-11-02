@@ -152,6 +152,8 @@ export class Debugger {
   /** F6 enviado: o próximo `stopped` é "Pausado por você" (o lldb-dap avisa como `exception`). */
   private pauseRequested = false;
   private supportsExceptionInfo = false;
+  /** O lldb-dap não declara: recusaria o `terminate` (o netcoredbg declara). */
+  private supportsTerminate = false;
   private configured = false;
   private stopping = false;
   private disconnecting = false;
@@ -201,20 +203,21 @@ export class Debugger {
     this.client = client;
     this.state.set('running');
     const initialized = new Promise<void>((resolve) => (this.onInitialized = resolve));
-    const capabilities = await client.request<{ supportsExceptionInfoRequest?: boolean }>(
-      'initialize',
-      {
-        clientID: 'darktriad',
-        clientName: 'Dark Triad',
-        adapterID: this.adapter,
-        linesStartAt1: true,
-        columnsStartAt1: true,
-        pathFormat: 'path',
-        supportsRunInTerminalRequest: true,
-      },
-    );
+    const capabilities = await client.request<{
+      supportsExceptionInfoRequest?: boolean;
+      supportsTerminateRequest?: boolean;
+    }>('initialize', {
+      clientID: 'darktriad',
+      clientName: 'Dark Triad',
+      adapterID: this.adapter,
+      linesStartAt1: true,
+      columnsStartAt1: true,
+      pathFormat: 'path',
+      supportsRunInTerminalRequest: true,
+    });
     if (!capabilities) return void this.stop();
     this.supportsExceptionInfo = capabilities.supportsExceptionInfoRequest === true;
+    this.supportsTerminate = capabilities.supportsTerminateRequest === true;
     // O lldb-dap só responde ao `launch` depois do `configurationDone`: não dá para esperar aqui.
     void client.request('launch', launch.launch).then((ok) => {
       if (client !== this.client) return;
@@ -282,7 +285,8 @@ export class Debugger {
   }
 
   /**
-   * Shift+F5: pede `terminate`; sem o fim em 3 s, `disconnect` e logo depois `debug_stop`.
+   * Shift+F5: pede `terminate` (ou, se o adaptador não o declara, `disconnect`, como o VS Code);
+   * sem o fim em 3 s, `disconnect` e logo depois `debug_stop`.
    * Resolve quando a sessão acaba.
    */
   stop(): Promise<void> {
@@ -298,7 +302,9 @@ export class Debugger {
           this.disconnect();
           void this.kill(session);
         }, STOP_MS);
-        void client.request('terminate').then((ok) => ok || this.disconnect());
+        if (this.supportsTerminate)
+          void client.request('terminate').then((ok) => ok || this.disconnect());
+        else this.disconnect();
       } else {
         // Ainda compilando: o `debug_start` responde null e a sessão acaba.
         this.project.cancelBuild();
@@ -534,7 +540,7 @@ export class Debugger {
     this.state.set(null);
     this.threadId = undefined;
     this.configured = this.stopping = this.disconnecting = this.inTerminal = false;
-    this.pauseRequested = this.supportsExceptionInfo = false;
+    this.pauseRequested = this.supportsExceptionInfo = this.supportsTerminate = false;
     this.outputTerminal = this.runTerminal = null;
     this.breakpoints.forgetSession();
     this.onInitialized();

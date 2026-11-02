@@ -71,14 +71,14 @@ describe('sessão de depuração', () => {
   const sent = (command: string) => fakes.debug.sent.filter((item) => item.command === command);
 
   /** F5 até o `configurationDone`, com o `runInTerminal` do lldb-dap no meio. */
-  async function startLldb(): Promise<void> {
+  async function startLldb(capabilities = {}): Promise<void> {
     const started = debug.start();
     await settle();
     expect(fakes.debug.commands()).toEqual(['initialize']);
     expect(sent('initialize')[0].arguments).toEqual(
       expect.objectContaining({ adapterID: 'lldb-dap', supportsRunInTerminalRequest: true }),
     );
-    fakes.debug.respond('initialize', { supportsTerminateRequest: true });
+    fakes.debug.respond('initialize', capabilities);
     await settle();
     expect(sent('launch')[0].arguments).toEqual({ program: '/proj/build/app' });
 
@@ -197,7 +197,7 @@ describe('sessão de depuração', () => {
   });
 
   it('Parar: terminate; sem fim em 3 s, disconnect e debug_stop juntos, sem esperar resposta', async () => {
-    await startLldb();
+    await startLldb({ supportsTerminateRequest: true });
     vi.useFakeTimers();
     try {
       const stopped = debug.stop();
@@ -212,6 +212,14 @@ describe('sessão de depuração', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('Parar sem supportsTerminateRequest (lldb-dap): disconnect direto, sem terminate', async () => {
+    await startLldb();
+    void debug.stop();
+    expect(sent('terminate')).toEqual([]);
+    expect(sent('disconnect')[0].arguments).toEqual({ terminateDebuggee: true });
+    fakes.debug.emit({ kind: 'ended', reason: null });
   });
 
   it('Parar: o terminal 🐞 diz que o programa foi encerrado, sem o código do lançador', async () => {

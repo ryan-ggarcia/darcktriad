@@ -3,6 +3,7 @@ import {
   formatAccelerator,
   formatChord,
   learnKeyLabel,
+  loadKeyboardLayout,
   parseChord,
   Platform,
   ShortcutDispatcher,
@@ -106,7 +107,20 @@ describe('atalhos', () => {
     // ABNT2: a tecla física do Backquote escreve '.
     press("'", { ctrlKey: true });
     expect(terminal()).toBe("Ctrl+'");
+    expect(localStorage.getItem('backquoteLabel')).toBe("'");
     press('`');
+  });
+
+  it('na abertura, sem o mapa do layout (WebKitGTK), usa o caractere aprendido antes', async () => {
+    const terminal = () => formatChord(parseChord('Ctrl+`', 'linux'), 'linux');
+    localStorage.setItem('backquoteLabel', "'");
+    try {
+      await loadKeyboardLayout();
+      expect(terminal()).toBe("Ctrl+'");
+    } finally {
+      learnKeyLabel(new KeyboardEvent('keydown', { code: 'Backquote', key: '`' }));
+      localStorage.clear();
+    }
   });
 
   it('escreve o atalho do menu nativo no formato do Tauri', () => {

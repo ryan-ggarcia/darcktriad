@@ -21,7 +21,7 @@ import { Project } from './project';
           <button
             type="button"
             class="status-item"
-            [class.status-error]="state.status.kind === 'failed'"
+            [class.status-error]="project.configureFailed()"
             [title]="kindHint()"
             (click)="panel.showOutput(project.channel())"
           >
@@ -127,9 +127,8 @@ export class ProjectStatus {
   private readonly kind = computed(() => (this.project.channel() === 'dotnet' ? '.NET' : 'CMake'));
 
   protected readonly kindLabel = computed(() => {
-    const status = this.project.state().status.kind;
-    if (status === 'configuring') return `${this.kind()}: configurando…`;
-    return status === 'failed' ? `${this.kind()}: erro (ver Saída)` : this.kind();
+    if (this.project.state().status.kind === 'configuring') return `${this.kind()}: configurando…`;
+    return this.project.configureFailed() ? `${this.kind()}: erro (ver Saída)` : this.kind();
   });
 
   protected readonly kindHint = computed(() => {

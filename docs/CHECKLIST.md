@@ -57,18 +57,18 @@ Bugs e limites, do mais importante para o menos importante.
 - [x] .NET: salvar `.csproj`/`.sln` reconfigura; erros de restore sem linha aparecem em Problemas (Projeto)
 - [x] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem)
 - [ ] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem)
-- [ ] Digitar com o clangd ativo: p95 de 65 ms, meta de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem)
+- [ ] Digitar com o clangd ativo: p95 de 65 ms, meta de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem) → sem causa achada na interface; números em RISCOS.md, decisão do CTO
 - [x] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
 - [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
 - [ ] Erros da compilação sublinhados no editor (Compilar e executar)
 - [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido; falta o do lldb-dap
 - [ ] Programas que saem da sessão (`setsid`, `nohup … &`) continuam depois de Parar ou de fechar o terminal (Terminal; Compilar e executar)
 - [ ] Terminal sem controle de fluxo: muita saída pode travar a interface por ~0,3 s (Terminal)
-- [ ] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal)
+- [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto
 - [ ] Fonte do terminal em Linux sem as fontes monoespaçadas conhecidas (Terminal)
-- [ ] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração)
+- [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração)
 - [ ] Depuração: campos com nome (ex.: `Count`) junto com os blocos de coleções grandes (Depuração)
-- [ ] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração)
+- [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração)
 - [ ] Depuração: bolinha clara ao passar o mouse na margem (Depuração)
 - [ ] Linguagem: Ctrl+clique sublinha o nome; "Ir para definição" no menu de contexto (Linguagem)
 - [ ] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem)

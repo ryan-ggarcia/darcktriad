@@ -5,6 +5,31 @@ import { TextChange } from '../language/lsp';
 import { loadMonaco } from './monaco-loader';
 import { TextBuffer, TextBuffers } from './text-buffer';
 
+/**
+ * O trecho de `old` (de `start` até `end`) a trocar por `text` para virar `next`: tira o começo e o
+ * fim iguais, sem cortar um `\r\n` nem um caractere de dois códigos. `null`: textos iguais.
+ */
+export function changedPart(
+  old: string,
+  next: string,
+): { start: number; end: number; text: string } | null {
+  if (old === next) return null;
+  const max = Math.min(old.length, next.length);
+  let start = 0;
+  while (start < max && old[start] === next[start]) start++;
+  if (start > 0 && splits(old, start)) start--;
+  let tail = 0;
+  while (tail < max - start && old.at(-1 - tail) === next.at(-1 - tail)) tail++;
+  if (tail > 0 && splits(old, old.length - tail)) tail--;
+  return { start, end: old.length - tail, text: next.slice(start, next.length - tail) };
+}
+
+/** Cortar `text` em `at` separaria um `\r\n` ou um par de códigos (ex.: emoji). */
+function splits(text: string, at: number): boolean {
+  const code = text.charCodeAt(at - 1);
+  return (text[at - 1] === '\r' && text[at] === '\n') || (code >= 0xd800 && code <= 0xdbff);
+}
+
 export class MonacoBuffer implements TextBuffer {
   constructor(
     private readonly monaco: typeof Monaco,
@@ -16,15 +41,18 @@ export class MonacoBuffer implements TextBuffer {
   }
 
   setText(text: string): void {
+    const edit = changedPart(this.model.getValue(), text.replace(/\r\n?|\n/g, this.model.getEOL()));
+    if (!edit) return;
     const editors = this.monaco.editor.getEditors().filter((e) => e.getModel() === this.model);
     const states = editors.map((editor) => editor.saveViewState());
-    // Como edição (e não setValue), para o Ctrl+Z voltar ao texto anterior à recarga.
-    this.model.pushStackElement();
-    this.model.pushEditOperations(
-      [],
-      [{ range: this.model.getFullModelRange(), text }],
-      () => null,
+    const range = this.monaco.Range.fromPositions(
+      this.model.getPositionAt(edit.start),
+      this.model.getPositionAt(edit.end),
     );
+    // Como edição (e não setValue), para o Ctrl+Z voltar ao texto anterior à recarga. Só o trecho
+    // que mudou, como o VS Code: as decorações (pontos de parada) de fora seguem o texto.
+    this.model.pushStackElement();
+    this.model.pushEditOperations([], [{ range, text: edit.text }], () => null);
     this.model.pushStackElement();
     editors.forEach((editor, index) => editor.restoreViewState(states[index]));
   }

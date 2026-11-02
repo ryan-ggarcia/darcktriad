@@ -267,9 +267,11 @@ export class App {
       empty:
         status.kind === 'configuring'
           ? 'O projeto está configurando: os alvos aparecem quando ele terminar.'
-          : status.kind === 'failed'
+          : this.project.configureFailed()
             ? 'A configuração falhou: veja a Saída.'
-            : 'Nenhum programa executável neste projeto.',
+            : status.kind === 'failed'
+              ? status.message
+              : 'Nenhum programa executável neste projeto.',
       accept: (choice) => this.project.selectTarget(choice),
     });
   }
