@@ -1,13 +1,68 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { errorMessage, ProjectEvent, ProjectKind, ProjectState } from '../ipc';
+import { EditorTabs } from '../editor/editor-tabs';
+import {
+  BuildProblem,
+  BuildStatus,
+  errorMessage,
+  ProjectEvent,
+  ProjectKind,
+  ProjectState,
+  TerminalEvent,
+  TerminalInfo,
+} from '../ipc';
 import { ProjectService } from '../project.service';
+import { Commands } from '../shared/commands';
 import { Dialogs } from '../shared/dialogs';
 import { Panel } from '../shared/panel';
 import { MarkerSeverity } from '../language/lsp';
-import { Problems } from './problems';
+import { ProblemItem, Problems } from './problems';
 
-/** O canal da Saída guarda só as últimas linhas, para não crescer sem fim. */
-export const OUTPUT_LIMIT = 5000;
+/** Cada canal da Saída guarda só as últimas linhas, para não crescer sem fim. */
+export const OUTPUT_LIMIT = 10_000;
+
+export function withLine(lines: string[], line: string): string[] {
+  return lines.length < OUTPUT_LIMIT ? [...lines, line] : [...lines.slice(1), line];
+}
+
+export const BUILD_CHANNEL = 'Build';
+const BUSY = 'Já há uma compilação em andamento';
+const RESULT_MS = 5000;
+
+const SEVERITIES = {
+  error: MarkerSeverity.Error,
+  warning: MarkerSeverity.Warning,
+  info: MarkerSeverity.Info,
+};
+
+/** O texto da barra de status ao fim da compilação: "Compilação falhou: 2 erros, 1 aviso". */
+export function buildSummary(status: BuildStatus, problems: BuildProblem[]): string | null {
+  if (status === 'succeeded') return 'Compilação concluída';
+  if (status === 'cancelled') return null;
+  const count = (severity: string, one: string, many: string) => {
+    const n = problems.filter((item) => item.severity === severity).length;
+    return n ? `${n} ${n === 1 ? one : many}` : '';
+  };
+  const parts = [count('error', 'erro', 'erros'), count('warning', 'aviso', 'avisos')];
+  const detail = parts.filter(Boolean).join(', ');
+  return detail ? `Compilação falhou: ${detail}` : 'Compilação falhou';
+}
+
+/** O item do painel Problemas; o de reserva (sem arquivo) abre a Saída. */
+export function buildProblemItem(problem: BuildProblem): ProblemItem {
+  const line = problem.line ?? 1;
+  const column = problem.column ?? 1;
+  return {
+    file: problem.file,
+    severity: SEVERITIES[problem.severity],
+    message: problem.message,
+    source: 'build',
+    ...(problem.code && { code: problem.code }),
+    startLineNumber: line,
+    startColumn: column,
+    endLineNumber: line,
+    endColumn: column,
+  };
+}
 
 /** O canal da Saída de cada tipo de projeto que configura (docs/ipc.md). */
 const CHANNELS: Partial<Record<ProjectKind, 'CMake' | 'dotnet'>> = {
@@ -37,10 +92,22 @@ export class Project {
   private readonly panel = inject(Panel);
   private readonly dialogs = inject(Dialogs);
   private readonly problems = inject(Problems);
+  private readonly tabs = inject(EditorTabs);
+  private readonly commands = inject(Commands);
 
   readonly state = signal<ProjectState>(NO_PROJECT);
   /** As linhas do canal da Saída, uma por item. */
   readonly output = signal<string[]>([]);
+  /** As linhas do canal Build. */
+  readonly buildOutput = signal<string[]>([]);
+  /** Os problemas da última compilação, para os links do canal Build. */
+  readonly buildProblems = signal<BuildProblem[]>([]);
+  /** Entre o pedido e a resposta de `project_build`/`project_run`: "Compilando…" com o ✕. */
+  readonly building = signal(false);
+  /** "Compilação concluída" ou "Compilação falhou: …", por 5 s. */
+  readonly buildResult = signal<string | null>(null);
+  private lastBuild: BuildStatus | null = null;
+  private resultTimer?: ReturnType<typeof setTimeout>;
   /** O canal da Saída (CMake ou dotnet); null se a pasta não tem projeto que configure. */
   readonly channel = computed(() => CHANNELS[this.state().kind] ?? null);
   private warnedRoot: string | null = null;
@@ -74,15 +141,73 @@ export class Project {
     this.service.reconfigure().catch(this.tellError('reconfigurar o projeto'));
   }
 
+  /** Ctrl+Shift+B: salva tudo e compila todos os alvos. */
+  build(): void {
+    void this.compile(() => this.service.build());
+  }
+
+  cancelBuild(): void {
+    this.service.cancelBuild().catch(warn);
+  }
+
+  /**
+   * Ctrl+F5: salva tudo, compila o alvo ativo e o roda num terminal novo (o canal já recebe a
+   * saída). Null se não rodou; com a compilação falha, abre o painel Problemas.
+   */
+  async run(
+    cols: number,
+    rows: number,
+    onEvent: (event: TerminalEvent) => void,
+  ): Promise<TerminalInfo | null> {
+    const info = await this.compile(() => this.service.run(cols, rows, onEvent));
+    if (!info && this.lastBuild === 'failed') this.panel.show('problems');
+    return info;
+  }
+
+  private async compile<T>(start: () => Promise<T>): Promise<T | null> {
+    if (this.building()) {
+      this.commands.flash(BUSY);
+      return null;
+    }
+    this.building.set(true);
+    this.lastBuild = null;
+    try {
+      // Só os arquivos: uma aba sem título abriria o "Salvar como" a cada compilação.
+      for (const tab of this.tabs.dirtyTabs()) if (tab.path()) await this.tabs.save(tab);
+      this.buildOutput.set([]);
+      this.buildProblems.set([]);
+      this.buildResult.set(null);
+      // O painel Saída não pega o foco: o editor continua com ele.
+      this.panel.showOutput(BUILD_CHANNEL);
+      return await start();
+    } catch (error) {
+      void this.dialogs.tell(errorMessage(error));
+      return null;
+    } finally {
+      this.building.set(false);
+    }
+  }
+
   private onEvent(event: ProjectEvent): void {
     if (event.kind === 'output') {
-      this.output.update((lines) =>
-        lines.length < OUTPUT_LIMIT ? [...lines, event.line] : [...lines.slice(1), event.line],
-      );
+      this.output.update((lines) => withLine(lines, event.line));
+    } else if (event.kind === 'buildOutput') {
+      this.buildOutput.update((lines) => withLine(lines, event.line));
+    } else if (event.kind === 'buildFinished') {
+      this.finishBuild(event.status, event.problems);
     } else {
       this.eventSeen = true;
       this.apply(event.state);
     }
+  }
+
+  private finishBuild(status: BuildStatus, problems: BuildProblem[]): void {
+    this.lastBuild = status;
+    this.buildProblems.set(problems);
+    this.problems.set('build', problems.map(buildProblemItem));
+    this.buildResult.set(buildSummary(status, problems));
+    clearTimeout(this.resultTimer);
+    this.resultTimer = setTimeout(() => this.buildResult.set(null), RESULT_MS);
   }
 
   private apply(state: ProjectState): void {

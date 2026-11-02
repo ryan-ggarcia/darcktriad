@@ -1,9 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { Commands } from '../shared/commands';
 import { Panel } from '../shared/panel';
+import { Terminals } from '../terminal/terminals';
 import { Project } from './project';
 
-/** A parte esquerda da barra de status: tipo do projeto, configuração e alvo (docs/specs/projeto.md). */
+/**
+ * A parte esquerda da barra de status: tipo do projeto, configuração e alvo (docs/specs/projeto.md),
+ * a compilação e o programa rodando (docs/specs/compilar-e-executar.md).
+ */
 @Component({
   selector: 'app-project-status',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -56,12 +60,45 @@ import { Project } from './project';
         </span>
       }
     }
+    @if (project.building()) {
+      <span class="status-item" role="status">Compilando…</span>
+      <button
+        type="button"
+        class="status-item"
+        aria-label="Cancelar compilação"
+        title="Cancelar compilação"
+        (click)="commands.run('cancelBuild')"
+      >
+        ✕
+      </button>
+    } @else if (project.buildResult(); as result) {
+      <span
+        class="status-item"
+        role="status"
+        [class.status-error]="result !== 'Compilação concluída'"
+      >
+        {{ result }}
+      </span>
+    }
+    @if (terminals.program(); as program) {
+      <span class="status-item" role="status">{{ program.name() }} rodando</span>
+      <button
+        type="button"
+        class="status-item"
+        [attr.aria-label]="'Parar ' + program.name()"
+        [title]="commands.hint('Parar', 'stop')"
+        (click)="commands.run('stop')"
+      >
+        ■
+      </button>
+    }
   `,
 })
 export class ProjectStatus {
   protected readonly project = inject(Project);
   protected readonly commands = inject(Commands);
   protected readonly panel = inject(Panel);
+  protected readonly terminals = inject(Terminals);
 
   private readonly kind = computed(() => (this.project.channel() === 'dotnet' ? '.NET' : 'CMake'));
 

@@ -112,8 +112,25 @@ export interface ProjectState {
   problems: Problem[];
 }
 
+export type BuildStatus = 'succeeded' | 'failed' | 'cancelled';
+
+/** Um item do painel Problemas com origem `build`. */
+export interface BuildProblem {
+  /** Absoluto; null só no item de reserva "A compilação falhou. Veja a Saída.". */
+  file: Path | null;
+  /** A partir de 1; null só no item de reserva. */
+  line: number | null;
+  column: number | null;
+  severity: 'error' | 'warning' | 'info';
+  code: string | null;
+  message: string;
+}
+
 export type ProjectEvent =
-  { kind: 'output'; line: string } | { kind: 'state'; state: ProjectState };
+  | { kind: 'output'; line: string }
+  | { kind: 'state'; state: ProjectState }
+  | { kind: 'buildOutput'; line: string }
+  | { kind: 'buildFinished'; status: BuildStatus; problems: BuildProblem[] };
 
 export type ToolStatus =
   | { kind: 'present'; path: Path; version: string | null }

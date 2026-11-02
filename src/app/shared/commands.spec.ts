@@ -14,6 +14,8 @@ const CATEGORIES = [
   'Projeto',
   'Linguagem',
   'Ferramentas',
+  'Executar',
+  'Compilar',
   'Ajuda',
 ];
 

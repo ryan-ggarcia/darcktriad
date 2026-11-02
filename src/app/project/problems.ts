@@ -2,13 +2,13 @@ import { computed, Injectable, signal } from '@angular/core';
 import { Path } from '../ipc';
 import { MarkerData } from '../language/lsp';
 
-/** Um problema: o marcador do Monaco (base 1) e o arquivo. */
+/** Um problema: o marcador do Monaco (base 1) e o arquivo; sem arquivo, o de reserva da compilação. */
 export interface ProblemItem extends MarkerData {
-  file: Path;
+  file: Path | null;
 }
 
 export interface ProblemGroup {
-  file: Path;
+  file: Path | null;
   items: ProblemItem[];
 }
 
@@ -31,7 +31,7 @@ export class Problems {
 
   /** Agrupados por arquivo; dentro do arquivo, por gravidade e linha. */
   readonly groups = computed<ProblemGroup[]>(() => {
-    const byFile = new Map<Path, ProblemItem[]>();
+    const byFile = new Map<Path | null, ProblemItem[]>();
     for (const items of this.bySource().values()) {
       for (const item of items) byFile.set(item.file, [...(byFile.get(item.file) ?? []), item]);
     }

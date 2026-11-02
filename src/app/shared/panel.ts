@@ -15,6 +15,12 @@ export class Panel {
     this.visible.set(true);
   }
 
+  /** Mostra a aba; se ela já está à mostra, esconde o painel. */
+  toggle(tab: PanelTab): void {
+    if (this.visible() && this.tab() === tab) this.visible.set(false);
+    else this.show(tab);
+  }
+
   showOutput(channel: string | null): void {
     if (channel) this.outputChannel.set(channel);
     this.show('output');

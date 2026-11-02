@@ -9,10 +9,7 @@ const RECENT_FOLDER = 'recentFolder:';
 
 type Item = CommandId | '-' | 'recentFolders';
 
-/**
- * Os menus da spec, só com os comandos que já existem; Executar e o painel Saída entram quando os
- * comandos deles chegarem ao registro.
- */
+/** Os menus da spec, só com os comandos que já existem. */
 const MENUS: [string, Item[]][] = [
   [
     'Arquivo',
@@ -57,6 +54,7 @@ const MENUS: [string, Item[]][] = [
       '-',
       'showExplorer',
       'showProblems',
+      'toggleOutput',
       'toggleTerminal',
       'toggleSidebar',
     ],
@@ -74,6 +72,7 @@ const MENUS: [string, Item[]][] = [
       'previousProblem',
     ],
   ],
+  ['Executar', ['build', 'run', 'stop', '-', 'cancelBuild']],
   ['Ajuda', ['keyboardShortcuts', 'checkTools']],
 ];
 

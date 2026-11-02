@@ -172,7 +172,8 @@ describe('App', () => {
     expect(fakes.project.reconfigures).toBe(1);
     page.querySelector<HTMLElement>('#panel-tab-output')!.click();
     TestBed.tick();
-    expect(page.querySelector('.panel-channel')?.textContent?.trim()).toBe('dotnet');
+    const options = page.querySelectorAll('.panel-channel option');
+    expect([...options].map((option) => option.textContent)).toEqual(['dotnet', 'Build']);
     expect(page.querySelector('app-output-view')?.textContent).toContain('CMake ou .NET');
   });
 

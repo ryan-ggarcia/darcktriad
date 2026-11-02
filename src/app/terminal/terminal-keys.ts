@@ -19,6 +19,7 @@ const IDE_KEYS = [
   'F11',
   'Shift+F11',
   'Mod+B',
+  'Mod+Shift+U',
   'Mod+K',
 ];
 

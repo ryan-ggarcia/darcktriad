@@ -182,6 +182,11 @@ export class App {
       previousProblem: () => this.goToProblem(-1),
       restartCpp: () => this.languages.restart('cpp'),
       restartCsharp: () => this.languages.restart('csharp'),
+      build: () => this.project.build(),
+      run: () => this.terminals.run(),
+      stop: () => this.terminals.stop(),
+      cancelBuild: () => this.project.cancelBuild(),
+      toggleOutput: () => this.panel.toggle('output'),
     });
   }
 
@@ -190,7 +195,7 @@ export class App {
     const path = this.tabs.active()?.path();
     const cursor = this.tabs.cursor();
     const item = this.problems.next(path && cursor ? { file: path, ...cursor } : null, offset);
-    if (item) {
+    if (item?.file) {
       const position = { line: item.startLineNumber, column: item.startColumn };
       void this.tabs.openAt(item.file, position, false);
     }

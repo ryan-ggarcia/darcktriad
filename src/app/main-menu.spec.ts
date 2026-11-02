@@ -31,6 +31,7 @@ describe('menu principal', () => {
       'Editar',
       'Ver',
       'Ir',
+      'Executar',
       'Ajuda',
     ]);
     expect(item(submenu(menu, 'Ir'), 'Voltar')?.accelerator).toBe('Alt+←');
@@ -49,6 +50,16 @@ describe('menu principal', () => {
     expect(item(submenu(menu, 'Ver'), 'Terminal')?.accelerator).toBe('Ctrl+`');
     expect(item(submenu(buildMenu(recents, 'mac'), 'Ver'), 'Terminal')?.accelerator).toBe(
       'Ctrl+Backquote',
+    );
+    expect(item(submenu(menu, 'Executar'), 'Compilar')?.accelerator).toBe('Ctrl+Shift+B');
+    expect(item(submenu(menu, 'Executar'), 'Executar sem depurar')?.accelerator).toBe('Ctrl+F5');
+    expect(item(submenu(menu, 'Executar'), 'Cancelar compilação')?.accelerator).toBeNull();
+    expect(item(submenu(menu, 'Ver'), 'Saída')?.accelerator).toBe('Ctrl+Shift+U');
+    expect(item(submenu(buildMenu(recents, 'linux'), 'Ver'), 'Saída')?.accelerator).toBe(
+      'Ctrl+K Ctrl+H',
+    );
+    expect(item(submenu(buildMenu(recents, 'mac'), 'Executar'), 'Compilar')?.accelerator).toBe(
+      'Shift+Cmd+KeyB',
     );
     expect(item(submenu(menu, 'Editar'), 'Copiar')).toEqual({
       kind: 'command',

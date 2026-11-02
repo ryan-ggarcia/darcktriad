@@ -80,11 +80,16 @@ export type CommandId =
   | 'previousProblem'
   | 'restartCpp'
   | 'restartCsharp'
+  | 'build'
+  | 'run'
+  | 'stop'
+  | 'cancelBuild'
+  | 'toggleOutput'
   | 'keyboardShortcuts';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
- * explorador.md, paleta-de-comandos.md, terminal.md, projeto.md e linguagem.md). Menu, botões, paleta e teclado partem daqui.
+ * explorador.md, paleta-de-comandos.md, terminal.md, projeto.md, linguagem.md e compilar-e-executar.md). Menu, botões, paleta e teclado partem daqui.
  */
 export const COMMANDS: Record<CommandId, CommandSpec> = {
   newFile: { title: 'Arquivo: Novo arquivo', keys: ['Mod+N'] },
@@ -233,6 +238,12 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   previousProblem: { title: 'Ir: Problema anterior', keys: ['Shift+F8'] },
   restartCpp: { title: 'Linguagem: Reiniciar servidor C/C++', when: 'folderOpen' },
   restartCsharp: { title: 'Linguagem: Reiniciar servidor C#', when: 'folderOpen' },
+  build: { title: 'Executar: Compilar', keys: ['Mod+Shift+B'], when: 'project' },
+  // ⌃F5 também no macOS, como no VS Code.
+  run: { title: 'Executar: Executar sem depurar', keys: ['Ctrl+F5'], when: 'project' },
+  stop: { title: 'Executar: Parar', keys: ['Shift+F5'] },
+  cancelBuild: { title: 'Compilar: Cancelar', when: 'project', menu: 'Cancelar compilação' },
+  toggleOutput: { title: 'Ver: Saída', keys: ['Mod+Shift+U'], linux: ['Ctrl+K Ctrl+H'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
 };
 

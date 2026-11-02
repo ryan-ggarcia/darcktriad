@@ -4,7 +4,7 @@ import { Tab } from '../editor/tab';
 import { errorMessage, Language, LanguageEvent, Path, ServerState } from '../ipc';
 import { LanguageService } from '../language.service';
 import { basename, isWithin, relativeTo } from '../paths';
-import { OUTPUT_LIMIT } from '../project/project';
+import { withLine } from '../project/project';
 import { Problems } from '../project/problems';
 import { Commands } from '../shared/commands';
 import { CurrentFolder } from '../workspace/current-folder';
@@ -34,9 +34,7 @@ export class Server {
   readonly log = signal<string[]>([]);
 
   append(line: string): void {
-    this.log.update((lines) =>
-      lines.length < OUTPUT_LIMIT ? [...lines, line] : [...lines.slice(1), line],
-    );
+    this.log.update((lines) => withLine(lines, line));
   }
 }
 

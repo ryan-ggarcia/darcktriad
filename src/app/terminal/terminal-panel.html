@@ -42,7 +42,12 @@
       id="panel-tab-output"
       class="panel-tab"
       aria-controls="panel-output"
-      title="Saída: o log do projeto (CMake ou dotnet) e dos servidores de linguagem (clangd, C#)"
+      [title]="
+        commands.hint(
+          'Saída: o log do projeto (CMake ou dotnet), da compilação e dos servidores de linguagem',
+          'toggleOutput'
+        )
+      "
       [class.active]="tab === 'output'"
       [attr.aria-selected]="tab === 'output'"
       (click)="panel.show('output')"
@@ -76,6 +81,16 @@
           <option [value]="channel" [selected]="channel === output.current()">{{ channel }}</option>
         }
       </select>
+    }
+    @if (tab === 'output' && output.lines().length) {
+      <button
+        type="button"
+        class="panel-text-button"
+        [title]="'Limpar o canal ' + output.current()"
+        (click)="output.clear()"
+      >
+        Limpar
+      </button>
     }
     @if (tab === 'terminal') {
       <button

@@ -1,15 +1,25 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { errorMessage, TerminalEvent } from '../ipc';
+import { errorMessage, TerminalEvent, TerminalInfo } from '../ipc';
+import { Project } from '../project/project';
 import { Commands } from '../shared/commands';
+import { Dialogs } from '../shared/dialogs';
 import { PLATFORM } from '../shared/keybindings';
 import { Panel } from '../shared/panel';
 import { TerminalService } from '../terminal.service';
 import { terminalKey } from './terminal-keys';
 import { TerminalScreen, TerminalScreens } from './terminal-screen';
 
-export function exitMessage(code: number | null): string {
+export function exitMessage(code: number | null, program = false): string {
+  if (program)
+    return code === null ? 'O programa foi encerrado' : `O programa terminou com código ${code}`;
   return code === null ? 'Processo encerrado' : `Processo encerrado com código ${code}`;
 }
+
+type Start = (
+  cols: number,
+  rows: number,
+  onEvent: (event: TerminalEvent) => void,
+) => Promise<TerminalInfo | null>;
 
 /** Um terminal da lista: a tela e o shell do núcleo. */
 export class TerminalSession {
@@ -22,7 +32,11 @@ export class TerminalSession {
   exited = false;
   closed = false;
 
-  constructor(readonly screen: TerminalScreen) {}
+  /** `program`: o terminal `▶ <alvo>` do Executar sem depurar, em vez de um shell. */
+  constructor(
+    readonly screen: TerminalScreen,
+    readonly program = false,
+  ) {}
 
   /** O shell ainda recebe teclas e tamanhos. */
   get running(): boolean {
@@ -37,8 +51,12 @@ export class Terminals {
   private readonly screens = inject(TerminalScreens);
   private readonly commands = inject(Commands);
   private readonly panel = inject(Panel);
+  private readonly project = inject(Project);
+  private readonly dialogs = inject(Dialogs);
   readonly sessions = signal<TerminalSession[]>([]);
   readonly active = signal<TerminalSession | null>(null);
+  /** O programa rodando (um por vez): "▶ app rodando" na barra de status. */
+  readonly program = signal<TerminalSession | null>(null);
   /** O painel inferior está à mostra (em qualquer aba). */
   readonly visible = this.panel.visible;
   /** O primeiro terminal está sendo criado: o Ctrl+` não cria outro enquanto isso. */
@@ -75,9 +93,58 @@ export class Terminals {
     const session = new TerminalSession(screen);
     this.sessions.update((list) => [...list, session]);
     this.active.set(session);
+    await this.connect(session, (cols, rows, onEvent) =>
+      this.service.create(cols, rows, onEvent),
+    ).catch((error) => session.error.set(errorMessage(error)));
+  }
+
+  /**
+   * Ctrl+F5: compila e roda o alvo ativo no terminal `▶ <alvo>`, que toma o lugar da aba anterior
+   * do mesmo alvo. Com um programa rodando, pergunta antes de reiniciar.
+   */
+  async run(): Promise<void> {
+    const running = this.program();
+    if (running) {
+      const name = running.name().replace(/^▶ /, '');
+      const choice = await this.dialogs.ask(`${name} já está rodando. Reiniciar?`, [
+        'Reiniciar',
+        'Cancelar',
+      ]);
+      if (choice !== 'Reiniciar') return;
+      // A resposta só chega quando o processo e os filhos já morreram.
+      await this.service.close(running.id!).catch(warn);
+    }
+    const screen = await this.screens.create().catch(warn);
+    if (!screen) return;
+    const session = new TerminalSession(screen, true);
+    const info = await this.connect(session, (cols, rows, onEvent) =>
+      this.project.run(cols, rows, onEvent),
+    );
+    if (!info) return screen.dispose();
+    const old = this.sessions().find((item) => item.program && item.name() === info.name);
+    this.sessions.update((list) =>
+      old ? list.map((item) => (item === old ? session : item)) : [...list, session],
+    );
+    if (old) this.dispose(old);
+    this.active.set(session);
+    this.panel.show('terminal');
+    if (!session.exited) this.program.set(session);
+  }
+
+  /** Shift+F5: encerra o programa; a aba fica aberta com o fim dele. */
+  stop(): void {
+    const running = this.program();
+    if (running?.running) this.service.close(running.id!).catch(warn);
+  }
+
+  /**
+   * Liga a tela ao processo que `start` inicia. O que a tela manda antes da resposta do núcleo
+   * espera aqui. No Windows, o ConPTY pede a posição do cursor (ESC[6n) ao iniciar e só mostra
+   * algo depois que a resposta do xterm.js chega.
+   */
+  private async connect(session: TerminalSession, start: Start): Promise<TerminalInfo | null> {
+    const { screen } = session;
     screen.attachCustomKeyEventHandler((event) => this.onKey(screen, event));
-    // O que a tela manda antes da resposta do núcleo espera aqui. No Windows, o ConPTY pede a
-    // posição do cursor (ESC[6n) ao iniciar e só mostra algo depois que a resposta do xterm.js chega.
     let queued: string | null = '';
     screen.onData((data) => {
       if (queued !== null) queued += data;
@@ -88,29 +155,32 @@ export class Terminals {
     });
     // A tela pode ser ajustada ao painel antes da resposta; o tamanho novo vai logo depois dela.
     const { cols, rows } = screen;
+    let pending = '';
+    let info: TerminalInfo | null;
     try {
-      const info = await this.service.create(cols, rows, (event) => this.onEvent(session, event));
-      session.id = info.id;
-      const pending = queued;
+      info = await start(cols, rows, (event) => this.onEvent(session, event));
+    } finally {
+      pending = queued;
       queued = null;
-      if (session.closed) return void this.service.close(info.id).catch(warn);
-      session.name.set(info.name);
-      if (pending && !session.exited) this.service.write(info.id, pending).catch(warn);
-      if (screen.cols !== cols || screen.rows !== rows) {
-        this.service.resize(info.id, screen.cols, screen.rows).catch(warn);
-      }
-    } catch (error) {
-      queued = null;
-      session.error.set(errorMessage(error));
     }
+    if (!info) return null;
+    session.id = info.id;
+    if (session.closed) {
+      this.service.close(info.id).catch(warn);
+      return null;
+    }
+    session.name.set(info.name);
+    if (pending && !session.exited) this.service.write(info.id, pending).catch(warn);
+    if (screen.cols !== cols || screen.rows !== rows) {
+      this.service.resize(info.id, screen.cols, screen.rows).catch(warn);
+    }
+    return info;
   }
 
   /** Encerra o shell e tudo o que roda nele; sem terminais, o painel se esconde. */
   close(session: TerminalSession): void {
     if (session.closed) return;
-    session.closed = true;
-    if (session.id !== null) this.service.close(session.id).catch(warn);
-    session.screen.dispose();
+    this.dispose(session);
     const list = this.sessions();
     const rest = list.filter((item) => item !== session);
     this.sessions.set(rest);
@@ -120,6 +190,13 @@ export class Terminals {
     if (!rest.length) this.visible.set(false);
   }
 
+  private dispose(session: TerminalSession): void {
+    session.closed = true;
+    if (this.program() === session) this.program.set(null);
+    if (session.id !== null) this.service.close(session.id).catch(warn);
+    session.screen.dispose();
+  }
+
   private onEvent(session: TerminalSession, event: TerminalEvent): void {
     // Depois do `terminal_close` ainda chega o `exited`, e a tela já foi descartada.
     if (session.closed) return;
@@ -127,7 +204,8 @@ export class Terminals {
       session.screen.write(event.data);
     } else {
       session.exited = true;
-      session.screen.write(`\r\n\r\n${exitMessage(event.code)}\r\n`);
+      if (this.program() === session) this.program.set(null);
+      session.screen.write(`\r\n\r\n${exitMessage(event.code, session.program)}\r\n`);
     }
   }
 

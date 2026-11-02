@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { ProjectEvent, ProjectState, ToolCheck } from './ipc';
+import { ProjectEvent, ProjectState, TerminalEvent, TerminalInfo, ToolCheck } from './ipc';
 
-/** Projeto CMake e verificação de ferramentas no núcleo Rust (docs/ipc.md, Projeto e Ferramentas). */
+/** Projeto CMake, compilar e executar, e verificação de ferramentas no núcleo Rust (docs/ipc.md, Projeto e Ferramentas). */
 @Injectable({ providedIn: 'root' })
 export class ProjectService {
   state(): Promise<ProjectState> {
@@ -20,6 +20,26 @@ export class ProjectService {
 
   reconfigure(): Promise<void> {
     return invoke('project_reconfigure');
+  }
+
+  /** Responde quando a compilação termina. */
+  build(): Promise<void> {
+    return invoke('project_build');
+  }
+
+  cancelBuild(): Promise<void> {
+    return invoke('project_build_cancel');
+  }
+
+  /** Compila o alvo ativo e o roda num terminal; null se a compilação falhou ou foi cancelada. */
+  run(
+    cols: number,
+    rows: number,
+    onEvent: (event: TerminalEvent) => void,
+  ): Promise<TerminalInfo | null> {
+    const channel = new Channel<TerminalEvent>();
+    channel.onmessage = onEvent;
+    return invoke('project_run', { cols, rows, onEvent: channel });
   }
 
   checkTools(): Promise<ToolCheck[]> {

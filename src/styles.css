@@ -785,6 +785,41 @@ app-root {
 
 .panel-actions {
   display: flex;
+  align-items: center;
+}
+
+.panel-text-button {
+  margin-right: 8px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.panel-text-button:hover {
+  color: var(--fg-strong);
+  background: var(--bg-hover);
+}
+
+/* Linha de erro da compilação na Saída: abre o arquivo na linha. */
+.output-link {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  color: var(--info);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.output-link:hover {
+  color: var(--fg-strong);
 }
 
 .panel-body {

@@ -33,7 +33,8 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **.NET com vários frameworks-alvo não roda:** o `dotnet run` pede `--framework`, e o comando da spec não passa.
 - **Cancelar durante a configuração:** se o ✕ for clicado enquanto o CMake configura (antes de compilar), a configuração vai até o fim e só então a compilação é cancelada.
 - **Programa que sai da sessão** (daemon, `setsid`) continua rodando depois de Parar, no macOS e no Linux.
-- **Critério 5 da spec:** `../app/main.cpp` com pasta de build `<raiz>/build/debug` aponta para `<raiz>/build/app/main.cpp`, não para `<raiz>/app/main.cpp`. O núcleo segue a regra (pasta de build, depois raiz), e o teste usa `../../app/main.cpp`.
+- **Links na Saída só no fim:** as linhas de erro do canal Build viram links quando a compilação termina, não enquanto o texto chega. O link casa nome do arquivo, linha e mensagem; dois arquivos com o mesmo nome, a mesma linha e a mesma mensagem em pastas diferentes podem trocar de destino.
+- **Erros da compilação não sublinham o editor:** eles vão para o painel Problemas e para a Saída; o sublinhado continua sendo só do clangd/Roslyn.
 
 ## Linguagem (clangd e Roslyn)
 
@@ -51,7 +52,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 - **Linguagem:** o critério 15 (desempenho com o clangd num arquivo de 10.000 linhas) não tem a fixture `grande`. Os critérios 5 a 14 passaram na janela em 2026-10-31, só no Linux.
 - **Projeto:** o critério 12 (.NET na janela) e o 13 (Windows).
-- **Compilar e executar:** a interface ainda não existe. Os critérios manuais 7 a 17 só têm a parte do núcleo testada (cmake, dotnet e PTY reais, no Linux).
+- **Compilar e executar:** na janela, no Linux, com o `hello-c` (2026-11-02): compilar com erro (links, Problemas, foco no editor), erro do linker (item de reserva), Ctrl+F5 com entrada (`21` → `42` e o código de saída), a pergunta de reiniciar, Shift+F5 e Ctrl+K Ctrl+H passaram. Salvar antes de compilar só tem teste automático. Sem teste na janela: critério 11 (C#), 14 (cancelar e conferir os processos no `ps`), 15 (alvo `tool`) e 16 (só biblioteca).
 - **Instaladores:** os do Windows e do macOS nunca foram abertos. O AppImage só foi aberto, sem uso.
 
 ## Adiado de propósito

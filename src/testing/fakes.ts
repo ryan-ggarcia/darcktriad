@@ -531,6 +531,33 @@ export class FakeProjectService implements Partial<ProjectService> {
     return Promise.resolve();
   }
 
+  builds = 0;
+  cancels = 0;
+  /** A resposta do próximo `project_build` ou `project_run`; por padrão, na hora. */
+  buildReply: Promise<void> = Promise.resolve();
+  /** O que o próximo `project_run` devolve, depois da `buildReply`. */
+  runInfo: TerminalInfo | null = { id: 100, name: '▶ app' };
+  readonly runs: { cols: number; rows: number }[] = [];
+  /** Os eventos do terminal do último `project_run`. */
+  runEvents: (event: TerminalEvent) => void = () => undefined;
+
+  build(): Promise<void> {
+    this.builds++;
+    return this.buildReply;
+  }
+
+  cancelBuild(): Promise<void> {
+    this.cancels++;
+    return Promise.resolve();
+  }
+
+  async run(cols: number, rows: number, onEvent: (event: TerminalEvent) => void) {
+    this.runs.push({ cols, rows });
+    this.runEvents = onEvent;
+    await this.buildReply;
+    return this.runInfo;
+  }
+
   checkTools(): Promise<ToolCheck[]> {
     this.toolsChecks++;
     return this.toolsError ? Promise.reject(this.toolsError) : Promise.resolve(this.tools);
