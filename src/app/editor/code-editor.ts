@@ -19,6 +19,7 @@ import { KeyStroke, PLATFORM } from '../shared/keybindings';
 import { EditorTabs } from './editor-tabs';
 import { MonacoBuffer } from './monaco-buffers';
 import { loadMonaco } from './monaco-loader';
+import { DARK_TRIAD_THEME, THEME_DATA } from './monaco-theme';
 import { Tab } from './tab';
 
 /** Uma instância do Monaco para todas as abas: trocar de aba troca o modelo e a posição. */
@@ -104,9 +105,10 @@ export class CodeEditor {
   private async create(): Promise<void> {
     const monaco = await loadMonaco();
     if (this.destroyed) return;
+    monaco.editor.defineTheme(DARK_TRIAD_THEME, THEME_DATA);
     const editor = monaco.editor.create(this.host, {
       model: null,
-      theme: 'vs-dark',
+      theme: DARK_TRIAD_THEME,
       automaticLayout: true,
       fontSize: 14,
       // A margem das bolinhas dos pontos de parada e da seta da linha atual.

@@ -64,7 +64,7 @@ Quero abrir a pasta do meu projeto e ver os arquivos em árvore. Quero criar, re
 2. **Carregamento sob demanda:** só lê uma pasta quando ela é expandida. A ordem é a que já existe no núcleo: pastas primeiro, depois arquivos, cada grupo em ordem alfabética sem diferenciar maiúsculas.
 3. **Itens escondidos:** `.git`, `.svn`, `.hg`, `.jj`, `.DS_Store` e `Thumbs.db` (o mesmo padrão do VS Code). Todo o resto aparece, inclusive `build/`, `bin/`, `obj/` e o que está no `.gitignore`, porque "sumir" com arquivos confunde.
 4. **Lista virtualizada:** só desenha as linhas visíveis. Uma pasta com milhares de itens não trava a interface.
-5. **Ícones:** só pasta aberta, pasta fechada e arquivo. Mais um ícone simples para `.c`, `.cpp`/`.h`, `.cs`, `CMakeLists.txt` e `.csproj`/`.sln`.
+5. **Ícones:** pasta aberta, pasta fechada e arquivo. Mais um ícone por tipo, pela extensão, também nas abas: C, C++, cabeçalho, C#, CMake, `.csproj`/`.sln`, JSON e Markdown.
 6. **Links simbólicos:** aparecem como o tipo do alvo (pasta ou arquivo), com um pequeno indicador "↗". O observador de mudanças **não** segue links simbólicos, para não cair em ciclos.
 7. **Erro ao ler uma pasta** (ex.: sem permissão): o nó mostra "Sem permissão para ler" em vez dos filhos. Nada mais é afetado.
 

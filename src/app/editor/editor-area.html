@@ -19,6 +19,7 @@
       (mousedown)="$event.button === 1 && $event.preventDefault()"
       (auxclick)="$event.button === 1 && close(tab)"
     >
+      <app-icon [name]="fileIcon(tab.name())" />
       <span class="tab-label" [class.deleted]="tab.deleted()">{{ tabs.labels().get(tab) }}</span>
       @if (tab.deleted()) {
         <span class="tab-note">(excluído)</span>

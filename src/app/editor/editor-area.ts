@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { Debugger } from '../debug/debugger';
 import { Commands } from '../shared/commands';
-import { Icon } from '../shared/icon';
+import { fileIcon, Icon } from '../shared/icon';
 import { CodeEditor } from './code-editor';
 import { EditorTabs } from './editor-tabs';
 import { Tab } from './tab';
@@ -26,6 +26,7 @@ export class EditorArea {
   protected readonly tabs = inject(EditorTabs);
   protected readonly commands = inject(Commands);
   protected readonly debug = inject(Debugger);
+  protected readonly fileIcon = fileIcon;
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
   private readonly injector = inject(Injector);
   protected readonly textTab = computed(() => {

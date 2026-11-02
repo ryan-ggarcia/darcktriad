@@ -27,7 +27,7 @@ O WebDriver não mede nem faz estes. **O usuário faz estes testes conforme usa 
 
 - [ ] Digitar no editor durante a compilação sem atraso perceptível (Compilar e executar › Tempo de digitação)
 - [ ] Colar no terminal pelo WebKitGTK (Terminal › Colar no Linux)
-- [ ] Clicar nas abas com a janela estreita (800 px) (Sem teste na janela › Depuração)
+- [ ] Clicar nas abas com a janela estreita (800 px) (Sem teste na janela › Depuração) → pelo WebDriver, a 800 px, o clique em aba funcionou com o tema novo (causa provável do problema antigo: a barra de status empurrava os editores para fora da janela; não reproduzido na versão antiga); falta com o mouse real
 - [ ] Digitar com o clangd ativo: decidir se o atraso se percebe (a medida automática oscila em torno da meta de 50 ms) (Sem teste na janela › Linguagem)
 - [ ] Abrir o AppImage, o `.deb` e o `.rpm` e usar o app de verdade (Sem teste na janela › Instaladores)
 
@@ -75,6 +75,7 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem)
 - [ ] Linguagem: traduzir "View Problem" e "No quick fixes available" do Monaco (Linguagem)
 - [ ] Linguagem: contador da barra com os itens informativos (Linguagem)
+- [ ] Abas: a aba ativa pode ficar fora da faixa visível quando há muitas abas (ex.: o depurador pausa e abre um arquivo, e a aba dele não aparece). Rolar a faixa até ela. Visto nas capturas do tema novo; o código das abas não tem rolagem até a ativa, então não é efeito do tema.
 
 ## 6. Decisões pendentes (do usuário)
 

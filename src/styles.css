@@ -1,28 +1,44 @@
-/* Tema escuro único do MVP. As cores seguem o "Dark Modern" do VS Code para quem vem dele. */
+/*
+ * Tema único: gradiente estático de preto para roxo em volta de cartões arredondados.
+ * O editor e o terminal são cartões de cor sólida (--bg), para o código ficar legível e rápido.
+ * Regras de velocidade: sem backdrop-filter, blur nem sombra animada; animações só com transform e
+ * opacity, e nunca em algo que muda a cada tecla.
+ */
 :root {
-  --bg: #1f1f1f;
-  --bg-side: #181818;
-  --bg-input: #313131;
-  --bg-hover: #2a2d2e;
-  --bg-selected: #04395e;
+  --bg-window: linear-gradient(135deg, #000000 0%, #12072a 45%, #3a1a78 100%);
+  /* Igual ao fundo do tema do Monaco (monaco-theme.ts) e do xterm (terminal-screen.ts). */
+  --bg: #0c0915;
+  --bg-side: #150d26;
+  --bg-card: linear-gradient(180deg, #1b1032 0%, #110a1f 100%);
+  --bg-input: #221739;
+  --bg-hover: #2a1c47;
+  --bg-selected: #43227f;
+  --bg-status: #241146;
   --bg-banner: #4d3b05;
-  --fg: #cccccc;
-  --fg-muted: #9d9d9d;
+  --bg-banner-info: #2f1a5e;
+  --fg: #e2dcef;
+  --fg-muted: #a99dc2;
   --fg-strong: #ffffff;
-  --border: #2b2b2b;
-  --accent: #0078d4;
-  --focus: #0078d4;
+  --border: #2f2249;
+  --border-strong: #4b3673;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: #c4b5fd;
+  --focus: #a78bfa;
   --error: #f14c4c;
   --warning: #cca700;
   --info: #3794ff;
-  --bg-banner-info: #0d3a58;
   /* Depuração: o laranja do VS Code, escurecido para o texto branco passar de 4,5:1. */
   --bg-debugging: #b5512a;
   --breakpoint: #e51400;
   --breakpoint-unbound: #848484;
-  --current-line: rgb(255 255 0 / 20%);
+  --current-line: rgb(255 255 0 / 25%);
   --current-arrow: #ffcc00;
   --row: 22px;
+  --gap: 6px;
+  --radius: 6px;
+  --radius-card: 8px;
+  --motion: 200ms;
   color-scheme: dark;
 }
 
@@ -39,7 +55,6 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--bg);
   color: var(--fg);
   font:
     13px/1.4 'Segoe UI',
@@ -49,12 +64,37 @@ body {
     sans-serif;
 }
 
+html {
+  background: var(--bg-window);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--focus);
+}
+
 button {
   font: inherit;
   color: var(--fg);
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 4px 12px;
   cursor: pointer;
 }
@@ -70,12 +110,34 @@ button.primary {
 }
 
 button.primary:hover {
-  background: #026ec1;
+  background: var(--accent-hover);
+}
+
+/* Pressionar dá retorno; as linhas de listas ficam de fora, para a rolagem seguir leve. */
+button.primary,
+.dialog-buttons button,
+.welcome-actions button,
+.icon-button,
+.activity-button {
+  transition: transform 150ms ease-out;
+}
+
+button.primary:active,
+.dialog-buttons button:active,
+.welcome-actions button:active,
+.icon-button:active:not(:disabled),
+.activity-button:active {
+  transform: scale(0.95);
 }
 
 :focus-visible {
-  outline: 1px solid var(--focus);
-  outline-offset: -1px;
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* Por fora do botão: o roxo do foco não aparece sobre o roxo do botão. */
+button.primary:focus-visible {
+  outline-offset: 1px;
 }
 
 kbd {
@@ -106,6 +168,50 @@ kbd {
   stroke-width: 5;
 }
 
+/* O preenchimento suave dos ícones de arquivo e pasta; o traço por cima é o desenho do tipo. */
+.icon svg .icon-tile {
+  fill: currentColor;
+  fill-opacity: 0.2;
+  stroke-opacity: 0.55;
+  stroke-width: 1;
+}
+
+.icon-file {
+  color: var(--fg-muted);
+}
+
+.icon-file-c {
+  color: #6cb6ff;
+}
+
+.icon-file-cpp {
+  color: #b794ff;
+}
+
+.icon-file-header {
+  color: #8fa4ff;
+}
+
+.icon-file-cs {
+  color: #7ee2a8;
+}
+
+.icon-file-cmake {
+  color: #f0a35e;
+}
+
+.icon-file-project {
+  color: #f08cc8;
+}
+
+.icon-file-json {
+  color: #e8c95d;
+}
+
+.icon-file-markdown {
+  color: #6fd3e0;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -113,52 +219,134 @@ kbd {
   padding: 3px;
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius);
+}
+
+.icon-button .icon {
+  opacity: 0.85;
+  transition: opacity 150ms ease-out;
+}
+
+.icon-button:hover .icon {
+  opacity: 1;
 }
 
 .banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0;
+  margin: var(--gap) var(--gap) 0;
   padding: 6px 12px;
   background: var(--bg-banner);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
   color: var(--fg-strong);
+  animation: message-in var(--motion) ease-out;
 }
 
 .banner-info {
   background: var(--bg-banner-info);
+  border-left-color: var(--focus);
 }
 
-/* Layout fixo: barra de atividades | barra lateral | editores, e a barra de status embaixo. */
+/* Mensagens do sistema: entram com um deslize curto. */
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+}
+
+/* Para o que já se centraliza com translateX(-50%). */
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Layout fixo: barra de atividades | barra lateral | editores, e a barra de status embaixo.
+ * Os vãos são margens, não `gap`: o painel e a barra lateral podem estar ocultos. minmax(0, 1fr):
+ * sem ele, a barra de status empurra os editores para fora de uma janela estreita.
+ */
 app-root {
   display: grid;
   grid-template:
-    'activity side main' 1fr
+    'activity side main' minmax(0, 1fr)
     'activity side panel' auto
-    'status status status' 22px
-    / 48px auto 1fr;
+    'status status status' calc(22px + var(--gap))
+    / 48px auto minmax(0, 1fr);
   height: 100vh;
+  padding: var(--gap) var(--gap) var(--gap) 0;
 }
 
 .activity-bar {
   grid-area: activity;
   display: flex;
   flex-direction: column;
-  background: var(--bg-side);
-  border-right: 1px solid var(--border);
+  gap: 4px;
+  align-items: center;
 }
 
 .activity-button {
-  height: 48px;
+  position: relative;
+  width: 40px;
+  height: 40px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: 0;
-  border-left: 2px solid transparent;
+  border-radius: var(--radius-card);
   color: var(--fg-muted);
+}
+
+.activity-button:hover {
+  color: var(--fg-strong);
+}
+
+.activity-button::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--focus);
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.activity-button.active::before {
+  opacity: 1;
+  transform: none;
 }
 
 .activity-button .icon,
@@ -169,36 +357,65 @@ app-root {
 
 .activity-button.active {
   color: var(--fg-strong);
-  border-left-color: var(--accent);
+  background: var(--bg-selected);
 }
 
 .sidebar {
   grid-area: side;
-  width: 260px;
+  width: min(260px, 40vw);
   min-height: 0;
-  background: var(--bg-side);
-  border-right: 1px solid var(--border);
+  margin-right: var(--gap);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 
+/*
+ * Os cartões arredondam sem overflow: hidden. O conteúdo não é cortado: nos do editor e do
+ * terminal, o espaço embaixo mantém minimapa, rolagem e última linha longe da curva.
+ */
 .main {
   grid-area: main;
   position: relative;
   min-width: 0;
   min-height: 0;
   display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 
+.main:focus-within,
+.sidebar:focus-within,
+.panel:focus-within {
+  border-color: var(--accent);
+}
+
+/* Cor sólida: a posição do cursor muda aqui a cada tecla. Rola quando a janela é estreita. */
 .status-bar {
   grid-area: status;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 16px;
+  min-width: 0;
+  margin: var(--gap) 0 0 var(--gap);
   padding: 0 12px;
-  background: var(--bg-side);
-  border-top: 1px solid var(--border);
-  color: var(--fg-muted);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+  background: var(--bg-status);
+  border-radius: var(--radius);
+  color: var(--fg);
   font-size: 12px;
-  line-height: 21px;
+  line-height: 22px;
+}
+
+.status-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.status-bar > * {
+  flex: none;
 }
 
 /* Explorador */
@@ -221,6 +438,7 @@ app-root {
   overflow: hidden;
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -228,6 +446,7 @@ app-root {
 
 .explorer-actions {
   display: flex;
+  flex: none;
 }
 
 .explorer-empty {
@@ -237,7 +456,9 @@ app-root {
 .tree {
   flex: 1;
   overflow: auto;
-  outline: none;
+  /* A última linha e a rolagem não encostam na curva do cartão. */
+  margin-bottom: var(--radius-card);
+  border-radius: var(--radius);
 }
 
 .tree-spacer {
@@ -249,8 +470,10 @@ app-root {
   align-items: center;
   gap: 4px;
   height: var(--row);
+  margin: 0 4px;
   padding-right: 8px;
   white-space: nowrap;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -264,8 +487,8 @@ app-root {
 
 .tree:focus .tree-row.selected {
   background: var(--bg-selected);
-  outline: 1px solid var(--focus);
-  outline-offset: -1px;
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .tree-name {
@@ -284,37 +507,7 @@ app-root {
 }
 
 .folder-icon {
-  color: #dcb67a;
-}
-
-.badge {
-  flex: none;
-  width: 16px;
-  font-size: 8px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.badge-c {
-  color: #519aba;
-}
-
-.badge-cpp {
-  color: #a074c4;
-}
-
-.badge-cs {
-  color: #8dc149;
-}
-
-.badge-cmake {
-  color: #e37933;
-  font-size: 10px;
-}
-
-.badge-project {
-  color: #c586c0;
-  font-size: 10px;
+  color: var(--accent-soft);
 }
 
 .tree-field {
@@ -330,11 +523,14 @@ app-root {
   color: var(--fg-strong);
   background: var(--bg-input);
   border: 1px solid var(--focus);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--focus);
   outline: none;
 }
 
 .tree-input[aria-invalid='true'] {
   border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error);
 }
 
 .tree-error {
@@ -347,7 +543,9 @@ app-root {
   white-space: normal;
   background: #5a1d1d;
   border: 1px solid var(--error);
+  border-radius: 4px;
   color: var(--fg-strong);
+  animation: message-in var(--motion) ease-out;
 }
 
 .menu {
@@ -357,10 +555,11 @@ app-root {
   padding: 4px;
   display: flex;
   flex-direction: column;
-  background: #1f1f1f;
-  border: 1px solid #454545;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px #000a;
+  background: var(--bg-side);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 16px #000a;
+  animation: message-in 150ms ease-out;
 }
 
 .menu-item {
@@ -370,6 +569,7 @@ app-root {
   text-align: left;
   background: transparent;
   border: 0;
+  border-radius: 4px;
 }
 
 .menu-item:hover,
@@ -387,31 +587,76 @@ app-root {
   flex-direction: column;
 }
 
+/* A altura segue 36px: a barra flutuante de depuração se posiciona logo abaixo. */
 .tab-strip {
   display: flex;
   flex: none;
-  overflow-x: auto;
+  align-items: flex-start;
+  gap: 3px;
+  height: 36px;
+  padding: 3px 3px 0;
+  overflow: auto hidden;
   background: var(--bg-side);
   border-bottom: 1px solid var(--border);
+  border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
+}
+
+.tab-strip::-webkit-scrollbar {
+  height: 3px;
+}
+
+.tab-strip::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 2px;
 }
 
 .tab {
+  position: relative;
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
-  height: 35px;
-  padding: 0 4px 0 12px;
+  height: 29px;
+  padding: 0 4px 0 8px;
   white-space: nowrap;
   color: var(--fg-muted);
-  border-right: 1px solid var(--border);
-  border-top: 1px solid transparent;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
+.tab:hover {
+  background: var(--bg-hover);
+}
+
+/* A marca da aba ativa: o traço cresce do centro ao trocar de aba. */
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--focus);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
 .tab.active {
-  background: var(--bg);
+  background: var(--bg-input);
   color: var(--fg-strong);
-  border-top-color: var(--accent);
+}
+
+.tab.active::after {
+  opacity: 1;
+  transform: none;
+}
+
+.tab.dirty .tab-close {
+  color: var(--accent-soft);
 }
 
 .tab-label.deleted {
@@ -439,6 +684,7 @@ app-root {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding-bottom: var(--radius-card);
 }
 
 .notice {
@@ -458,12 +704,12 @@ app-root {
   z-index: 10;
   top: 48px;
   left: 50%;
-  width: 480px;
+  width: min(480px, calc(100vw - 32px));
   transform: translateX(-50%);
   background: var(--bg-side);
-  border: 1px solid #454545;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px #000a;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 16px #000a;
 }
 
 .switcher ul {
@@ -474,7 +720,7 @@ app-root {
 
 .switcher-item {
   padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -494,20 +740,51 @@ app-root {
 /* Tela inicial */
 .welcome {
   flex: 1;
-  padding: 10vh 10vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10vh 24px 24px;
   overflow: auto;
+  background:
+    radial-gradient(70% 80% at 85% 100%, #3a1a78 0%, transparent 70%),
+    linear-gradient(160deg, #0c0915 0%, #150d26 100%);
+  border-radius: calc(var(--radius-card) - 1px);
+}
+
+.welcome-logo {
+  width: 64px;
+  height: 64px;
+  color: var(--focus);
+}
+
+.welcome-logo svg {
+  width: 64px;
+  height: 64px;
+  stroke-width: 0.8;
 }
 
 .welcome-title {
-  margin: 0 0 24px;
-  font-size: 32px;
-  font-weight: 400;
+  margin: 12px 0 4px;
+  font-size: 36px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
   color: var(--fg-strong);
+}
+
+.welcome-tagline {
+  margin: 0 0 24px;
+  color: var(--fg-muted);
 }
 
 .welcome-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
+}
+
+.welcome-actions button {
+  padding: 8px 16px;
 }
 
 .welcome-actions kbd {
@@ -516,32 +793,40 @@ app-root {
 }
 
 .welcome-subtitle {
-  margin: 32px 0 8px;
-  font-size: 14px;
-  font-weight: 400;
+  align-self: stretch;
+  width: min(640px, 100%);
+  margin: 32px auto 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 
 .recents {
+  width: min(640px, 100%);
   margin: 0;
-  padding: 0;
+  padding: 4px;
   list-style: none;
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 
 .recent {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  max-width: 720px;
-  padding: 3px 0;
+  padding: 5px 8px;
   text-align: left;
   background: transparent;
   border: 0;
-  color: #4daafc;
+  color: var(--accent-soft);
 }
 
 .recent:hover {
-  background: transparent;
-  text-decoration: underline;
+  background: var(--bg-hover);
 }
 
 .recent.missing,
@@ -564,18 +849,26 @@ app-root {
 
 /* Perguntas modais */
 .dialog {
-  min-width: 360px;
-  max-width: 520px;
+  min-width: min(360px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
   padding: 20px;
   color: var(--fg);
   background: var(--bg-side);
-  border: 1px solid #454545;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px #000c;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px #000c;
+}
+
+.dialog[open] {
+  animation: dialog-in var(--motion) ease-out;
 }
 
 .dialog::backdrop {
-  background: #0006;
+  background: rgb(5 2 12 / 60%);
+}
+
+.dialog[open]::backdrop {
+  animation: fade-in var(--motion) ease-out;
 }
 
 .dialog-message {
@@ -592,6 +885,7 @@ app-root {
 
 .dialog-buttons {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -603,17 +897,22 @@ app-root {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-side);
-  border-top: 1px solid var(--border);
+  margin-top: var(--gap);
+  padding-bottom: var(--radius-card);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 
+/* Ocupa o vão entre os editores e o painel. */
 .panel-sash {
   position: absolute;
   z-index: 1;
-  top: -3px;
+  top: calc(-1px - var(--gap));
   left: 0;
   right: 0;
-  height: 6px;
+  height: var(--gap);
+  border-radius: 3px;
   cursor: ns-resize;
 }
 
@@ -633,19 +932,27 @@ app-root {
   flex: 1;
   display: flex;
   gap: 20px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.panel-header [role='tablist']::-webkit-scrollbar {
+  display: none;
 }
 
 .panel-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0 3px;
+  flex: none;
+  padding: 4px 0 2px;
   font-size: 11px;
   text-transform: uppercase;
   color: var(--fg-muted);
   background: transparent;
   border: 0;
-  border-bottom: 1px solid transparent;
+  border-bottom: 2px solid transparent;
   border-radius: 0;
 }
 
@@ -656,14 +963,14 @@ app-root {
 
 .panel-tab.active {
   color: var(--fg-strong);
-  border-bottom-color: var(--fg-strong);
+  border-bottom-color: var(--focus);
 }
 
 .panel-badge {
   min-width: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--bg-input);
+  background: var(--accent);
   color: var(--fg-strong);
   text-align: center;
 }
@@ -677,7 +984,7 @@ app-root {
   color: var(--fg);
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .panel-empty {
@@ -710,7 +1017,7 @@ app-root {
   white-space: nowrap;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 .problem-file {
@@ -739,11 +1046,6 @@ app-root {
 
 .problem {
   padding-left: 32px;
-}
-
-.problem:focus-visible {
-  outline: 1px solid var(--focus);
-  outline-offset: -1px;
 }
 
 .problem-source,
@@ -792,6 +1094,7 @@ app-root {
 
 .panel-actions {
   display: flex;
+  flex: none;
   align-items: center;
 }
 
@@ -804,7 +1107,7 @@ app-root {
   color: var(--fg);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .panel-text-button:hover {
@@ -850,12 +1153,14 @@ app-root {
   margin: 0;
   padding: 8px 0;
   color: var(--error);
+  animation: message-in var(--motion) ease-out;
 }
 
 .terminal-list {
-  width: 160px;
+  flex: none;
+  width: min(160px, 30%);
   margin: 0;
-  padding: 0;
+  padding: 0 4px;
   overflow: auto;
   list-style: none;
   border-left: 1px solid var(--border);
@@ -866,11 +1171,16 @@ app-root {
   align-items: center;
   height: var(--row);
   padding-right: 4px;
+  border-radius: var(--radius);
 }
 
-.terminal-item:hover,
-.terminal-item.active {
+.terminal-item:hover {
   background: var(--bg-hover);
+}
+
+.terminal-item.active {
+  background: var(--bg-selected);
+  color: var(--fg-strong);
 }
 
 .terminal-name {
@@ -895,9 +1205,10 @@ app-root {
   transform: translateX(-50%);
   padding: 6px;
   background: var(--bg-side);
-  border: 1px solid #454545;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px #000a;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px #000c;
+  animation: float-in 150ms ease-out;
 }
 
 .quick-input {
@@ -908,13 +1219,15 @@ app-root {
   color: var(--fg-strong);
   background: var(--bg-input);
   border: 1px solid var(--focus);
-  border-radius: 2px;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--focus);
   outline: none;
 }
 
 .quick-message {
   margin: 6px 6px 0;
   color: var(--fg-muted);
+  animation: message-in var(--motion) ease-out;
 }
 
 .quick-list {
@@ -947,7 +1260,7 @@ app-root {
   gap: 8px;
   height: var(--row);
   padding: 0 8px;
-  border-radius: 3px;
+  border-radius: var(--radius);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -975,12 +1288,23 @@ app-root {
 }
 
 .quick-match {
-  color: #2aaaff;
+  color: var(--accent-soft);
   font-weight: 700;
 }
 
-.status-message {
+/* O texto que manda a barra: à esquerda dele, o projeto; à direita, o resto. */
+.status-bar > .status-message {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Inline-block: o transform das animações não vale em elemento inline. */
+.status-flash {
+  display: inline-block;
+  animation: status-in var(--motion) ease-out;
 }
 
 /* Projeto na barra de status: tipo, configuração e alvo, à esquerda */
@@ -996,10 +1320,12 @@ app-root {
   padding: 0 4px;
   font-size: 12px;
   line-height: 20px;
+  display: inline-block;
   color: inherit;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: 4px;
+  animation: status-in var(--motion) ease-out;
 }
 
 button.status-item:hover {
@@ -1027,11 +1353,6 @@ button.status-item:hover {
   text-decoration: underline;
 }
 
-button.status-item:focus-visible {
-  outline: 1px solid var(--focus);
-  outline-offset: -1px;
-}
-
 /* Ferramentas: Verificar e instalar */
 .dialog.tools {
   width: min(720px, calc(100vw - 32px));
@@ -1042,6 +1363,7 @@ button.status-item:focus-visible {
 
 .tools-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -1062,6 +1384,7 @@ button.status-item:focus-visible {
 .tools-error {
   margin: 0 0 8px;
   color: var(--error);
+  animation: message-in var(--motion) ease-out;
 }
 
 .tool-list {
@@ -1110,12 +1433,22 @@ button.status-item:focus-visible {
 /* Depuração: barra de status, barra flutuante, faixa de pausa e margem do editor */
 .status-bar.debugging {
   background: var(--bg-debugging);
-  border-top-color: var(--bg-debugging);
   color: var(--fg-strong);
 }
 
 .status-bar.debugging button.status-item:hover {
   background: rgb(255 255 255 / 12%);
+}
+
+/* Sobre o laranja, o roxo e as cores de gravidade somem: o ⊗ e o ⚠ se distinguem pela forma. */
+.status-bar.debugging :focus-visible {
+  outline-color: var(--fg-strong);
+}
+
+.status-bar.debugging .severity-error,
+.status-bar.debugging .severity-warning,
+.status-bar.debugging .status-item.status-error {
+  color: inherit;
 }
 
 /* Logo abaixo da faixa de abas (35px + borda), no canto direito do editor: não cobre as abas. */
@@ -1125,18 +1458,21 @@ button.status-item:focus-visible {
   right: 24px;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
+  max-width: calc(100% - 16px);
   padding: 2px 4px;
   background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 50%);
+  animation: message-in var(--motion) ease-out;
 }
 
 .debug-toolbar .icon-button {
   width: 28px;
   height: 28px;
-  color: #75beff;
+  color: var(--accent-soft);
 }
 
 .debug-toolbar .icon-button:hover:not(:disabled) {
@@ -1157,6 +1493,18 @@ button.status-item:focus-visible {
   background: var(--bg-banner);
   /* O texto não passa por baixo da barra flutuante (~190px). */
   padding-right: 220px;
+}
+
+/* Sem largura para ficarem lado a lado: a faixa desce para baixo da barra flutuante. */
+@media (max-width: 800px) {
+  .banner-paused {
+    margin-top: 44px;
+    padding-right: 12px;
+  }
+
+  .debug-toolbar {
+    right: 8px;
+  }
 }
 
 .debug-breakpoint::before,
@@ -1261,7 +1609,7 @@ button.status-item:focus-visible {
   white-space: nowrap;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 .debug-row.selected {
@@ -1310,4 +1658,15 @@ button.status-item:focus-visible {
 .debug-breakpoint-item .debug-dot {
   flex: none;
   margin: 0;
+}
+
+/* Com a preferência ligada, nada se mexe: o estado final aparece direto. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::backdrop {
+    animation: none !important;
+    transition: none !important;
+  }
 }

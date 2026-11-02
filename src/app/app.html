@@ -62,7 +62,12 @@
     <span class="severity-error" aria-hidden="true">⊗</span> {{ errors }}
     <span class="severity-warning" aria-hidden="true">⚠</span> {{ warnings }}
   </button>
-  <span class="status-message" role="status">{{ commands.keyStatus() }}</span>
+  <span class="status-message" role="status">
+    <!-- O @for recria o span a cada texto novo: é o que reinicia a animação de entrada. -->
+    @for (text of [commands.keyStatus()]; track text) {
+      <span class="status-flash">{{ text }}</span>
+    }
+  </span>
   <app-language-status />
   @if (status(); as status) {
     <span>{{ status.position }}</span>

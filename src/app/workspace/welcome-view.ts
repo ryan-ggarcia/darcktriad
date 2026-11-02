@@ -1,15 +1,19 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { basename } from '../paths';
 import { Commands } from '../shared/commands';
+import { Icon } from '../shared/icon';
 import { Workspace } from './workspace';
 
 /** Tela inicial: abrir pasta ou arquivo e as pastas recentes (docs/specs/explorador.md). */
 @Component({
   selector: 'app-welcome-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
   host: { class: 'welcome' },
   template: `
+    <app-icon class="welcome-logo" name="triad" />
     <h1 class="welcome-title">Dark Triad</h1>
+    <p class="welcome-tagline">IDE para C, C++ e C#</p>
     <div class="welcome-actions">
       <button
         type="button"
@@ -41,6 +45,7 @@ import { Workspace } from './workspace';
               "
               (click)="workspace.openRecent(recent)"
             >
+              <app-icon class="folder-icon" name="folder" />
               <span class="recent-name">{{ basename(recent.path) || recent.path }}</span>
               <span class="recent-path">{{ recent.path }}</span>
             </button>

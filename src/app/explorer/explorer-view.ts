@@ -15,7 +15,7 @@ import { Entry, Path } from '../ipc';
 import { basename, relativeTo } from '../paths';
 import { CommandId, Commands } from '../shared/commands';
 import { Dialogs } from '../shared/dialogs';
-import { Icon } from '../shared/icon';
+import { fileIcon, Icon } from '../shared/icon';
 import { PLATFORM } from '../shared/keybindings';
 import { CurrentFolder } from '../workspace/current-folder';
 import { Workspace } from '../workspace/workspace';
@@ -32,20 +32,6 @@ interface MenuItem {
   run(): unknown;
 }
 
-/** Ícone simples por tipo (docs/specs/explorador.md): C, C++/cabeçalho, C#, CMake e projeto .NET. */
-function fileBadge(name: string): { label: string; kind: string } | null {
-  const lower = name.toLowerCase();
-  if (lower === 'cmakelists.txt') return { label: '▲', kind: 'cmake' };
-  const extension = lower.slice(lower.lastIndexOf('.') + 1);
-  if (extension === 'c') return { label: 'C', kind: 'c' };
-  if (['cpp', 'cc', 'cxx', 'h', 'hpp', 'hh', 'hxx', 'inl'].includes(extension)) {
-    return { label: 'C++', kind: 'cpp' };
-  }
-  if (extension === 'cs') return { label: 'C#', kind: 'cs' };
-  if (extension === 'csproj' || extension === 'sln') return { label: '◆', kind: 'project' };
-  return null;
-}
-
 @Component({
   selector: 'app-explorer-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -60,7 +46,7 @@ export class ExplorerView {
   protected readonly commands = inject(Commands);
   private readonly dialogs = inject(Dialogs);
   protected readonly rowHeight = ROW_HEIGHT;
-  protected readonly fileBadge = fileBadge;
+  protected readonly fileIcon = fileIcon;
   protected readonly toolbar: { id: CommandId; label: string; icon: string }[] = [
     { id: 'explorerNewFile', label: 'Novo arquivo', icon: 'new-file' },
     { id: 'explorerNewFolder', label: 'Nova pasta', icon: 'new-folder' },
