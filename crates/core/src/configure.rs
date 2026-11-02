@@ -275,12 +275,17 @@ where
         result
     }
 
-    /// O estado pronto, configurando antes se o projeto não foi configurado ou se há uma
-    /// reconfiguração pendente.
+    /// O estado pronto, configurando antes se o projeto não foi configurado, se há uma
+    /// reconfiguração pendente ou se a pasta de build sumiu.
     fn configured(&self) -> Result<ProjectState> {
         let pending = {
             let mut inner = self.lock();
-            inner.reconfigure_at.take().is_some() || inner.state.status != ProjectStatus::Ready
+            // O usuário pode ter apagado a pasta de build: compilar nela falharia na hora.
+            let deleted =
+                (inner.state.build_dir.as_deref()).is_some_and(|dir| !self.fs.is_dir(dir));
+            inner.reconfigure_at.take().is_some()
+                || inner.state.status != ProjectStatus::Ready
+                || deleted
         };
         if pending {
             self.configure()?;
@@ -474,7 +479,8 @@ where
                 .take_while(|dir| dir.starts_with(root))
                 .any(|dir| self.fs.is_dir(&dir.join("CMakeFiles")))
         };
-        cmake_file && path.starts_with(root) && !generated()
+        // Só salvamentos: o que foi apagado (um `rm -rf build`, já sem `CMakeFiles`) não conta.
+        cmake_file && path.starts_with(root) && self.fs.is_file(path) && !generated()
     }
 
     /// Os itens da raiz e de até 2 níveis abaixo, relativos a ela, para [`detect_project`].
@@ -948,12 +954,14 @@ mod tests {
     ];
 
     type Log = Arc<Mutex<Vec<String>>>;
+    type Paths = Arc<Mutex<Vec<PathBuf>>>;
     type Script =
         dyn Fn(&[String], &AtomicBool, &mut dyn FnMut(&str)) -> io::Result<bool> + Send + Sync;
 
     struct FakeFs {
         root_files: Vec<&'static str>,
-        dirs: Vec<PathBuf>,
+        /// Os outros itens que existem, pastas ou arquivos. A pasta de build entra com a consulta.
+        paths: Paths,
     }
 
     impl FileSystem for FakeFs {
@@ -974,12 +982,13 @@ mod tests {
         }
 
         fn is_dir(&self, path: &Path) -> bool {
-            self.dirs.iter().any(|dir| dir == path)
+            lock(&self.paths).iter().any(|item| item == path)
         }
 
         fn is_file(&self, path: &Path) -> bool {
-            path.parent() == Some(Path::new(ROOT))
-                && (self.root_files.iter()).any(|name| path.file_name() == Some(OsStr::new(name)))
+            let in_root = path.parent() == Some(Path::new(ROOT))
+                && (self.root_files.iter()).any(|name| path.file_name() == Some(OsStr::new(name)));
+            in_root || self.is_dir(path)
         }
     }
 
@@ -1007,11 +1016,13 @@ mod tests {
     struct FakeFileApi {
         log: Log,
         queries: Mutex<HashSet<PathBuf>>,
+        paths: Paths,
     }
 
     impl FileApi for FakeFileApi {
         fn write_query(&self, build_dir: &Path) -> io::Result<bool> {
             lock(&self.log).push(format!("query {}", build_dir.display()));
+            lock(&self.paths).push(build_dir.into());
             Ok(lock(&self.queries).insert(build_dir.into()))
         }
 
@@ -1083,7 +1094,7 @@ mod tests {
         fn with(
             root_files: &[&'static str],
             tools: FakeTools,
-            dirs: Vec<PathBuf>,
+            paths: Vec<PathBuf>,
             script: impl Fn(&[String], &AtomicBool, &mut dyn FnMut(&str)) -> io::Result<bool>
             + Send
             + Sync
@@ -1092,10 +1103,11 @@ mod tests {
             let log = Log::default();
             let events = Arc::<Mutex<Vec<ProjectEvent>>>::default();
             let sink = Arc::clone(&events);
+            let paths = Paths::new(Mutex::new(paths));
             let mut project = Project::new(
                 FakeFs {
                     root_files: root_files.into(),
-                    dirs,
+                    paths: Arc::clone(&paths),
                 },
                 FakeRunner {
                     log: Arc::clone(&log),
@@ -1104,6 +1116,7 @@ mod tests {
                 FakeFileApi {
                     log: Arc::clone(&log),
                     queries: Mutex::default(),
+                    paths,
                 },
                 tools,
                 move |event| lock(&sink).push(event),
@@ -1542,7 +1555,18 @@ mod tests {
         let fixture = Fixture::with(
             &["CMakeLists.txt"],
             tools,
-            vec![build.join("CMakeFiles")],
+            [
+                "CMakeFiles",
+                "cmake_install.cmake",
+                "CMakeFiles/4.0/CMakeCXXCompiler.cmake",
+            ]
+            .map(|path| build.join(path))
+            .into_iter()
+            .chain([
+                "/proj/cmake/opcoes.cmake".into(),
+                "/proj/CMakePresets.json".into(),
+            ])
+            .collect(),
             succeed,
         );
         fixture.open(ProjectChoice::default());
@@ -1949,6 +1973,30 @@ mod tests {
             ]
         );
         assert_eq!(fixture.project.lock().reconfigure_at, None);
+    }
+
+    #[test]
+    fn a_deleted_build_dir_is_configured_again_and_its_removal_does_not_reconfigure() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
+        fixture.open(ProjectChoice::default());
+        // `rm -rf build`: o aviso do observador chega com a pasta e o `CMakeFiles` já sumidos.
+        lock(&fixture.project.fs.paths).clear();
+        fixture.project.files_changed(&[
+            "/proj/build/debug/cmake_install.cmake".into(),
+            "/proj/build/debug/CMakeFiles/app.dir/DependInfo.cmake".into(),
+        ]);
+        assert_eq!(fixture.project.lock().reconfigure_at, None);
+
+        lock(&fixture.log).clear();
+        fixture.project.build().unwrap();
+        assert_eq!(
+            fixture.log(),
+            [
+                "query /proj/build/debug".to_string(),
+                configure_line("Debug"),
+                "/bin/cmake --build /proj/build/debug".to_string(),
+            ]
+        );
     }
 
     #[test]
