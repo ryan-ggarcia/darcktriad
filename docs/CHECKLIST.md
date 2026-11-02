@@ -32,15 +32,15 @@ O WebDriver não mede nem faz estes. Avisar antes de usar entrada real.
 
 ## 4. Validar no Linux (o QA pode fazer pelo WebDriver ou com teste automático)
 
-- [ ] Apagar o `build/` e compilar logo em seguida, 8 vezes (correção 29b7ee9 só tem teste automático) (Compilar e executar › Apagar o `build/`)
-- [ ] .NET na janela: critério 12 de [projeto.md](specs/projeto.md) (Sem teste na janela › Projeto)
-- [ ] Desempenho do clangd num arquivo de 10.000 linhas: criar a fixture `grande` e o critério 15 de [linguagem.md](specs/linguagem.md) (Sem teste na janela › Linguagem)
-- [ ] C# num projeto grande: tempo dos diagnósticos do Roslyn (Linguagem › C# em projeto grande)
-- [ ] 4ª queda do clangd em 5 minutos mostra o botão Reiniciar (Linguagem › Queda repetida)
-- [ ] Parar com o depurador travado termina em ~3 s (só teste automático) (Sem teste na janela › Depuração)
-- [ ] Teste do netcoredbg instável com a máquina ocupada: descobrir se o `disconnect` às vezes não encerra a sessão (Depuração)
-- [ ] Duas janelas da IDE abertas: os temporários do clangd não são apagados enquanto a outra usa (Linguagem)
-- [ ] CI do Ubuntu rodando os testes com o cmake real (hoje são pulados) (Projeto › CI)
+- [x] Apagar o `build/` e compilar logo em seguida, 8 vezes (correção 29b7ee9 só tem teste automático) (Compilar e executar › Apagar o `build/`)
+- [x] .NET na janela: critério 12 de [projeto.md](specs/projeto.md) (Sem teste na janela › Projeto)
+- [ ] Desempenho do clangd num arquivo de 10.000 linhas: criar a fixture `grande` e o critério 15 de [linguagem.md](specs/linguagem.md) (Sem teste na janela › Linguagem) → FALHOU: p95 de 65 ms com o clangd ativo (meta 50 ms); 35 ms com ele parado
+- [x] C# num projeto grande: tempo dos diagnósticos do Roslyn (Linguagem › C# em projeto grande)
+- [x] 4ª queda do clangd em 5 minutos mostra o botão Reiniciar (Linguagem › Queda repetida)
+- [x] Parar com o depurador travado termina em ~3 s (Sem teste na janela › Depuração)
+- [x] Teste do netcoredbg instável com a máquina ocupada: descobrir se o `disconnect` às vezes não encerra a sessão (Depuração): sim, defeito do netcoredbg; a IDE não é afetada, o teste sim (item novo no grupo 5)
+- [x] Duas janelas da IDE abertas: os temporários do clangd não são apagados enquanto a outra usa (Linguagem)
+- [x] CI do Ubuntu rodando os testes com o cmake real (Projeto › CI): não são pulados; a imagem do Ubuntu já tem cmake e ninja
 
 ## 5. Corrigir
 
@@ -57,6 +57,8 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] .NET: salvar `.csproj`/`.sln` reconfigura; erros de restore sem linha aparecem em Problemas (Projeto)
 - [ ] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem)
 - [ ] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem)
+- [ ] Digitar com o clangd ativo: p95 de 65 ms, meta de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem)
+- [ ] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
 - [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
 - [ ] Erros da compilação sublinhados no editor (Compilar e executar)
 - [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração)
