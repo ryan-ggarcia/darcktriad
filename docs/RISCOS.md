@@ -11,6 +11,8 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## macOS
 
+- **Abertura mais lenta:** para pegar o `PATH` do shell de login, o app espera o shell antes de abrir a janela, por até 3 s. Nunca rodou num Mac.
+- **Teste de velocidade instável no CI:** `listing_a_folder_with_5000_files_fits_the_budget` falhou 1 vez no macOS (2f45e62) e passou nos commits seguintes. Parece lentidão da máquina do CI.
 - **PATH (corrigido na v0.6.2, sem teste num Mac):** ao abrir, o app lê o `PATH` do shell de login (`$SHELL -l -i`, com o `~/.zprofile`) e o passa ao terminal, ao cmake e à busca de ferramentas. Só a leitura da saída tem teste (em qualquer sistema); o código que roda o shell só compila no CI do macOS (no Linux, rodou com o bash). A abertura do app espera o shell, até 3 s; um shell mais lento é deixado de lado.
 - **Reconfigurar ao salvar com a pasta atrás de um link simbólico** (`/tmp` → `/private/tmp`): corrigido na v0.6.2 comparando pelo caminho real, com teste automático; sem teste num Mac.
 
