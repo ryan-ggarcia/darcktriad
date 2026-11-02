@@ -183,7 +183,7 @@ fn debug_until_exit(
 
 fn sessions() -> (Arc<Sessions>, Arc<Terminals<PortablePty>>) {
     let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
-    let sessions = DebugSessions::new(StdServerSpawner, probe(), Arc::clone(&terminals));
+    let sessions = DebugSessions::new(StdServerSpawner::default(), probe(), Arc::clone(&terminals));
     (Arc::new(sessions), terminals)
 }
 
@@ -327,7 +327,7 @@ fn start_fake(
     .unwrap();
     let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
     let sessions = Arc::new(DebugSessions::new(
-        StdServerSpawner,
+        StdServerSpawner::default(),
         FakeAdapter(adapter),
         terminals,
     ));

@@ -31,8 +31,10 @@ struct Lsp {
 }
 
 impl Lsp {
-    fn start(language: Language, project: &ProjectState) -> Self {
-        let servers = Arc::new(LanguageServers::new(StdServerSpawner, probe()));
+    /// `temp` é a pasta temporária dos servidores, como a que o app dá a eles.
+    fn start(language: Language, project: &ProjectState, temp: &Path) -> Self {
+        let spawner = StdServerSpawner::with_temp_dir(temp.to_owned()).unwrap();
+        let servers = Arc::new(LanguageServers::new(spawner, probe()));
         let (sender, messages) = mpsc::channel();
         servers
             .start(language, project, move |event| match event {
@@ -190,13 +192,40 @@ fn clangd_reports_the_error_of_an_opened_file_in_hello_cpp() {
     let Some((root, state)) = configured("hello-cpp", "cmake", "clangd") else {
         return;
     };
-    let lsp = Lsp::start(Language::Cpp, &state);
+    let temp = root.0.join(".tmp");
+    let lsp = Lsp::start(Language::Cpp, &state, &temp);
     lsp.handshake(&root.0);
     let file = root.0.join("app/main.cpp");
     let line = lsp.open_with_error(&file, "cpp");
     // Sem o compile_commands.json, o `#include "soma.h"` também seria um erro.
     let errors = lsp.pushed_errors(&file, Instant::now() + DIAGNOSTICS_TIMEOUT);
     assert_single_error_on_line(&errors, line);
+
+    // O preâmbulo (o `#include` do main.cpp) vai para a pasta dos servidores, e não para a do
+    // sistema. Encerrado à força, o clangd o deixa lá até o app abrir de novo.
+    assert_eq!(preambles(&temp), 1);
+    let servers = Arc::downgrade(&lsp.servers);
+    drop(lsp);
+    assert_eq!(preambles(&temp), 1);
+    // O app que fechou: as threads de cada servidor seguram os servidores (e o lock da pasta) até
+    // verem o processo morto, a cada 50 ms.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while servers.strong_count() > 0 {
+        assert!(Instant::now() < deadline, "os servidores não foram soltos");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    StdServerSpawner::with_temp_dir(temp.clone()).unwrap();
+    assert_eq!(preambles(&temp), 0);
+}
+
+fn preambles(dir: &Path) -> usize {
+    (fs::read_dir(dir).unwrap())
+        .filter(|entry| {
+            let name = entry.as_ref().unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("preamble-") && name.ends_with(".pch")
+        })
+        .count()
 }
 
 #[test]
@@ -204,7 +233,7 @@ fn roslyn_reports_cs0029_in_hello_cs() {
     let Some((root, state)) = configured("hello-cs", "dotnet", "roslyn-language-server") else {
         return;
     };
-    let lsp = Lsp::start(Language::CSharp, &state);
+    let lsp = Lsp::start(Language::CSharp, &state, &root.0.join(".tmp"));
     lsp.handshake(&root.0);
     // Antes do projeto carregar, o arquivo não tem as referências do .NET.
     lsp.wait_for(Instant::now() + INITIALIZE_TIMEOUT, |message| {

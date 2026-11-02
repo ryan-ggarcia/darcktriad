@@ -2,8 +2,9 @@
 //! canceláveis, e os servidores de linguagem, que falam pelo stdio.
 
 use std::ffi::OsString;
+use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -90,12 +91,52 @@ fn command(program: &Path, args: &[OsString], cwd: &Path) -> Command {
     command
 }
 
-/// Servidores de linguagem (clangd, Roslyn) falando pelo stdio.
-pub struct StdServerSpawner;
+/// Servidores de linguagem (clangd, Roslyn) e adaptadores de depuração falando pelo stdio.
+#[derive(Default)]
+pub struct StdServerSpawner {
+    temp: Option<ServerTemp>,
+}
+
+/// A pasta temporária dos servidores e o lock compartilhado que a marca como em uso.
+struct ServerTemp {
+    dir: PathBuf,
+    _in_use: File,
+}
+
+impl StdServerSpawner {
+    /// Os servidores escrevem os temporários em `dir`, e não na pasta temporária do sistema: o
+    /// clangd só apaga os seus `preamble-*.pch` quando sai pelo LSP, e o kill, a queda dele ou do
+    /// app os deixava para trás. Sem outra instância do app usando `dir`, o que sobrou lá é apagado.
+    pub fn with_temp_dir(dir: PathBuf) -> io::Result<Self> {
+        fs::create_dir_all(&dir)?;
+        let in_use = File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.with_extension("lock"))?;
+        if in_use.try_lock().is_ok() {
+            fs::remove_dir_all(&dir)?;
+            fs::create_dir(&dir)?;
+            in_use.unlock()?;
+        }
+        in_use.lock_shared()?;
+        Ok(Self {
+            temp: Some(ServerTemp {
+                dir,
+                _in_use: in_use,
+            }),
+        })
+    }
+}
 
 impl ServerSpawner for StdServerSpawner {
     fn spawn(&self, program: &Path, args: &[OsString], cwd: &Path) -> io::Result<SpawnedServer> {
-        let mut child = command(program, args, cwd).stdin(Stdio::piped()).spawn()?;
+        let mut command = command(program, args, cwd);
+        if let Some(temp) = &self.temp {
+            // TMPDIR no Unix (LLVM e .NET), TMP/TEMP no Windows.
+            command.envs(["TMPDIR", "TMP", "TEMP"].map(|name| (name, &temp.dir)));
+        }
+        let mut child = command.stdin(Stdio::piped()).spawn()?;
         let missing = || io::Error::other("o servidor iniciou sem stdio");
         Ok(SpawnedServer {
             stdout: Box::new(child.stdout.take().ok_or_else(missing)?),
@@ -299,7 +340,7 @@ mod tests {
     #[test]
     fn server_talks_through_stdio_and_kill_ends_it_and_its_children() {
         let script = "echo log >&2; sleep 30 & echo $!; cat";
-        let spawned = StdServerSpawner
+        let spawned = StdServerSpawner::default()
             .spawn(
                 Path::new("/bin/sh"),
                 &["-c".into(), script.into()],
@@ -340,7 +381,7 @@ mod tests {
 
     #[test]
     fn a_server_that_exits_on_its_own_takes_its_children_along() {
-        let spawned = StdServerSpawner
+        let spawned = StdServerSpawner::default()
             .spawn(
                 Path::new("/bin/sh"),
                 &["-c".into(), "sleep 30 & echo $!; read x; exit 3".into()],
@@ -367,7 +408,7 @@ mod tests {
 
     #[test]
     fn debuginfod_is_off_for_the_processes_of_the_ide() {
-        let spawned = StdServerSpawner
+        let spawned = StdServerSpawner::default()
             .spawn(Path::new("/usr/bin/env"), &[], &std::env::temp_dir())
             .unwrap();
         let mut env = String::new();
@@ -375,6 +416,37 @@ mod tests {
             .read_to_string(&mut env)
             .unwrap();
         assert!(!env.contains("DEBUGINFOD_URLS="), "{env}");
+    }
+
+    #[test]
+    fn servers_use_the_app_temp_folder_and_leftovers_go_when_no_other_app_uses_it() {
+        let root = crate::test_support::TempDir::new("servers-temp");
+        let dir = root.join("servers");
+        let leftover = dir.join("preamble-1.pch");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&leftover, "").unwrap();
+
+        let app = StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
+        assert!(!leftover.exists());
+        let spawned = app
+            .spawn(
+                Path::new("/bin/sh"),
+                &["-c".into(), "echo $TMPDIR".into()],
+                &root,
+            )
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(spawned.stdout).read_line(&mut line).unwrap();
+        assert_eq!(line.trim_end(), dir.to_str().unwrap());
+        spawned.process.wait().unwrap();
+
+        // Outra instância do app abrindo não apaga o que os servidores desta ainda usam.
+        fs::write(&leftover, "").unwrap();
+        let other = StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
+        assert!(leftover.exists());
+        drop((app, other));
+        StdServerSpawner::with_temp_dir(dir).unwrap();
+        assert!(!leftover.exists());
     }
 
     #[cfg(target_os = "linux")]
