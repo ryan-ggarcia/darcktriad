@@ -1804,7 +1804,8 @@ mod tests {
         assert_eq!(
             command.args,
             dotnet_run_args(
-                Path::new("/proj/src/multi/multi.csproj"),
+                // O separador é o do sistema: `join`, como o caminho que o núcleo monta.
+                &Path::new(ROOT).join("src/multi/multi.csproj"),
                 BuildConfig::Debug,
                 Some("net10.0")
             )
