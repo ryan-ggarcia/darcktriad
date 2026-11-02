@@ -1,6 +1,6 @@
 # Riscos e problemas conhecidos
 
-O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técnicos do núcleo estão em [ipc.md](ipc.md#limites-conhecidos). Atualize esta lista ao corrigir um item ou ao achar um novo.
+O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técnicos do núcleo estão em [ipc.md](ipc.md#limites-conhecidos). Atualize esta lista ao corrigir um item ou ao achar um novo. A lista de tarefas para corrigir e validar está em [CHECKLIST.md](CHECKLIST.md).
 
 ## Windows
 
