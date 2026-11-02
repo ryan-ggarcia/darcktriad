@@ -235,6 +235,69 @@ describe('sessão de depuração', () => {
     expect(debug.state()).toBe('running');
   });
 
+  it('F6 pausa toda vez, sem pedir threads com o programa rodando, e diz "Pausado por você"', async () => {
+    await startLldb();
+    // Sem thread conhecida: pede `threads`; o lldb-dap recusa, e o `pause` vai com 0.
+    void debug.pause();
+    await settle();
+    fakes.debug.respond('threads', {}, false);
+    await settle();
+    expect(sent('pause')[0].arguments).toEqual({ threadId: 0 });
+    fakes.debug.respond('pause');
+    // O lldb-dap avisa a pausa pedida como exceção (SIGSTOP).
+    fakes.debug.dapEvent('stopped', {
+      reason: 'exception',
+      description: 'signal SIGSTOP',
+      threadId: 7,
+    });
+    await settle();
+    expect(debug.pauseReason()).toBe('Pausado por você');
+    expect(sent('exceptionInfo')).toEqual([]);
+
+    void debug.start();
+    expect(debug.state()).toBe('running');
+    const threads = sent('threads').length;
+    void debug.pause();
+    await settle();
+    expect(sent('threads')).toHaveLength(threads);
+    expect(sent('pause')[1].arguments).toEqual({ threadId: 7 });
+  });
+
+  it('netcoredbg: F6 usa a thread do evento `thread`', async () => {
+    await startLldb();
+    fakes.debug.dapEvent('thread', { reason: 'started', threadId: 40 });
+    fakes.debug.dapEvent('thread', { reason: 'started', threadId: 41 });
+    fakes.debug.dapEvent('thread', { reason: 'exited', threadId: 41 });
+    void debug.pause();
+    await settle();
+    expect(sent('threads')).toEqual([]);
+    expect(sent('pause')[0].arguments).toEqual({ threadId: 40 });
+    // Pausa recusada: o próximo `stopped` volta a usar o motivo do adaptador.
+    fakes.debug.respond('pause', {}, false);
+    await settle();
+    fakes.debug.dapEvent('stopped', { reason: 'breakpoint', threadId: 40 });
+    expect(debug.pauseReason()).toBe('Pausado: ponto de parada');
+  });
+
+  it('exceção: a faixa mostra a mensagem do exceptionInfo', async () => {
+    fakes.debug.launch = { adapter: 'netcoredbg', launch: { program: '/proj/bin/hello-cs.dll' } };
+    void debug.start();
+    await settle();
+    fakes.debug.respond('initialize', { supportsExceptionInfoRequest: true });
+    await settle();
+    fakes.debug.respond('launch');
+    fakes.debug.dapEvent('initialized');
+    await settle();
+    const text = "An unhandled exception of type 'System.Exception' occurred in hello-cs.dll";
+    fakes.debug.dapEvent('stopped', { reason: 'exception', text, threadId: 9 });
+    await settle();
+    expect(debug.pauseReason()).toBe(`Pausado: exceção. ${text}`);
+    expect(sent('exceptionInfo')[0].arguments).toEqual({ threadId: 9 });
+    fakes.debug.respond('exceptionInfo', { description: `${text}: 'x'` });
+    await settle();
+    expect(debug.pauseReason()).toBe(`Pausado: exceção. ${text}: 'x'`);
+  });
+
   it('compilação falha: nenhuma sessão', async () => {
     fakes.debug.launch = null;
     await debug.start();
@@ -244,7 +307,10 @@ describe('sessão de depuração', () => {
 
   it('netcoredbg sem runInTerminal: terminal só de leitura com o aviso, a saída e o código', async () => {
     fakes.debug.launch = { adapter: 'netcoredbg', launch: { program: '/proj/bin/hello-cs.dll' } };
+    // F5 com o .NET ainda configurando: o alvo só aparece depois.
+    fakes.project.emitState({ target: null });
     void debug.start();
+    fakes.project.emitState({ target: 'hello-cs' });
     await settle();
     fakes.debug.respond('initialize');
     await settle();
@@ -259,7 +325,8 @@ describe('sessão de depuração', () => {
     await settle();
 
     const terminal = TestBed.inject(Terminals).active()!;
-    expect(terminal.name()).toBe('🐞 app');
+    expect(terminal.name()).toBe('🐞 hello-cs');
+    expect(debug.target()).toBe('hello-cs');
     expect(fakes.screens.screens[0].text).toBe(
       'Este depurador não permite digitar a entrada do programa.\r\n\r\n' +
         'cba\r\n\r\n\r\nO programa terminou com código 0\r\n',

@@ -1118,15 +1118,15 @@ button.status-item:focus-visible {
   background: rgb(255 255 255 / 12%);
 }
 
+/* Logo abaixo da faixa de abas (35px + borda), no canto direito do editor: não cobre as abas. */
 .debug-toolbar {
   position: absolute;
-  top: 4px;
-  left: 50%;
+  top: 40px;
+  right: 24px;
   z-index: 10;
   display: flex;
   gap: 2px;
   padding: 2px 4px;
-  transform: translateX(-50%);
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -1155,6 +1155,8 @@ button.status-item:focus-visible {
 
 .banner-paused {
   background: var(--bg-banner);
+  /* O texto não passa por baixo da barra flutuante (~190px). */
+  padding-right: 220px;
 }
 
 .debug-breakpoint::before,

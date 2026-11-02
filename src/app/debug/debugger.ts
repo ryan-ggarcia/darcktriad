@@ -144,6 +144,9 @@ export class Debugger {
   /** Sobe a cada pausa e retomada: respostas de uma pausa antiga são descartadas. */
   private pauses = 0;
   private threadId: number | undefined;
+  /** F6 enviado: o próximo `stopped` é "Pausado por você" (o lldb-dap avisa como `exception`). */
+  private pauseRequested = false;
+  private supportsExceptionInfo = false;
   private configured = false;
   private stopping = false;
   private disconnecting = false;
@@ -180,6 +183,8 @@ export class Debugger {
       if (launch) await this.service.stop().catch(warn);
       return this.finish(null);
     }
+    // O alvo só é conhecido depois da configuração (o .NET pode ainda estar configurando no F5).
+    this.target.set(this.project.state().target ?? 'programa');
     this.adapter = launch.adapter;
     const client = new DapClient((message) => void this.service.send(message).catch(warn), {
       event: (event, body) => this.onDapEvent(event, body),
@@ -189,16 +194,20 @@ export class Debugger {
     this.client = client;
     this.state.set('running');
     const initialized = new Promise<void>((resolve) => (this.onInitialized = resolve));
-    const capabilities = await client.request('initialize', {
-      clientID: 'darktriad',
-      clientName: 'Dark Triad',
-      adapterID: this.adapter,
-      linesStartAt1: true,
-      columnsStartAt1: true,
-      pathFormat: 'path',
-      supportsRunInTerminalRequest: true,
-    });
+    const capabilities = await client.request<{ supportsExceptionInfoRequest?: boolean }>(
+      'initialize',
+      {
+        clientID: 'darktriad',
+        clientName: 'Dark Triad',
+        adapterID: this.adapter,
+        linesStartAt1: true,
+        columnsStartAt1: true,
+        pathFormat: 'path',
+        supportsRunInTerminalRequest: true,
+      },
+    );
     if (!capabilities) return void this.stop();
+    this.supportsExceptionInfo = capabilities.supportsExceptionInfoRequest === true;
     // O lldb-dap só responde ao `launch` depois do `configurationDone`: não dá para esperar aqui.
     void client.request('launch', launch.launch).then((ok) => {
       if (client !== this.client) return;
@@ -224,10 +233,16 @@ export class Debugger {
   /** F6. */
   async pause(): Promise<void> {
     const client = this.client;
-    if (this.state() !== 'running' || !client) return;
-    const result = await client.request<{ threads?: { id: number }[] }>('threads');
-    const threadId = result?.threads?.[0]?.id;
-    if (threadId !== undefined) void client.request('pause', { threadId });
+    if (this.state() !== 'running' || !client || this.pauseRequested) return;
+    this.pauseRequested = true;
+    // O lldb-dap recusa `threads` com o programa rodando, mas ignora o `threadId` do `pause`; o
+    // netcoredbg responde `threads` e exige uma thread que exista.
+    const threadId =
+      this.threadId ??
+      (await client.request<{ threads?: { id: number }[] }>('threads'))?.threads?.[0]?.id ??
+      0;
+    if (client !== this.client || this.state() !== 'running') return;
+    if (!(await client.request('pause', { threadId }))) this.pauseRequested = false;
   }
 
   stepOver(): void {
@@ -345,6 +360,11 @@ export class Debugger {
         return void this.onStopped(body);
       case 'continued':
         return this.onContinued();
+      case 'thread':
+        // A thread usada pelo F6 com o programa rodando.
+        if (body['reason'] === 'started') this.threadId ??= body['threadId'] as number;
+        else if (body['threadId'] === this.threadId) this.threadId = undefined;
+        return;
       case 'breakpoint':
         if (body['reason'] === 'changed') {
           this.breakpoints.applyEvent(body['breakpoint'] as DapBreakpoint);
@@ -391,8 +411,21 @@ export class Debugger {
     if (!client) return;
     const pause = ++this.pauses;
     this.state.set('paused');
-    this.pauseReason.set(pauseText(body));
-    this.threadId = body['threadId'] as number | undefined;
+    const requested = this.pauseRequested;
+    this.pauseRequested = false;
+    const pausedByUser = requested && body['reason'] !== 'breakpoint';
+    this.pauseReason.set(pauseText(pausedByUser ? { reason: 'pause' } : body));
+    this.threadId = (body['threadId'] as number | undefined) ?? this.threadId;
+    if (body['reason'] === 'exception' && !pausedByUser && this.supportsExceptionInfo) {
+      // O `stopped` do netcoredbg não traz a mensagem da exceção; o `exceptionInfo` traz.
+      void client
+        .request<{ description?: string }>('exceptionInfo', { threadId: this.threadId })
+        .then((info) => {
+          if (pause === this.pauses && info?.description) {
+            this.pauseReason.set(pauseText({ reason: 'exception', description: info.description }));
+          }
+        });
+    }
     const result = await client.request<{ threads?: { id: number; name: string }[] }>('threads');
     if (pause !== this.pauses) return;
     const threads = (result?.threads ?? []).map((item) => new ThreadNode(item.id, item.name));
@@ -467,6 +500,7 @@ export class Debugger {
     this.state.set(null);
     this.threadId = undefined;
     this.configured = this.stopping = this.disconnecting = this.inTerminal = false;
+    this.pauseRequested = this.supportsExceptionInfo = false;
     this.outputTerminal = null;
     this.breakpoints.forgetSession();
     this.onInitialized();

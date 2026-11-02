@@ -69,14 +69,15 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Coleções em blocos:** quando o depurador avisa que há mais de 100 itens, só os blocos aparecem; os campos com nome do objeto (ex.: `Count`) ficam de fora.
 - **Pilha de chamadas** mostra só os 200 frames do topo (ex.: numa recursão infinita).
 - **Margem do editor:** não aparece a bolinha clara ao passar o mouse; o ponto só aparece depois do clique (ou F9).
-- **Barra flutuante** fica fixa no topo, no meio, e pode cobrir abas.
-- **Interface da v0.6 na janela** (Linux, `hello-cpp`, lldb-dap 23, 2026-11-02): bolinha salva reaberta, F5 compila e pausa na linha (faixa, fundo amarelo, seta), barra de status laranja, Variáveis e Pilha de chamadas, F10 e Shift+F5 (sem sobrar `lldb-dap` nem o programa) passaram. Sem teste na janela: netcoredbg (C#), F6, F11, Shift+F11, Ctrl+Shift+F5, queda do adaptador e os critérios 9, 10, 14, 15 e 17. Os pontos de parada (critério 3) e a sequência DAP têm teste automático no `ng test`.
+- **Queda do adaptador:** a mensagem é uma caixa com OK que segura o teclado; o F5 só inicia a sessão nova depois de fechar a caixa.
+- **Interface da v0.6 na janela** (Linux, lldb-dap 23 e netcoredbg 3.2, 2026-11-02): os critérios 5 a 18 de [depuracao.md](specs/depuracao.md) foram testados; o 11 (F6) e o 15 (mensagem da exceção) falharam e foram corrigidos depois, sem reteste na janela; a correção foi conferida com o lldb-dap 23 e o netcoredbg 3.2 direto pelo DAP. Os pontos de parada (critério 3) e a sequência DAP têm teste automático no `ng test`.
 
 ## Sem teste na janela
 
 - **Linguagem:** o critério 15 (desempenho com o clangd num arquivo de 10.000 linhas) não tem a fixture `grande`. Os critérios 5 a 14 passaram na janela em 2026-10-31, só no Linux.
 - **Projeto:** o critério 12 (.NET na janela) e o 13 (Windows).
 - **Compilar e executar:** na janela, no Linux, com o `hello-c` (2026-11-02): compilar com erro (links, Problemas, foco no editor), erro do linker (item de reserva), Ctrl+F5 com entrada (`21` → `42` e o código de saída), a pergunta de reiniciar, Shift+F5 e Ctrl+K Ctrl+H passaram. Também passaram na janela (QA, 2026-11-02): salvar antes de compilar, C# (`abc` → `cba`), cancelar com o ✕ (para em menos de 0,1 s e não sobra `ninja`, `cmake` nem `cc1plus`), alvo `tool` no Ctrl+F5, pasta só com biblioteca e a lista de canais (Build, CMake, clangd). Nada disso foi testado no Windows nem no macOS: lá, o encerramento da árvore de processos com `taskkill` (cancelar, parar, reiniciar) e os atalhos ⇧⌘B, ⌃F5 e ⇧⌘U só foram compilados pelo CI.
+- **Depuração:** passaram na janela, no Linux (QA, 2026-11-02): os critérios 5 a 10, 12 a 14 e 16 a 18 de [depuracao.md](specs/depuracao.md), com `hello-cpp`, `hello-c` (`21` digitado no terminal 🐞) e `hello-cs` (entrada fixa `abc` → `cba`, `List<int>` de 1.000 itens em blocos). O 11 e o 15 foram corrigidos e precisam de reteste na janela, assim como a barra flutuante, que passou para logo abaixo das abas, no canto direito. O 19 (MSVC com lldb-dap) só pode ser testado no Windows. Nada foi testado no Windows nem no macOS.
 - **Instaladores:** os do Windows e do macOS nunca foram abertos. O AppImage da v0.3.0 só foi aberto, sem uso; os da v0.4.0 e v0.5.0 foram publicados sem abrir nenhum.
 
 ## Adiado de propósito
