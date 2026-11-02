@@ -16,6 +16,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## Terminal
 
+- **Teste instável no macOS:** `writes_reach_the_program_in_order` (2.000 linhas escritas seguidas no `cat`) falha às vezes no CI do macOS. Pode ser o macOS descartando entrada com a fila do terminal cheia, o que afetaria colar textos grandes. Em investigação.
 - **Sem controle de fluxo:** um programa que escreve sem parar pode deixar a interface lenta. Com 100.000 linhas, a interface travou no máximo cerca de 0,3 s.
 - **Programa que ignora o fechamento** (`nohup … &`) continua rodando se o shell já saiu.
 - **Colar no Linux** usa a área de transferência do navegador e nunca foi testado no WebKitGTK. Pode ser recusado ou pedir confirmação.
@@ -55,8 +56,11 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 ## Depuração (núcleo da v0.6)
 
 - **Sem símbolos baixados do sistema:** o núcleo tira o `DEBUGINFOD_URLS` dos processos que inicia. Com ele (padrão no Arch, Fedora e Ubuntu), o lldb-dap travava minutos baixando os símbolos do próprio lldb-dap ao usar o terminal integrado. Efeito: entrar em funções da libc mostra só desmontagem.
-- **C# não lê o teclado ao depurar:** o netcoredbg 3.2 não pede o `runInTerminal`, e o `Console.ReadLine` do programa espera para sempre. O critério 8 de [depuracao.md](specs/depuracao.md) (digitar `abc`) não tem como passar assim. O teste automático do `hello-cs` troca o `ReadLine` por um texto fixo.
-- **Só o lldb-dap 23 e o netcoredbg 3.2 foram testados**, e só no Linux. O CI agora instala o lldb-dap 21 (repositório apt.llvm.org) e o netcoredbg 3.2.0-1092 no Ubuntu, e no macOS o teste usa o lldb-dap do Xcode: nada disso rodou ainda (sem push). Windows: nenhum teste de depuração.
+- **C# não lê o teclado ao depurar:** o netcoredbg 3.2 não pede o `runInTerminal`, e o `Console.ReadLine` do programa espera para sempre. **Decisão do usuário (2026-11-02): aceitar o limite no MVP**; o critério 8 de [depuracao.md](specs/depuracao.md) foi trocado para uma entrada fixa, e o terminal 🐞 mostra a saída só para leitura com o aviso. O teste automático do `hello-cs` troca o `ReadLine` por um texto fixo.
+  - **Por quê (testado e lido no código do netcoredbg):** no modo DAP, ele sempre liga a entrada e a saída do programa a canos (pipes) dele mesmo. A saída vira eventos `output`. A entrada só é repassada no modo de linha de comando (`--interpreter=cli`), nunca no DAP. O `launch` não tem opção de console ou terminal: só `program`, `args`, `cwd`, `env`, `stopAtEntry`, `justMyCode` e `enableStepFiltering`.
+  - **Rodar o netcoredbg dentro do terminal 🐞, falando DAP por TCP, não resolve:** o programa não herda o terminal, porque a entrada dele continua sendo o cano. Esse modo também tem dois problemas: o `--server` escuta em todas as interfaces de rede (`0.0.0.0`), não só em `127.0.0.1`, e não aceita porta escolhida pelo sistema (porta 0).
+  - **Caminho que funcionou num protótipo, só no Linux e no macOS:** pedir ao netcoredbg para iniciar `/bin/sh -c 'exec dotnet "$0" </dev/pts/N >/dev/pts/N 2>&1' <programa>.dll`, onde `/dev/pts/N` é o terminal 🐞. O `exec` mantém o mesmo processo, então o netcoredbg depura o `dotnet` normalmente: o ponto de parada funcionou, `abc` foi lido do terminal e `cba` apareceu nele. Não serve no Windows, que não tem `exec`. Não foi implementado: exige um terminal sem processo próprio e é uma decisão de spec.
+- **Só o lldb-dap 23 e o netcoredbg 3.2 foram testados**, e só no Linux. O CI instala o lldb-dap 21 (apt.llvm.org) no Ubuntu e usa o do Xcode no macOS. O netcoredbg 3.2 **não roda no Ubuntu 22.04 nem em distros com glibc < 2.38** (exige GLIBC_2.38 e GLIBCXX_3.4.32), por isso o CI não o instala e o teste de C# só roda localmente. Windows: nenhum teste de depuração.
 - **Windows:** se o adaptador cair, o que ele iniciou (o programa sob o netcoredbg) pode sobrar. No Linux e no macOS isso é encerrado.
 - **Lixo em `/tmp`:** um lldb-dap encerrado à força no meio do início pode deixar o arquivo `/tmp/lldb-dap-run-in-terminal-comm-*`.
 - **Parar com 3 s** (`terminate` → `disconnect` → `debug_stop`) fica na interface, porque é ela que fala DAP. O núcleo só garante o último passo, o encerramento à força.

@@ -190,7 +190,7 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
    - F11 numa chamada a `soma` entra no arquivo de `core`; Shift+F11 volta para quem chamou.
    - F5 continua até o fim. Esperado: o terminal mostra o código 0, e a barra flutuante some.
 7. **[manual]** No `hello-c`, ponha um ponto de parada logo após o `scanf` e pressione F5. Esperado: no terminal `🐞 hello`, digite `21`. A execução pausa, e Variáveis mostra o número lido igual a 21.
-8. **[manual]** No `hello-cs`, ponha um ponto de parada após o `ReadLine` e pressione F5. Digite `abc`. Esperado: pausa, e Variáveis mostra `"abc"`. Após F10, o valor invertido aparece.
+8. **[manual]** No `hello-cs`, troque o `ReadLine` por `"abc"`, ponha um ponto de parada logo depois e pressione F5. Esperado: o terminal `🐞 hello-cs` avisa "Este depurador não permite digitar a entrada do programa"; a execução pausa, e Variáveis mostra `"abc"`. Após F10, o valor invertido aparece. (O netcoredbg não repassa o teclado no modo DAP: decisão do usuário em 2026-11-02, aceitar o limite no MVP.)
 9. **[manual]** **Expandir variáveis:**
    - uma struct/classe com dois campos expande e mostra os dois;
    - um `std::vector<int>` e uma `List<int>` com 1.000 itens expandem e mostram os itens em blocos, sem travar.
@@ -225,4 +225,4 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
 - **Windows:**
   - Depurar binários MSVC com `lldb-dap` é menos maduro que o depurador do Visual Studio, que é proibido pela stack.
   - Ver a decisão no README e o critério 19.
-- **netcoredbg:** é preciso confirmar se ele atende `runInTerminal`. Se não atender, a regra de "saída só para leitura" do item 3 de "Iniciar" se aplica.
+- **netcoredbg:** não atende `runInTerminal` e não repassa o teclado no modo DAP (confirmado no código do netcoredbg 3.2). Vale a regra de "saída só para leitura" do item 3 de "Iniciar". O contorno só para Unix está em [RISCOS.md](../RISCOS.md).
