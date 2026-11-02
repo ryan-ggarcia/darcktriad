@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
+  Breakpoint,
   ChangeBatch,
   MenuEntry,
   OpenedFolder,
@@ -33,6 +34,10 @@ export class WorkspaceService {
 
   saveSession(session: Session): Promise<void> {
     return invoke('save_session', { session });
+  }
+
+  saveBreakpoints(breakpoints: Breakpoint[]): Promise<void> {
+    return invoke('save_breakpoints', { breakpoints });
   }
 
   pickFolder(): Promise<Path | null> {

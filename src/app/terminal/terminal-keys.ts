@@ -14,6 +14,8 @@ const IDE_KEYS = [
   'F5',
   'Ctrl+F5',
   'Shift+F5',
+  'Mod+Shift+F5',
+  'F6',
   'F9',
   'F10',
   'F11',

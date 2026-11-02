@@ -1,11 +1,15 @@
 /** Falsos dos serviços que falam com o núcleo, para testar sem o Tauri. */
 import { Provider, signal } from '@angular/core';
 import { TextBuffer, TextBuffers } from '../app/editor/text-buffer';
+import { DebugService } from '../app/debug.service';
 import { ExplorerService } from '../app/explorer.service';
 import { FileService } from '../app/file.service';
 import {
   AppError,
+  Breakpoint,
   ChangeBatch,
+  DebugEvent,
+  DebugLaunch,
   Entry,
   Eol,
   FileContent,
@@ -269,6 +273,9 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
   recents: RecentFolder[] = [];
   readonly sessions = new Map<Path, Session>();
   readonly savedSessions: Session[] = [];
+  /** Os pontos de parada de cada pasta, como o núcleo os guarda. */
+  readonly breakpoints = new Map<Path, Breakpoint[]>();
+  private openPath: Path | null = null;
   readonly removedRecents: Path[] = [];
   pickedFolder: Path | null = null;
   openError: AppError | null = null;
@@ -287,10 +294,19 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
     if (this.openError) return Promise.reject(this.openError);
     this.recents = [{ path, exists: true }, ...this.recents.filter((item) => item.path !== path)];
     const session = this.sessions.get(path) ?? { openFiles: [], activeFile: null };
-    return Promise.resolve({ path, session, watchError: this.watchError });
+    this.openPath = path;
+    const breakpoints = this.breakpoints.get(path) ?? [];
+    return Promise.resolve({ path, session, breakpoints, watchError: this.watchError });
   }
 
   closeFolder(): Promise<void> {
+    this.openPath = null;
+    return Promise.resolve();
+  }
+
+  saveBreakpoints(breakpoints: Breakpoint[]): Promise<void> {
+    if (!this.openPath) return fail('invalidInput', 'Nenhuma pasta aberta');
+    this.breakpoints.set(this.openPath, breakpoints);
     return Promise.resolve();
   }
 
@@ -623,6 +639,60 @@ export class FakeLanguageService implements Partial<LanguageService> {
   }
 }
 
+/** Depurador em memória: o teste faz o papel do adaptador e lê as mensagens DAP enviadas. */
+export class FakeDebugService implements Partial<DebugService> {
+  /** O que o próximo `debug_start` devolve. */
+  launch: DebugLaunch | null = { adapter: 'lldb-dap', launch: { program: '/proj/build/app' } };
+  readonly sent: { seq: number; type: string; command?: string; arguments?: any }[] = [];
+  readonly terminals: { args: string[]; cwd: Path }[] = [];
+  stops = 0;
+  private handler: (event: DebugEvent) => void = () => undefined;
+  private seq = 1000;
+
+  start(onEvent: (event: DebugEvent) => void): Promise<DebugLaunch | null> {
+    this.handler = onEvent;
+    return Promise.resolve(this.launch);
+  }
+
+  send(message: string): Promise<void> {
+    this.sent.push(JSON.parse(message));
+    return Promise.resolve();
+  }
+
+  runInTerminal(args: string[], cwd: Path): Promise<TerminalInfo> {
+    this.terminals.push({ args, cwd });
+    return Promise.resolve({ id: 200, name: '🐞 app' });
+  }
+
+  stop(): Promise<void> {
+    this.stops++;
+    return Promise.resolve();
+  }
+
+  emit(event: DebugEvent): void {
+    this.handler(event);
+  }
+
+  /** O adaptador mandando uma mensagem DAP. */
+  message(message: object): void {
+    this.emit({ kind: 'message', message: JSON.stringify({ seq: this.seq++, ...message }) });
+  }
+
+  dapEvent(event: string, body: object = {}): void {
+    this.message({ type: 'event', event, body });
+  }
+
+  /** A resposta ao pedido `command` mais recente. */
+  respond(command: string, body: object = {}, success = true): void {
+    const request = this.sent.filter((item) => item.command === command).at(-1)!;
+    this.message({ type: 'response', request_seq: request.seq, command, success, body });
+  }
+
+  commands(): string[] {
+    return this.sent.map((item) => (item.type === 'request' ? item.command! : 'resposta'));
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
@@ -632,6 +702,7 @@ export interface Fakes {
   screens: FakeScreens;
   project: FakeProjectService;
   languages: FakeLanguageService;
+  debug: FakeDebugService;
   providers: Provider[];
 }
 
@@ -644,6 +715,7 @@ export function createFakes(): Fakes {
   const screens = new FakeScreens();
   const project = new FakeProjectService();
   const languages = new FakeLanguageService();
+  const debug = new FakeDebugService();
   return {
     files,
     dialogs,
@@ -653,6 +725,7 @@ export function createFakes(): Fakes {
     screens,
     project,
     languages,
+    debug,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
@@ -663,6 +736,7 @@ export function createFakes(): Fakes {
       { provide: TerminalScreens, useValue: screens },
       { provide: ProjectService, useValue: project },
       { provide: LanguageService, useValue: languages },
+      { provide: DebugService, useValue: debug },
     ],
   };
 }

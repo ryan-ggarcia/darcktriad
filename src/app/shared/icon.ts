@@ -15,6 +15,13 @@ const PATHS: Record<string, string> = {
   add: 'M8 2.5v11M2.5 8h11',
   dot: 'M8 8h0',
   files: 'M5.5 1.5h5l3 3v8h-8zM10.5 1.5v3h3M3.5 4.5v10h7',
+  'run-debug': 'M3.5 2.5l8 5.5-8 5.5zM12.5 10.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4',
+  continue: 'M3.5 3v10M6.5 3l7 5-7 5z',
+  pause: 'M5.5 3.5v9M10.5 3.5v9',
+  'step-over': 'M2.5 8.5a5.5 5.5 0 0 1 10.5-2.3M13.5 3v3.5h-3.5M8 11.5a1 1 0 1 0 0 2a1 1 0 1 0 0-2',
+  'step-into': 'M8 1.5v7M5 5.5l3 3 3-3M8 11.5a1 1 0 1 0 0 2a1 1 0 1 0 0-2',
+  'step-out': 'M8 8.5v-7M5 4.5l3-3 3 3M8 11.5a1 1 0 1 0 0 2a1 1 0 1 0 0-2',
+  stop: 'M4 4h8v8h-8z',
 };
 
 @Component({

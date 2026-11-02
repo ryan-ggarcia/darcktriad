@@ -7,6 +7,7 @@ import {
   inject,
   Injector,
 } from '@angular/core';
+import { Debugger } from '../debug/debugger';
 import { Commands } from '../shared/commands';
 import { Icon } from '../shared/icon';
 import { CodeEditor } from './code-editor';
@@ -24,6 +25,7 @@ import { Tab } from './tab';
 export class EditorArea {
   protected readonly tabs = inject(EditorTabs);
   protected readonly commands = inject(Commands);
+  protected readonly debug = inject(Debugger);
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
   private readonly injector = inject(Injector);
   protected readonly textTab = computed(() => {

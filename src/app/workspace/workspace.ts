@@ -1,4 +1,5 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
+import { Breakpoints } from '../debug/breakpoints';
 import { EditorTabs } from '../editor/editor-tabs';
 import { ExplorerTree } from '../explorer/explorer-tree';
 import { Project } from '../project/project';
@@ -18,6 +19,7 @@ export class Workspace {
   private readonly dialogs = inject(Dialogs);
   private readonly folder = inject(CurrentFolder);
   private readonly project = inject(Project);
+  private readonly breakpoints = inject(Breakpoints);
 
   readonly recents = signal<RecentFolder[]>([]);
   /** Enquanto a pasta abre, a lista de abas está pela metade e não pode virar sessão. */
@@ -73,6 +75,7 @@ export class Workspace {
     this.restoring.set(true);
     this.tabs.clear();
     this.tree.reset();
+    this.breakpoints.load([]);
     this.folder.path.set(path);
     this.folder.watchError.set(null);
     // A árvore aparece sem esperar o observador, que pode demorar em pastas enormes.
@@ -80,6 +83,7 @@ export class Workspace {
     try {
       const opened = await this.service.openFolder(path);
       this.folder.watchError.set(opened.watchError);
+      this.breakpoints.load(opened.breakpoints);
       await this.tabs.restore(opened.session);
     } catch (error) {
       this.folder.path.set(null);
@@ -97,6 +101,7 @@ export class Workspace {
     await this.persist(this.tabs.session());
     this.tabs.clear();
     this.tree.reset();
+    this.breakpoints.load([]);
     this.folder.path.set(null);
     this.folder.watchError.set(null);
     await this.service.closeFolder();

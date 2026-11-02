@@ -15,7 +15,7 @@ export function exitMessage(code: number | null, program = false): string {
   return code === null ? 'Processo encerrado' : `Processo encerrado com código ${code}`;
 }
 
-type Start = (
+export type Start = (
   cols: number,
   rows: number,
   onEvent: (event: TerminalEvent) => void,
@@ -121,14 +121,41 @@ export class Terminals {
       this.project.run(cols, rows, onEvent),
     );
     if (!info) return screen.dispose();
-    const old = this.sessions().find((item) => item.program && item.name() === info.name);
+    this.place(session);
+    if (!session.exited) this.program.set(session);
+  }
+
+  /**
+   * O terminal `🐞 <alvo>` da depuração. Com `start`, roda o programa (pedido `runInTerminal`) e
+   * rejeita se ele não iniciar; sem, é só leitura, para a saída que chega por eventos `output`.
+   */
+  async openDebug(name: string, start?: Start): Promise<TerminalSession | null> {
+    const screen = await this.screens.create().catch(warn);
+    if (!screen) return null;
+    const session = new TerminalSession(screen, true);
+    session.name.set(name);
+    if (start) {
+      await this.connect(session, start).catch((error) => {
+        screen.dispose();
+        throw error;
+      });
+    } else {
+      // Sem `connect`, os atalhos da IDE (F5, F10…) ainda precisam sair da tela.
+      screen.attachCustomKeyEventHandler((event) => this.onKey(screen, event));
+    }
+    this.place(session);
+    return session;
+  }
+
+  /** Um terminal de programa toma o lugar da aba anterior com o mesmo nome e fica à mostra. */
+  private place(session: TerminalSession): void {
+    const old = this.sessions().find((item) => item.program && item.name() === session.name());
     this.sessions.update((list) =>
       old ? list.map((item) => (item === old ? session : item)) : [...list, session],
     );
     if (old) this.dispose(old);
     this.active.set(session);
     this.panel.show('terminal');
-    if (!session.exited) this.program.set(session);
   }
 
   /** Shift+F5: encerra o programa; a aba fica aberta com o fim dele. */

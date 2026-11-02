@@ -8,6 +8,10 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { Breakpoints } from './debug/breakpoints';
+import { DebugToolbar } from './debug/debug-toolbar';
+import { DebugView } from './debug/debug-view';
+import { Debugger } from './debug/debugger';
 import { EditorArea } from './editor/editor-area';
 import { EditorTabs } from './editor/editor-tabs';
 import { loadMonaco } from './editor/monaco-loader';
@@ -40,6 +44,8 @@ import { Workspace } from './workspace/workspace';
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DebugToolbar,
+    DebugView,
     DialogHost,
     EditorArea,
     ExplorerView,
@@ -67,6 +73,8 @@ export class App {
   private readonly terminals = inject(Terminals);
   private readonly project = inject(Project);
   private readonly languages = inject(Languages);
+  protected readonly debug = inject(Debugger);
+  private readonly breakpoints = inject(Breakpoints);
   protected readonly problems = inject(Problems);
   private readonly panel = inject(Panel);
   private readonly dialogs = inject(Dialogs);
@@ -76,6 +84,8 @@ export class App {
   private readonly toolsView = viewChild.required(ToolsView);
 
   protected readonly sidebarVisible = signal(true);
+  /** O que a barra lateral mostra: o Explorador ou Executar e Depurar. */
+  protected readonly sidebarView = signal<'explorer' | 'debug'>('explorer');
   protected readonly status = computed(() => {
     const tab = this.tabs.active();
     if (tab?.view.kind !== 'text') return null;
@@ -122,8 +132,21 @@ export class App {
   }
 
   protected showExplorer(): void {
+    this.sidebarView.set('explorer');
     this.sidebarVisible.set(true);
     afterNextRender(() => this.explorer()?.focus(), { injector: this.injector });
+  }
+
+  /** O botão da barra de atividades: mostra a visão, ou esconde a barra se ela já está à mostra. */
+  protected toggleView(view: 'explorer' | 'debug'): void {
+    if (this.sidebarVisible() && this.sidebarView() === view) this.sidebarVisible.set(false);
+    else if (view === 'explorer') this.showExplorer();
+    else this.showDebug();
+  }
+
+  protected showDebug(): void {
+    this.sidebarView.set('debug');
+    this.sidebarVisible.set(true);
   }
 
   private registerCommands(): void {
@@ -134,6 +157,7 @@ export class App {
     };
     // As ações do explorador precisam da barra lateral à mostra para o campo de nome aparecer.
     const inExplorer = (action: () => unknown) => () => {
+      this.sidebarView.set('explorer');
       this.sidebarVisible.set(true);
       action();
     };
@@ -142,6 +166,9 @@ export class App {
       textEditor: () => this.tabs.active()?.view.kind === 'text',
       folderOpen: () => this.folder.path() !== null,
       project: () => this.project.channel() !== null,
+      debugging: () => this.debug.state() !== null,
+      debugPaused: () => this.debug.state() === 'paused',
+      debugRunning: () => this.debug.state() === 'running',
     });
     this.commands.register({
       newFile: () => this.tabs.newUntitled(),
@@ -184,9 +211,26 @@ export class App {
       restartCsharp: () => this.languages.restart('csharp'),
       build: () => this.project.build(),
       run: () => this.terminals.run(),
-      stop: () => this.terminals.stop(),
+      stop: () => (this.debug.state() ? this.debug.stop() : this.terminals.stop()),
       cancelBuild: () => this.project.cancelBuild(),
       toggleOutput: () => this.panel.toggle('output'),
+      debugStart: () => {
+        // Como no VS Code, a visão Executar e Depurar aparece ao iniciar.
+        if (!this.debug.state()) this.showDebug();
+        void this.debug.start();
+      },
+      debugPause: () => this.debug.pause(),
+      debugRestart: () => this.debug.restart(),
+      debugStepOver: () => this.debug.stepOver(),
+      debugStepInto: () => this.debug.stepInto(),
+      debugStepOut: () => this.debug.stepOut(),
+      toggleBreakpoint: withActive((tab) => {
+        const path = tab.path();
+        const cursor = this.tabs.cursor();
+        if (path && cursor) this.breakpoints.toggle(path, cursor.line);
+      }),
+      removeAllBreakpoints: () => this.breakpoints.removeAll(),
+      showDebug: () => this.showDebug(),
     });
   }
 

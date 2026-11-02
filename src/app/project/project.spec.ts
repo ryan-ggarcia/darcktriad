@@ -96,6 +96,9 @@ describe('projeto', () => {
         textEditor: () => false,
         folderOpen: () => true,
         project: () => project.channel() !== null,
+        debugging: () => false,
+        debugPaused: () => false,
+        debugRunning: () => false,
       });
       const { page, stable } = render(ProjectStatus);
       fakes.project.emitState({ ...CMAKE, status: { kind: 'ready' }, target: 'app' });

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Debugger } from '../debug/debugger';
 import { Commands } from '../shared/commands';
 import { Panel } from '../shared/panel';
 import { Terminals } from '../terminal/terminals';
@@ -6,7 +7,7 @@ import { Project } from './project';
 
 /**
  * A parte esquerda da barra de status: tipo do projeto, configuração e alvo (docs/specs/projeto.md),
- * a compilação e o programa rodando (docs/specs/compilar-e-executar.md).
+ * a compilação e o programa rodando (docs/specs/compilar-e-executar.md) e a sessão de depuração.
  */
 @Component({
   selector: 'app-project-status',
@@ -80,6 +81,23 @@ import { Project } from './project';
         {{ result }}
       </span>
     }
+    @if (debug.state()) {
+      <span role="status">
+        <button
+          type="button"
+          class="status-item status-debugging"
+          [title]="
+            commands.hint(
+              'Depurando ' + debug.target() + '. Mostrar Executar e Depurar',
+              'showDebug'
+            )
+          "
+          (click)="commands.run('showDebug')"
+        >
+          🐞 Depurando {{ debug.target() }}
+        </button>
+      </span>
+    }
     @if (terminals.program(); as program) {
       <span class="status-item" role="status">{{ program.name() }} rodando</span>
       <button
@@ -99,6 +117,7 @@ export class ProjectStatus {
   protected readonly commands = inject(Commands);
   protected readonly panel = inject(Panel);
   protected readonly terminals = inject(Terminals);
+  protected readonly debug = inject(Debugger);
 
   private readonly kind = computed(() => (this.project.channel() === 'dotnet' ? '.NET' : 'CMake'));
 

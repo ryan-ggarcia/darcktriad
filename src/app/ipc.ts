@@ -39,7 +39,14 @@ export interface Session {
 export interface OpenedFolder {
   path: Path;
   session: Session;
+  breakpoints: Breakpoint[];
   watchError: string | null;
+}
+
+/** Um ponto de parada salvo: a linha do editor, a partir de 1. */
+export interface Breakpoint {
+  file: Path;
+  line: number;
 }
 
 export interface RecentFolder {
@@ -158,6 +165,19 @@ export type LanguageEvent =
   | { kind: 'message'; message: string }
   | { kind: 'log'; line: string }
   | { kind: 'state'; state: ServerState };
+
+/** A resposta do `debug_start`. */
+export interface DebugLaunch {
+  adapter: 'lldb-dap' | 'netcoredbg';
+  /** Os `arguments` do pedido `launch`: vão como vieram. */
+  launch: object;
+}
+
+export type DebugEvent =
+  | { kind: 'message'; message: string }
+  | { kind: 'log'; line: string }
+  /** O adaptador saiu; `reason` não nulo: caiu, com a mensagem pronta para mostrar. */
+  | { kind: 'ended'; reason: string | null };
 
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;

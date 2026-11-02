@@ -16,6 +16,7 @@ const CATEGORIES = [
   'Ferramentas',
   'Executar',
   'Compilar',
+  'Depuração',
   'Ajuda',
 ];
 
@@ -74,6 +75,9 @@ describe('Commands', () => {
       textEditor: () => false,
       folderOpen: () => true,
       project: () => false,
+      debugging: () => false,
+      debugPaused: () => false,
+      debugRunning: () => false,
     });
   });
 
@@ -97,6 +101,27 @@ describe('Commands', () => {
     commands.handleKey(key('KeyO', { ctrlKey: true }));
     expect(commands.keyStatus()).toBe('');
     expect(ran).toEqual(['openFolder']);
+  });
+
+  it('os passos da depuração só existem e só respondem ao F10 com o programa pausado', () => {
+    let paused = false;
+    commands.register({ debugStepOver: () => ran.push('debugStepOver') });
+    commands.setConditions({
+      editorOpen: () => false,
+      textEditor: () => false,
+      folderOpen: () => true,
+      project: () => true,
+      debugging: () => paused,
+      debugPaused: () => paused,
+      debugRunning: () => false,
+    });
+
+    expect(commands.available()).not.toContain('debugStepOver');
+    expect(commands.handleKey(key('F10'))).toBe(false);
+    paused = true;
+    expect(commands.available()).toContain('debugStepOver');
+    expect(commands.handleKey(key('F10'))).toBe(true);
+    expect(ran).toEqual(['debugStepOver']);
   });
 
   it('a dica junta o nome e o atalho', () => {

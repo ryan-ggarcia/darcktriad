@@ -71,6 +71,9 @@ describe('QuickOpen', () => {
       textEditor: () => textEditor,
       folderOpen: () => true,
       project: () => false,
+      debugging: () => false,
+      debugPaused: () => false,
+      debugRunning: () => false,
     });
     fixture = TestBed.createComponent(QuickOpen);
     quick = fixture.componentInstance;

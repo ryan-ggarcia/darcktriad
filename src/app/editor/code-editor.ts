@@ -12,6 +12,7 @@ import {
   untracked,
 } from '@angular/core';
 import type * as Monaco from 'monaco-editor';
+import { connectDebugDecorations, toggleOnGutterClick } from '../debug/debug-decorations';
 import { connectMonaco } from '../language/monaco-language';
 import { CommandId, COMMANDS, Commands } from '../shared/commands';
 import { KeyStroke, PLATFORM } from '../shared/keybindings';
@@ -108,8 +109,12 @@ export class CodeEditor {
       theme: 'vs-dark',
       automaticLayout: true,
       fontSize: 14,
+      // A margem das bolinhas dos pontos de parada e da seta da linha atual.
+      glyphMargin: true,
     });
     connectMonaco(monaco, this.rootInjector);
+    connectDebugDecorations(monaco, this.rootInjector);
+    toggleOnGutterClick(monaco, editor, this.rootInjector);
     // Ctrl+clique (⌘+clique no macOS) faz o mesmo que F12.
     editor.onMouseDown(({ event, target }) => {
       const modifier = PLATFORM === 'mac' ? event.metaKey : event.ctrlKey;

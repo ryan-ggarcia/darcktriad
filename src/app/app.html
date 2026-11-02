@@ -2,23 +2,43 @@
   <button
     type="button"
     class="activity-button"
-    [class.active]="sidebarVisible()"
-    [attr.aria-pressed]="sidebarVisible()"
+    [class.active]="sidebarVisible() && sidebarView() === 'explorer'"
+    [attr.aria-pressed]="sidebarVisible() && sidebarView() === 'explorer'"
     aria-label="Explorador"
     [title]="commands.hint('Explorador', 'showExplorer')"
-    (click)="sidebarVisible() ? sidebarVisible.set(false) : showExplorer()"
+    (click)="toggleView('explorer')"
   >
     <app-icon name="files" />
+  </button>
+  <button
+    type="button"
+    class="activity-button"
+    [class.active]="sidebarVisible() && sidebarView() === 'debug'"
+    [attr.aria-pressed]="sidebarVisible() && sidebarView() === 'debug'"
+    aria-label="Executar e Depurar"
+    [title]="commands.hint('Executar e Depurar', 'showDebug')"
+    (click)="toggleView('debug')"
+  >
+    <app-icon name="run-debug" />
   </button>
 </nav>
 
 @if (sidebarVisible()) {
-  <aside class="sidebar" aria-label="Explorador">
-    <app-explorer-view />
-  </aside>
+  @if (sidebarView() === 'explorer') {
+    <aside class="sidebar" aria-label="Explorador">
+      <app-explorer-view />
+    </aside>
+  } @else {
+    <aside class="sidebar" aria-label="Executar e Depurar">
+      <app-debug-view />
+    </aside>
+  }
 }
 
 <main class="main">
+  @if (debug.state()) {
+    <app-debug-toolbar />
+  }
   @if (tabs.tabs().length) {
     <app-editor-area />
   } @else {
@@ -28,7 +48,7 @@
 
 <app-terminal-panel />
 
-<footer class="status-bar" aria-label="Barra de status">
+<footer class="status-bar" aria-label="Barra de status" [class.debugging]="debug.state()">
   <app-project-status />
   @let errors = problems.errors();
   @let warnings = problems.warnings();

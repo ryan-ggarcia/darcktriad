@@ -11,7 +11,15 @@ import {
 } from './keybindings';
 
 /** Condição de disponibilidade: o comando só aparece e só roda quando ela vale. */
-export type Condition = 'editorOpen' | 'textEditor' | 'folderOpen' | 'project';
+export type Condition =
+  | 'editorOpen'
+  | 'textEditor'
+  | 'folderOpen'
+  | 'project'
+  /** Há uma sessão de depuração. */
+  | 'debugging'
+  | 'debugPaused'
+  | 'debugRunning';
 
 export interface CommandSpec {
   /** Nome em pt-BR no formato `Categoria: Ação`. */
@@ -85,11 +93,20 @@ export type CommandId =
   | 'stop'
   | 'cancelBuild'
   | 'toggleOutput'
+  | 'debugStart'
+  | 'debugPause'
+  | 'debugRestart'
+  | 'debugStepOver'
+  | 'debugStepInto'
+  | 'debugStepOut'
+  | 'toggleBreakpoint'
+  | 'removeAllBreakpoints'
+  | 'showDebug'
   | 'keyboardShortcuts';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
- * explorador.md, paleta-de-comandos.md, terminal.md, projeto.md, linguagem.md e compilar-e-executar.md). Menu, botões, paleta e teclado partem daqui.
+ * explorador.md, paleta-de-comandos.md, terminal.md, projeto.md, linguagem.md, compilar-e-executar.md e depuracao.md). Menu, botões, paleta e teclado partem daqui.
  */
 export const COMMANDS: Record<CommandId, CommandSpec> = {
   newFile: { title: 'Arquivo: Novo arquivo', keys: ['Mod+N'] },
@@ -241,9 +258,44 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   build: { title: 'Executar: Compilar', keys: ['Mod+Shift+B'], when: 'project' },
   // ⌃F5 também no macOS, como no VS Code.
   run: { title: 'Executar: Executar sem depurar', keys: ['Ctrl+F5'], when: 'project' },
+  // Para a sessão de depuração, se houver; senão o programa do Ctrl+F5.
   stop: { title: 'Executar: Parar', keys: ['Shift+F5'] },
   cancelBuild: { title: 'Compilar: Cancelar', when: 'project', menu: 'Cancelar compilação' },
   toggleOutput: { title: 'Ver: Saída', keys: ['Mod+Shift+U'], linux: ['Ctrl+K Ctrl+H'] },
+  // Sem sessão inicia; com o programa pausado, continua.
+  debugStart: {
+    title: 'Depuração: Iniciar / Continuar',
+    keys: ['F5'],
+    when: 'project',
+    menu: 'Iniciar depuração / Continuar',
+  },
+  debugPause: { title: 'Depuração: Pausar', keys: ['F6'], when: 'debugRunning' },
+  debugRestart: {
+    title: 'Depuração: Reiniciar',
+    keys: ['Mod+Shift+F5'],
+    when: 'debugging',
+    menu: 'Reiniciar depuração',
+  },
+  debugStepOver: { title: 'Depuração: Passar por cima', keys: ['F10'], when: 'debugPaused' },
+  debugStepInto: {
+    title: 'Depuração: Entrar',
+    keys: ['F11'],
+    when: 'debugPaused',
+    menu: 'Entrar na função',
+  },
+  debugStepOut: {
+    title: 'Depuração: Sair',
+    keys: ['Shift+F11'],
+    when: 'debugPaused',
+    menu: 'Sair da função',
+  },
+  toggleBreakpoint: {
+    title: 'Depuração: Alternar ponto de parada',
+    keys: ['F9'],
+    when: 'textEditor',
+  },
+  removeAllBreakpoints: { title: 'Depuração: Remover todos os pontos de parada' },
+  showDebug: { title: 'Ver: Executar e Depurar', keys: ['Mod+Shift+D'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
 };
 

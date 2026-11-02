@@ -159,9 +159,14 @@ export class Project {
     rows: number,
     onEvent: (event: TerminalEvent) => void,
   ): Promise<TerminalInfo | null> {
-    const info = await this.compile(() => this.service.run(cols, rows, onEvent));
-    if (!info && this.lastBuild === 'failed') this.panel.show('problems');
-    return info;
+    return this.startAfterBuild(() => this.service.run(cols, rows, onEvent));
+  }
+
+  /** O começo do Ctrl+F5 e do F5: salva, compila e chama `start`, que inicia o programa. */
+  async startAfterBuild<T>(start: () => Promise<T | null>): Promise<T | null> {
+    const started = await this.compile(start);
+    if (!started && this.lastBuild === 'failed') this.panel.show('problems');
+    return started;
   }
 
   private async compile<T>(start: () => Promise<T>): Promise<T | null> {

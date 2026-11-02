@@ -43,6 +43,9 @@
   role="tabpanel"
   [attr.aria-label]="tabs.active()?.name()"
 >
+  @if (debug.pauseReason(); as reason) {
+    <div class="banner banner-paused" role="status">{{ reason }}</div>
+  }
   @if (tabs.active(); as tab) {
     @if (tab.changedOnDisk()) {
       <div class="banner" role="alert">
