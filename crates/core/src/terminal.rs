@@ -1,6 +1,7 @@
 //! Terminais integrados: o shell padrão, a saída em lotes e o ciclo de vida de cada terminal.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -114,6 +115,21 @@ impl<P: PtySpawner> Terminals<P> {
         size: TerminalSize,
         on_event: impl Fn(TerminalEvent) + Send + 'static,
     ) -> Result<TerminalInfo> {
+        let name = shell_name(&self.shell);
+        self.run(name, &self.shell, &[], cwd, size, on_event)
+    }
+
+    /// Roda `program` num terminal novo chamado `name`, como [`Self::create`]. O fim do programa
+    /// chega como `Exited`, com o código de saída dele.
+    pub fn run(
+        &self,
+        name: String,
+        program: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        size: TerminalSize,
+        on_event: impl Fn(TerminalEvent) + Send + 'static,
+    ) -> Result<TerminalInfo> {
         validate_size(size)?;
         let SpawnedTerminal {
             output,
@@ -121,8 +137,8 @@ impl<P: PtySpawner> Terminals<P> {
             process,
         } = self
             .spawner
-            .spawn(&self.shell, cwd, size)
-            .map_err(|error| spawn_error(&self.shell, error))?;
+            .spawn(program, args, cwd, size)
+            .map_err(|error| spawn_error(program, error))?;
         let process: Arc<dyn TerminalProcess> = Arc::from(process);
         let exited = Arc::new(AtomicBool::new(false));
         start_pump(
@@ -142,10 +158,7 @@ impl<P: PtySpawner> Terminals<P> {
             exited,
         };
         lock(&self.sessions).insert(id, Arc::new(session));
-        Ok(TerminalInfo {
-            id,
-            name: shell_name(&self.shell),
-        })
+        Ok(TerminalInfo { id, name })
     }
 
     /// Envia ao processo o que o usuário digitou ou colou.
@@ -443,9 +456,12 @@ mod tests {
         process: Arc<FakeProcess>,
     }
 
+    /// O programa, os argumentos, a pasta e o tamanho de um terminal criado.
+    type Spawned = (PathBuf, Vec<OsString>, PathBuf, TerminalSize);
+
     #[derive(Default)]
     struct FakeSpawner {
-        spawned: Mutex<Vec<(PathBuf, PathBuf, TerminalSize)>>,
+        spawned: Mutex<Vec<Spawned>>,
         ends: Mutex<Vec<Ends>>,
         fail: bool,
     }
@@ -454,13 +470,14 @@ mod tests {
         fn spawn(
             &self,
             program: &Path,
+            args: &[OsString],
             cwd: &Path,
             size: TerminalSize,
         ) -> io::Result<SpawnedTerminal> {
             if self.fail {
                 return Err(io::Error::new(io::ErrorKind::NotFound, "não existe"));
             }
-            lock(&self.spawned).push((program.into(), cwd.into(), size));
+            lock(&self.spawned).push((program.into(), args.into(), cwd.into(), size));
             let (reader, writer) = io::pipe()?;
             let input = SharedInput::default();
             let process = Arc::new(FakeProcess::default());
@@ -611,7 +628,38 @@ mod tests {
         );
         assert_eq!(second.id, 2);
         let spawned = lock(&fixture.terminals.spawner.spawned).clone();
-        assert_eq!(spawned[0], ("/bin/bash".into(), "/proj".into(), SIZE));
+        assert_eq!(
+            spawned[0],
+            ("/bin/bash".into(), Vec::new(), "/proj".into(), SIZE)
+        );
+    }
+
+    #[test]
+    fn run_starts_the_program_with_its_args_and_name() {
+        let fixture = Fixture::new();
+        let info = fixture
+            .terminals
+            .run(
+                "▶ app".into(),
+                Path::new("/bin/dotnet"),
+                &["run".into()],
+                Path::new("/proj"),
+                SIZE,
+                |_| {},
+            )
+            .unwrap();
+
+        assert_eq!(info.name, "▶ app");
+        let spawned = lock(&fixture.terminals.spawner.spawned).clone();
+        assert_eq!(
+            spawned[0],
+            (
+                "/bin/dotnet".into(),
+                vec!["run".into()],
+                "/proj".into(),
+                SIZE
+            )
+        );
     }
 
     #[test]

@@ -237,6 +237,10 @@ mod tests {
         fn is_dir(&self, path: &Path) -> bool {
             self.0.lock().unwrap().contains(path)
         }
+
+        fn is_file(&self, _: &Path) -> bool {
+            false
+        }
     }
 
     #[derive(Default)]

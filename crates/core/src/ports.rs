@@ -12,6 +12,7 @@ use crate::{AppState, CMakeTarget, Entry, Result};
 pub trait FileSystem: Send + Sync {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<Entry>>;
     fn is_dir(&self, path: &Path) -> bool;
+    fn is_file(&self, path: &Path) -> bool;
 }
 
 /// Criação e renomeação de itens. Nunca sobrescreve um item existente: devolve `AlreadyExists`.
@@ -99,7 +100,13 @@ pub trait TerminalProcess: Send + Sync {
 
 /// Criação de pseudo-terminais (ConPTY no Windows, PTY no Unix).
 pub trait PtySpawner: Send + Sync {
-    fn spawn(&self, program: &Path, cwd: &Path, size: TerminalSize) -> io::Result<SpawnedTerminal>;
+    fn spawn(
+        &self,
+        program: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        size: TerminalSize,
+    ) -> io::Result<SpawnedTerminal>;
 }
 
 /// Busca de ferramentas externas (cmake, clangd…).

@@ -253,6 +253,48 @@ async fn project_reconfigure(app: AppHandle) -> Result<(), Error> {
     blocking(move || app.state::<AppProject>().configure()).await
 }
 
+/// Compila todos os alvos (configura antes, se preciso). Responde quando termina; a saída e o
+/// resultado chegam por `project-event`.
+#[tauri::command]
+async fn project_build(app: AppHandle) -> Result<(), Error> {
+    blocking(move || app.state::<AppProject>().build()).await
+}
+
+#[tauri::command]
+async fn project_build_cancel(app: AppHandle) {
+    app.state::<AppProject>().cancel_build();
+}
+
+/// Compila o alvo ativo e o roda num terminal novo. `None` se a compilação não deu certo.
+#[tauri::command]
+async fn project_run(
+    app: AppHandle,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<Option<TerminalInfo>, Error> {
+    blocking(move || {
+        let Some(command) = app.state::<AppProject>().build_for_run()? else {
+            return Ok(None);
+        };
+        let size = TerminalSize { cols, rows };
+        app.state::<AppTerminals>()
+            .run(
+                command.name,
+                &command.program,
+                &command.args,
+                &command.cwd,
+                size,
+                move |event| {
+                    // Só falha com a interface já fechada, quando não há mais quem avisar.
+                    let _ = on_event.send(event);
+                },
+            )
+            .map(Some)
+    })
+    .await
+}
+
 fn save_project_choice(app: &AppHandle) -> Result<(), Error> {
     let choice = app.state::<AppProject>().choice();
     app.state::<AppWorkspace>().save_project_choice(choice)
@@ -512,6 +554,9 @@ fn main() {
             project_select_config,
             project_select_target,
             project_reconfigure,
+            project_build,
+            project_build_cancel,
+            project_run,
             tools_check,
             language_start,
             language_send,
@@ -525,7 +570,8 @@ fn main() {
         .expect("falha ao iniciar o Dark Triad")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                // Nenhum shell (nem o que roda nele), cmake ou servidor de linguagem sobrevive à IDE.
+                // Nenhum shell (nem o que roda nele), programa, compilação ou servidor de linguagem
+                // sobrevive à IDE.
                 app.state::<AppTerminals>().close_all();
                 app.state::<AppProject>().close();
                 app.state::<AppLanguages>().stop_all();

@@ -71,9 +71,16 @@ fn command(program: &Path, args: &[OsString], cwd: &Path) -> Command {
         .envs(DOTNET_QUIET)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Grupo próprio: encerrar mata também o que o processo iniciou (compilador, ninja, BuildHost do Roslyn).
+    // Sessão própria: encerrar mata também o que o processo iniciou (ninja, compiladores, BuildHost
+    // do Roslyn). Grupo não basta: o ninja põe cada compilador num grupo próprio.
     #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    // SAFETY: entre o fork e o exec só chama o setsid, que é seguro ali.
+    unsafe {
+        std::os::unix::process::CommandExt::pre_exec(&mut command, || {
+            libc::setsid();
+            Ok(())
+        });
+    }
     // Sem a janela de console que o Windows abriria para um app sem console (build de release).
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
@@ -142,16 +149,41 @@ fn read_lines(pipe: Box<dyn Read + Send>, sender: &Sender<String>) {
 }
 
 fn kill(child: &mut Child) {
-    // O processo ainda não foi recolhido, então o id do grupo continua sendo dele.
+    // O processo ainda não foi recolhido, então o id do grupo e da sessão continua sendo dele.
     #[cfg(unix)]
-    // SAFETY: só envia um sinal ao grupo criado para este processo.
-    unsafe {
-        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    {
+        let session = child.id() as libc::pid_t;
+        // SAFETY: só consulta a sessão e envia sinais aos processos dela. O grupo morre primeiro,
+        // para o cmake e o ninja não iniciarem mais nada durante a varredura.
+        unsafe {
+            libc::kill(-session, libc::SIGKILL);
+            for pid in crate::pty::all_pids() {
+                if libc::getsid(pid) == session {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+        }
     }
-    // shortcut: no Windows só o processo morre, não os filhos dele (cmake, Roslyn); usar um Job Object ao ligar o vcvars.
     #[cfg(windows)]
-    let _ = child.kill();
+    if !kill_tree(child.id()) {
+        let _ = child.kill();
+    }
     let _ = child.wait();
+}
+
+/// Encerra o processo e tudo o que ele iniciou (ninja, compiladores, BuildHost do Roslyn).
+/// `true` se o `taskkill` deu certo.
+#[cfg(windows)]
+pub(crate) fn kill_tree(pid: u32) -> bool {
+    use std::os::windows::process::CommandExt;
+
+    Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .creation_flags(0x0800_0000)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 #[cfg(all(test, unix))]

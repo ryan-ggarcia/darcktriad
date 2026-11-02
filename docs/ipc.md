@@ -1,6 +1,6 @@
-# Contrato IPC: núcleo ↔ interface (v0.4)
+# Contrato IPC: núcleo ↔ interface (v0.5)
 
-Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md), [projeto.md](specs/projeto.md) (parte CMake e .NET) e [linguagem.md](specs/linguagem.md) (servidores de linguagem). A implementação está em `src-tauri/src/main.rs`.
+Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md), [projeto.md](specs/projeto.md) (parte CMake e .NET), [linguagem.md](specs/linguagem.md) (servidores de linguagem) e [compilar-e-executar.md](specs/compilar-e-executar.md). A implementação está em `src-tauri/src/main.rs`.
 
 - **Comandos:** `invoke<T>('nome', { ...parâmetros })`, de `@tauri-apps/api/core`. Todos são assíncronos e rodam fora da thread de UI.
 - **Eventos:** `listen<T>('nome', handler)`, de `@tauri-apps/api/event`.
@@ -128,7 +128,23 @@ interface ProjectState {
 
 type ProjectEvent =
   | { kind: 'output'; line: string }          // uma linha da Saída, sem o fim de linha: canal CMake (kind cmake/cmakePresets) ou dotnet (dotnetSolution/dotnetProjects)
-  | { kind: 'state'; state: ProjectState };  // o estado novo inteiro: substitua o anterior
+  | { kind: 'state'; state: ProjectState }   // o estado novo inteiro: substitua o anterior
+  | { kind: 'buildOutput'; line: string }     // uma linha do canal Build da Saída, sem o fim de linha
+  | { kind: 'buildFinished'; status: BuildStatus; problems: BuildProblem[] }; // a compilação terminou
+
+type BuildStatus = 'succeeded' | 'failed' | 'cancelled';
+
+type Severity = 'error' | 'warning' | 'info';
+
+/** Um item do painel Problemas com origem `build`. */
+interface BuildProblem {
+  file: Path | null;     // absoluto; null só no item de reserva "A compilação falhou. Veja a Saída."
+  line: number | null;   // a partir de 1; null só no item de reserva
+  column: number | null; // a partir de 1; null quando o compilador não informou
+  severity: Severity;    // `warning:` → 'warning'; `note:` → 'info'
+  code: string | null;   // 'C2143', 'CS0029'…; null no GCC/Clang
+  message: string;       // sem o código e sem o sufixo " [projeto.csproj]" do MSBuild
+}
 
 type ToolStatus =
   | { kind: 'present'; path: Path; version: string | null }
@@ -316,6 +332,38 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - **Problemas:** cada linha `CMake Error at <arquivo>:<linha>` (CMake) ou `<arquivo>(<linha>,<coluna>): error <CÓDIGO>: <texto>` (MSBuild/restore, quando o dotnet falha) vira um item de `problems`, com o arquivo absoluto. Clicar abre o arquivo na linha (`read_file`). A lista é zerada a cada configuração, então o erro some quando a configuração seguinte passa.
 - **Fechar a pasta ou a IDE:** a configuração em andamento é cancelada, e o cmake/dotnet não sobrevive.
 
+### Compilar e executar
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `project_build` | — | `void` | `invalidInput` (sem projeto CMake nem .NET); `other` ("Já há uma compilação em andamento", ou a configuração falhou: `message` é a do estado `failed`); `notFound` (cmake/dotnet sumiu) |
+| `project_build_cancel` | — | `void` | — |
+| `project_run` | `{ cols: number, rows: number, onEvent: Channel<TerminalEvent> }` | `TerminalInfo \| null` | os de `project_build`; `invalidInput` com "Nenhum programa para executar. Escolha um alvo na barra de status."; `invalidInput` (`cols` ou `rows` zero); `notFound` ou `other` (o programa não iniciou) |
+
+- **Salvar antes:** é da interface. Salve todos os arquivos modificados antes de chamar `project_build` ou `project_run`.
+- **Compilar (Ctrl+Shift+B):** `project_build` compila todos os alvos e só responde quando a compilação termina. Mostre "Compilando…" com o ✕ entre a chamada e o `buildFinished`.
+  - Antes, se o projeto não está configurado (`status` diferente de `ready`) ou há uma reconfiguração pendente (um `CMakeLists.txt` salvo há menos de 1 s), o núcleo configura primeiro. Isso aparece como sempre: `state` e `output` no canal CMake/dotnet. Se a configuração falhar, o comando falha com a `message` do estado e não há `buildFinished`.
+  - Comandos: CMake: `cmake --build <buildDir>`. .NET com solução: `dotnet build <sln> -c <config>`; sem solução, um `dotnet build <csproj> -c <config>` por projeto, em ordem, parando no primeiro que falhar.
+- **Uma compilação por vez:** `project_build` ou `project_run` durante uma compilação falha na hora com `other` e a mensagem "Já há uma compilação em andamento". Mostre a mensagem; nada é iniciado.
+- **Saída (canal Build):** cada `buildOutput` é uma linha, ao vivo. A primeira de cada comando é o comando, começando com `> `. A última é "Concluída em 3,2 s", "Falhou em 3,2 s" ou "Cancelada em 3,2 s". O canal não diz de onde veio o pedido: limpe-o quando quiser (ex.: a cada compilação).
+- **Resultado:** `buildFinished` chega uma vez por compilação, depois da última linha. `problems` substitui todos os itens de origem `build` do painel Problemas e não mexe nos do clangd/Roslyn. Barra de status por 5 s: `succeeded` → "Compilação concluída"; `failed` → "Compilação falhou: N erros, M avisos" (conte `severity`); `cancelled` → nada a mostrar além do fim do "Compilando…".
+  - Formatos lidos: GCC/Clang (`arq:l:c: error|warning|note: texto`, também sem coluna, e `fatal error:`), MSVC (`arq(l,c): error C2143: texto`, também `(l)`) e dotnet/MSBuild (igual ao MSVC, sem o sufixo ` [projeto]`).
+  - Caminho relativo: vale o primeiro que existe entre a pasta de build (`buildDir`) e a raiz do projeto. Se não existe em nenhuma, a linha não vira item. `file` vem sem `..`, pronto para `read_file`.
+  - Itens iguais entram uma vez só.
+  - **Reserva:** com `failed` e nenhum item de erro reconhecido (ex.: erro do linker), `problems` traz um item com `file: null` e a mensagem "A compilação falhou. Veja a Saída.". Clicar nele abre a Saída no canal Build.
+  - Links na Saída: a interface pode reconhecer as mesmas linhas, ou ligar cada item de `problems` à linha da Saída que tem o mesmo `arquivo:linha`.
+- **Cancelar:** `project_build_cancel` (botão ✕ ou "Compilar: Cancelar") encerra o processo de compilação e todos os que ele iniciou (ninja, compiladores). Sem compilação em andamento, não faz nada. Depois chega `buildFinished` com `cancelled`, e o `project_build` responde. Durante a configuração que vem antes, o cancelamento só vale quando ela termina.
+- **Executar sem depurar (Ctrl+F5):** `project_run` compila só o alvo ativo e, se deu certo, roda o programa num terminal novo e devolve o `TerminalInfo` dele (`name` = `▶ <alvo>`, ex.: `▶ hello`). Crie o canal antes da chamada, como no `terminal_create`.
+  - Sem alvo executável ativo, falha com `invalidInput` e "Nenhum programa para executar. Escolha um alvo na barra de status.", sem compilar.
+  - Compilação: CMake: `cmake --build <buildDir> --target <alvo>`; .NET: `dotnet build <csproj> -c <config>`. A saída e o resultado chegam como na compilação normal.
+  - Se a compilação falhar (ou for cancelada), devolve `null` e nada roda. Com `null` depois de `buildFinished` `failed`, abra o painel Problemas.
+  - Programa: CMake: o executável do alvo (`CMakeTarget.path`), sem argumentos; .NET: `dotnet run --project <csproj> -c <config> --no-build`. Pasta de trabalho: a raiz do projeto.
+  - O terminal é como os outros: `terminal_write` leva o teclado ao programa (`scanf`, `std::cin`, `Console.ReadLine`), `terminal_resize` vale, e `exited` traz o código de saída do programa. Mostre "O programa terminou com código N" e mantenha o terminal aberto para leitura.
+  - **Reaproveitar o terminal `▶ <alvo>`:** cada `project_run` cria um terminal novo (id novo). A interface reaproveita a aba: limpe o xterm.js e ligue-o ao id novo.
+- **Parar (Shift+F5):** `terminal_close(id)` do terminal do programa. Encerra o programa e os que ele iniciou (o `dotnet run` inicia o programa como filho). O `exited` ainda chega; use-o para mostrar o encerramento.
+- **Reiniciar (Ctrl+F5 com o programa rodando):** a pergunta "app já está rodando. Reiniciar?" é da interface. Em **Reiniciar**, chame `terminal_close(id)` e espere a resposta (o processo antigo e os filhos já morreram) antes de chamar `project_run`. Um programa por vez é regra da interface: o núcleo não impede dois.
+- **Fechar a pasta ou a IDE:** a compilação em andamento é cancelada, e o processo não sobrevive. Fechar a IDE encerra também o programa (como todo terminal).
+
 ### Ferramentas
 
 | Comando | Parâmetros | Retorno | Erros |
@@ -396,7 +444,7 @@ Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
 
 ### `project-event`
 
-Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake ou dotnet) e cada mudança do projeto (`state`), na ordem em que acontecem. Veja [Projeto (CMake e .NET)](#projeto-cmake-e-net).
+Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake ou dotnet), cada mudança do projeto (`state`) e a compilação (`buildOutput`, canal Build, e `buildFinished`), na ordem em que acontecem. Veja [Projeto (CMake e .NET)](#projeto-cmake-e-net) e [Compilar e executar](#compilar-e-executar).
 
 ## Fluxos
 
@@ -417,11 +465,13 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
 - Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
 - Projeto:
   - .NET: salvar `.csproj`/`.sln` não reconfigura (use `project_reconfigure`), e erros de restore sem linha e coluna (ex.: `NU1101`) só aparecem na Saída.
-  - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`), a busca de ferramentas não olha `C:\Program Files\LLVM\bin`, e cancelar a configuração mata o cmake mas não os processos que ele iniciou.
+  - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`, também para compilar), e a busca de ferramentas não olha `C:\Program Files\LLVM\bin`. Cancelar a configuração ou a compilação encerra a árvore de processos com `taskkill /T /F`, nunca testado no Windows.
+  - Unix: o cmake, o dotnet e os servidores de linguagem rodam numa sessão própria (`setsid`), e encerrar mata todos os processos dela. Quem sai da sessão (daemons) sobrevive.
+  - .NET: o `dotnet build` deixa o servidor de compilação (`VBCSCompiler`) e nós do MSBuild rodando depois de terminar, para a próxima ser mais rápida. Eles saem sozinhos depois de alguns minutos parados e não são encerrados ao fechar a IDE. Projeto com vários frameworks-alvo não roda: o `dotnet run` pede `--framework`, que o núcleo não passa.
   - No macOS, a reconfiguração ao salvar depende dos caminhos do `fs-changed`, que vêm canônicos (veja abaixo).
   - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, aberta pelo Finder, ela não tem o `PATH` do `~/.zprofile` (Homebrew).
 - Linguagem:
-  - Windows: o ambiente do MSVC ainda não é passado ao clangd, e parar o Roslyn não encerra os processos que ele iniciou (BuildHost).
+  - Windows: o ambiente do MSVC ainda não é passado ao clangd. Parar o Roslyn encerra a árvore de processos (BuildHost) com `taskkill /T /F`, nunca testado no Windows.
   - A busca do clangd e do Roslyn roda `--version` ao iniciar (até 5 s cada candidato); a ferramenta instalada com a IDE aberta só é achada se o `PATH` da IDE já a incluía.
   - O núcleo encerra o servidor à força (sem `shutdown`/`exit` do LSP). Hoje isso não perde nada, porque nenhum dos dois grava estado ao sair.
   - Cada mudança de estado do projeto é tratada numa thread própria no `main.rs`. Dois estados `ready` quase simultâneos (ex.: trocar Debug/Release duas vezes muito rápido) podem ser aplicados fora de ordem, e o clangd ficar com a pasta de build da configuração anterior até a próxima mudança ou um `language_restart`.

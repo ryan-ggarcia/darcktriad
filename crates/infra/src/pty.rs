@@ -1,5 +1,6 @@
 //! Pseudo-terminais com o portable-pty: ConPTY no Windows, PTY no Unix.
 
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,11 +28,18 @@ fn is_on_path(program: &str) -> bool {
 pub struct PortablePty;
 
 impl PtySpawner for PortablePty {
-    fn spawn(&self, program: &Path, cwd: &Path, size: TerminalSize) -> io::Result<SpawnedTerminal> {
+    fn spawn(
+        &self,
+        program: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        size: TerminalSize,
+    ) -> io::Result<SpawnedTerminal> {
         let pair = native_pty_system()
             .openpty(pty_size(size))
             .map_err(io::Error::other)?;
         let mut command = CommandBuilder::new(program);
+        command.args(args);
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
@@ -125,7 +133,7 @@ impl PtyProcess {
 }
 
 #[cfg(target_os = "linux")]
-fn all_pids() -> Vec<libc::pid_t> {
+pub(crate) fn all_pids() -> Vec<libc::pid_t> {
     std::fs::read_dir("/proc")
         .map(|entries| {
             entries
@@ -136,7 +144,7 @@ fn all_pids() -> Vec<libc::pid_t> {
 }
 
 #[cfg(target_os = "macos")]
-fn all_pids() -> Vec<libc::pid_t> {
+pub(crate) fn all_pids() -> Vec<libc::pid_t> {
     // SAFETY: com buffer nulo só conta os processos; depois preenche no máximo `pids.len()`.
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     // Folga para os processos que nascerem entre as duas chamadas.
@@ -170,6 +178,10 @@ impl TerminalProcess for PtyProcess {
 
     #[cfg(windows)]
     fn kill(&self) -> io::Result<()> {
+        // Os filhos (o programa que o `dotnet run` inicia, o que roda no shell) morrem junto.
+        if let Some(pid) = self.pid.filter(|_| !self.exited.load(Ordering::Acquire)) {
+            crate::process::kill_tree(pid);
+        }
         // O portable-pty 0.9 inverte o resultado do TerminateProcess (sucesso vira Err com código 0);
         // o próprio WinChild::kill dele ignora o resultado. O `wait` confirma o fim.
         let _ = lock(&self.killer).kill();
@@ -256,7 +268,7 @@ mod tests {
             rows: 30,
         };
         let spawned = PortablePty
-            .spawn(&detect_default_shell(), &folder, size)
+            .spawn(&detect_default_shell(), &[], &folder, size)
             .unwrap();
         let process: Arc<dyn TerminalProcess> = Arc::from(spawned.process);
         let output = collect(spawned.output);
@@ -308,7 +320,7 @@ mod tests {
         let folder = TempDir::new("terminal-filho");
         let size = TerminalSize { cols: 80, rows: 24 };
         let spawned = PortablePty
-            .spawn(&detect_default_shell(), &folder, size)
+            .spawn(&detect_default_shell(), &[], &folder, size)
             .unwrap();
         let process: Arc<dyn TerminalProcess> = Arc::from(spawned.process);
         let _output = collect(spawned.output);
@@ -345,7 +357,7 @@ mod tests {
         let folder = TempDir::new("terminal-pid");
         let size = TerminalSize { cols: 80, rows: 24 };
         let spawned = PortablePty
-            .spawn(&detect_default_shell(), &folder, size)
+            .spawn(&detect_default_shell(), &[], &folder, size)
             .unwrap();
         // Como na IDE, alguém lê a saída: no macOS o shell não termina de sair com saída presa no PTY.
         collect(spawned.output);

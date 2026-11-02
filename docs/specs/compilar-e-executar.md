@@ -126,7 +126,7 @@ Quero apertar uma tecla e compilar. Se der erro, quero clicar nele e ir para a l
 2. **[auto]** O leitor reconhece `C:\p\app\main.cpp(5,10): error C2143: syntax error` (código `C2143`) e `main.cpp(7): warning C4244: conversion`.
 3. **[auto]** O leitor reconhece `C:\p\Program.cs(3,17): error CS0029: Cannot convert [C:\p\hello-cs.csproj]`: mensagem sem o sufixo, código `CS0029`. A mesma linha repetida duas vezes vira um item só.
 4. **[auto]** Com o processo terminando com código ≠ 0 e nenhuma linha reconhecida, o resultado tem exatamente um item "A compilação falhou. Veja a Saída.". Com código 0, nenhum item de reserva.
-5. **[auto]** `../app/main.cpp` emitido com pasta de build `<raiz>/build/debug` resolve para `<raiz>/app/main.cpp`.
+5. **[auto]** `../../app/main.cpp` emitido com pasta de build `<raiz>/build/debug` resolve para `<raiz>/app/main.cpp`.
 6. **[auto]** Os comandos montados são exatamente:
    - `cmake --build <raiz>/build/debug`;
    - `cmake --build <raiz>/build/debug --target app`;

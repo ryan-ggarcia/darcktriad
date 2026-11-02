@@ -12,9 +12,10 @@ use serde::Serialize;
 
 use crate::tools::tool;
 use crate::{
-    BuildConfig, CMakeProblem, CMakeTarget, DotnetProperties, Error, ErrorKind, FileApi,
-    FileSystem, Platform, ProcessRunner, ProjectChoice, ProjectKind, Result, ToolProbe, ToolStatus,
-    cmake_build_dir, cmake_configure_args, cmake_preset_args, detect_project, dotnet_property_args,
+    BuildConfig, BuildProblem, CMakeProblem, CMakeTarget, DotnetProperties, Error, ErrorKind,
+    FileApi, FileSystem, Platform, ProcessRunner, ProjectChoice, ProjectKind, Result, RunCommand,
+    ToolProbe, ToolStatus, build_problems, cmake_build_args, cmake_build_dir, cmake_configure_args,
+    cmake_preset_args, detect_project, dotnet_build_args, dotnet_property_args, dotnet_run_args,
     is_hidden, parse_build_dir, parse_cmake_error, parse_dotnet_properties, parse_msbuild_error,
     parse_preset_names, parse_solution_projects, project::has_extension,
 };
@@ -24,6 +25,7 @@ const RECONFIGURE_DELAY: Duration = Duration::from_secs(1);
 /// A detecção lê a raiz e 2 níveis abaixo (os `.csproj`).
 const DETECT_DEPTH: usize = 3;
 const DEBUG_RELEASE: [&str; 2] = ["Debug", "Release"];
+const NO_PROGRAM: &str = "Nenhum programa para executar. Escolha um alvo na barra de status.";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -73,6 +75,21 @@ pub enum ProjectEvent {
     Output { line: String },
     /// O estado mudou (inclusive um problema novo).
     State { state: ProjectState },
+    /// Uma linha do canal Build da Saída.
+    BuildOutput { line: String },
+    /// A compilação terminou. `problems` substitui os itens de origem `build`.
+    BuildFinished {
+        status: BuildStatus,
+        problems: Vec<BuildProblem>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BuildStatus {
+    Succeeded,
+    Failed,
+    Cancelled,
 }
 
 struct Inner {
@@ -98,6 +115,8 @@ pub struct Project<F, R, A, T> {
     inner: Mutex<Inner>,
     /// Segurado durante a configuração: a próxima só começa depois que o processo anterior morreu.
     running: Mutex<()>,
+    /// O pedido de cancelamento da compilação em andamento; `None` sem compilação.
+    build: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl<F, R, A, T> Project<F, R, A, T>
@@ -130,6 +149,7 @@ where
                 reconfigure_at: None,
             }),
             running: Mutex::default(),
+            build: Mutex::default(),
         }
     }
 
@@ -149,6 +169,7 @@ where
     /// Detecta o projeto de `root` e, se for CMake ou .NET, configura. Volta quando a configuração
     /// termina.
     pub fn open(&self, root: &Path, choice: ProjectChoice) {
+        self.cancel_build();
         let detected = detect_project(&self.files_of(root));
         {
             let mut inner = self.lock();
@@ -177,7 +198,8 @@ where
         }
     }
 
-    /// Esquece o projeto. Uma configuração em andamento é cancelada, e o processo já morreu na volta.
+    /// Esquece o projeto. A configuração e a compilação em andamento são canceladas, e os
+    /// processos já morreram na volta.
     pub fn close(&self) {
         {
             let mut inner = self.lock();
@@ -185,7 +207,185 @@ where
             inner.state = ProjectState::default();
             inner.reconfigure_at = None;
         }
+        self.cancel_build();
         drop(lock(&self.running));
+        while lock(&self.build).is_some() {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Compila todos os alvos e volta quando termina. A saída chega ao vivo (`BuildOutput`), e o
+    /// resultado em `BuildFinished`. Antes, configura se for preciso.
+    pub fn build(&self) -> Result<()> {
+        self.exclusive_build(|cancel| {
+            let state = self.configured()?;
+            self.run_build(cancel, &state, None).map(drop)
+        })
+    }
+
+    /// Compila só o alvo ativo e devolve como rodá-lo, ou `None` se a compilação não deu certo.
+    pub fn build_for_run(&self) -> Result<Option<RunCommand>> {
+        self.exclusive_build(|cancel| {
+            let state = self.configured()?;
+            let target = (state.targets.iter())
+                .find(|target| Some(&target.name) == state.target.as_ref())
+                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, NO_PROGRAM))?;
+            if self.run_build(cancel, &state, Some(target))? != BuildStatus::Succeeded {
+                return Ok(None);
+            }
+            let cwd = state.root.clone().unwrap_or_default();
+            let name = format!("▶ {}", target.name);
+            Ok(Some(match &target.project {
+                Some(project) => RunCommand {
+                    name,
+                    program: self.find_tool("dotnet").map_err(not_found)?,
+                    args: dotnet_run_args(project, self.build_config()),
+                    cwd,
+                },
+                None => RunCommand {
+                    name,
+                    program: target.path.clone(),
+                    args: Vec::new(),
+                    cwd,
+                },
+            }))
+        })
+    }
+
+    /// Cancela a compilação em andamento: o processo e os filhos dele morrem.
+    pub fn cancel_build(&self) {
+        if let Some(cancel) = lock(&self.build).as_ref() {
+            cancel.store(true, Ordering::Release);
+        }
+    }
+
+    fn exclusive_build<V>(&self, job: impl FnOnce(&AtomicBool) -> Result<V>) -> Result<V> {
+        let cancel = {
+            let mut build = lock(&self.build);
+            if build.is_some() {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "Já há uma compilação em andamento",
+                ));
+            }
+            Arc::clone(build.insert(Arc::default()))
+        };
+        let result = job(&cancel);
+        lock(&self.build).take();
+        result
+    }
+
+    /// O estado pronto, configurando antes se o projeto não foi configurado ou se há uma
+    /// reconfiguração pendente.
+    fn configured(&self) -> Result<ProjectState> {
+        let pending = {
+            let mut inner = self.lock();
+            inner.reconfigure_at.take().is_some() || inner.state.status != ProjectStatus::Ready
+        };
+        if pending {
+            self.configure()?;
+        }
+        let state = self.state();
+        match &state.status {
+            ProjectStatus::Ready => Ok(state),
+            ProjectStatus::Failed { message } => Err(Error::new(ErrorKind::Other, message.clone())),
+            _ => Err(Error::new(
+                ErrorKind::Other,
+                "A configuração do projeto foi interrompida.",
+            )),
+        }
+    }
+
+    /// Roda os comandos de compilação um depois do outro, até o primeiro que falhar.
+    fn run_build(
+        &self,
+        cancel: &AtomicBool,
+        state: &ProjectState,
+        target: Option<&CMakeTarget>,
+    ) -> Result<BuildStatus> {
+        let root = state.root.clone().unwrap_or_default();
+        let (program, commands) = self.build_commands(state, &root, target)?;
+        let start = Instant::now();
+        let mut lines = Vec::new();
+        let mut status = BuildStatus::Succeeded;
+        for args in commands {
+            if cancel.load(Ordering::Acquire) {
+                status = BuildStatus::Cancelled;
+                break;
+            }
+            self.build_output(format!("> {}", command_line(&program, &args)));
+            let result = self
+                .runner
+                .run(&program, &args, &root, cancel, &mut |line| {
+                    self.build_output(line.to_owned());
+                    lines.push(line.to_owned());
+                });
+            status = match result {
+                Ok(true) => continue,
+                Ok(false) => BuildStatus::Failed,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    BuildStatus::Cancelled
+                }
+                Err(error) => {
+                    self.build_output(run_error(&program.to_string_lossy(), error));
+                    BuildStatus::Failed
+                }
+            };
+            break;
+        }
+        let verb = match status {
+            BuildStatus::Succeeded => "Concluída",
+            BuildStatus::Failed => "Falhou",
+            BuildStatus::Cancelled => "Cancelada",
+        };
+        let seconds = format!("{:.1}", start.elapsed().as_secs_f64()).replace('.', ",");
+        self.build_output(format!("{verb} em {seconds} s"));
+        let dirs: Vec<&Path> = state
+            .build_dir
+            .iter()
+            .map(PathBuf::as_path)
+            .chain([root.as_path()])
+            .collect();
+        let problems = build_problems(&lines, status == BuildStatus::Failed, &dirs, |path| {
+            self.fs.is_file(path)
+        });
+        (self.on_event)(ProjectEvent::BuildFinished { status, problems });
+        Ok(status)
+    }
+
+    /// O programa e os argumentos de cada comando: um só no CMake e na solução .NET, um por
+    /// `.csproj` sem solução.
+    fn build_commands(
+        &self,
+        state: &ProjectState,
+        root: &Path,
+        target: Option<&CMakeTarget>,
+    ) -> Result<(PathBuf, Vec<Vec<OsString>>)> {
+        if is_cmake(state.kind) {
+            let cmake = self.find_tool("cmake").map_err(not_found)?;
+            let build_dir = state.build_dir.as_deref().unwrap_or(root);
+            let target = target.map(|target| target.name.as_str());
+            return Ok((cmake, vec![cmake_build_args(build_dir, target)]));
+        }
+        let dotnet = self.find_tool("dotnet").map_err(not_found)?;
+        let files = self.files_of(root);
+        let projects = match target.and_then(|target| target.project.clone()) {
+            Some(project) => vec![project],
+            None if state.kind == ProjectKind::DotnetSolution => {
+                solution_of(root, &files).into_iter().collect()
+            }
+            None => csprojs_of(root, &files),
+        };
+        let config = self.build_config();
+        let commands = projects
+            .iter()
+            .map(|project| dotnet_build_args(project, config))
+            .collect();
+        Ok((dotnet, commands))
+    }
+
+    fn build_output(&self, line: String) {
+        (self.on_event)(ProjectEvent::BuildOutput { line });
     }
 
     /// Troca a configuração ativa. Não configura: chame [`Self::configure`] em seguida.
@@ -382,16 +582,7 @@ where
         let config = self.build_config();
         let files = self.files_of(root);
         let projects = if kind == ProjectKind::DotnetSolution {
-            let solution = files
-                .iter()
-                .filter(|file| file.components().count() == 1)
-                .filter(|file| {
-                    let name = file.to_string_lossy();
-                    has_extension(&name, "sln") || has_extension(&name, "slnx")
-                })
-                .min()
-                .map(|file| root.join(file))
-                .ok_or("A solução .sln sumiu da pasta.")?;
+            let solution = solution_of(root, &files).ok_or("A solução .sln sumiu da pasta.")?;
             let restore = ["restore".into(), solution.clone().into()];
             self.run_dotnet(generation, cancel, &dotnet, &restore, root, true)?;
             let list = ["sln".into(), solution.into(), "list".into()];
@@ -401,12 +592,7 @@ where
                 .map(|project| root.join(project))
                 .collect()
         } else {
-            let mut projects: Vec<PathBuf> = files
-                .iter()
-                .filter(|file| has_extension(&file.to_string_lossy(), "csproj"))
-                .map(|file| root.join(file))
-                .collect();
-            projects.sort();
+            let projects = csprojs_of(root, &files);
             for project in &projects {
                 let restore = ["restore".into(), project.into()];
                 self.run_dotnet(generation, cancel, &dotnet, &restore, root, true)?;
@@ -463,6 +649,7 @@ where
         Ok(Some(CMakeTarget {
             name: name.into(),
             path: properties.target_path.into(),
+            project: Some(project.into()),
         }))
     }
 
@@ -676,6 +863,34 @@ fn stop(inner: &mut Inner) {
     inner.generation += 1;
 }
 
+/// A solução da raiz (`.sln` ou `.slnx`); com várias, a de menor nome.
+fn solution_of(root: &Path, files: &[PathBuf]) -> Option<PathBuf> {
+    files
+        .iter()
+        .filter(|file| file.components().count() == 1)
+        .filter(|file| {
+            let name = file.to_string_lossy();
+            has_extension(&name, "sln") || has_extension(&name, "slnx")
+        })
+        .min()
+        .map(|file| root.join(file))
+}
+
+/// Os `.csproj` de `files`, absolutos e em ordem.
+fn csprojs_of(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
+    let mut projects: Vec<PathBuf> = files
+        .iter()
+        .filter(|file| has_extension(&file.to_string_lossy(), "csproj"))
+        .map(|file| root.join(file))
+        .collect();
+    projects.sort();
+    projects
+}
+
+fn not_found(message: String) -> Error {
+    Error::new(ErrorKind::NotFound, message)
+}
+
 fn is_cmake(kind: ProjectKind) -> bool {
     matches!(kind, ProjectKind::CMake | ProjectKind::CMakePresets)
 }
@@ -761,6 +976,11 @@ mod tests {
         fn is_dir(&self, path: &Path) -> bool {
             self.dirs.iter().any(|dir| dir == path)
         }
+
+        fn is_file(&self, path: &Path) -> bool {
+            path.parent() == Some(Path::new(ROOT))
+                && (self.root_files.iter()).any(|name| path.file_name() == Some(OsStr::new(name)))
+        }
     }
 
     /// Anota cada processo no log e responde pelo roteiro do teste.
@@ -800,6 +1020,7 @@ mod tests {
                 .map(|name| CMakeTarget {
                     name: name.into(),
                     path: build_dir.join(name),
+                    project: None,
                 })
                 .into())
         }
@@ -915,7 +1136,7 @@ mod tests {
                 .filter_map(|event| match event {
                     // Com `/` em todo sistema, como em `log`.
                     ProjectEvent::Output { line } => Some(line.replace('\\', "/")),
-                    ProjectEvent::State { .. } => None,
+                    _ => None,
                 })
                 .collect()
         }
@@ -925,7 +1146,7 @@ mod tests {
                 .iter()
                 .filter_map(|event| match event {
                     ProjectEvent::State { state } => Some(state.status.clone()),
-                    ProjectEvent::Output { .. } => None,
+                    _ => None,
                 })
                 .collect()
         }
@@ -1398,10 +1619,12 @@ mod tests {
         )
     }
 
+    /// Um alvo .NET de `/proj/<nome>.csproj`.
     fn target(name: &str, path: &str) -> CMakeTarget {
         CMakeTarget {
             name: name.into(),
             path: path.into(),
+            project: Some(Path::new(ROOT).join(format!("{name}.csproj"))),
         }
     }
 
@@ -1470,7 +1693,10 @@ mod tests {
         assert_eq!(state.kind, ProjectKind::DotnetSolution);
         assert_eq!(
             state.targets,
-            [target("multi", "/proj/bin/Debug/net10.0/multi.dll")]
+            [CMakeTarget {
+                project: Some("/proj/src/multi/multi.csproj".into()),
+                ..target("multi", "/proj/bin/Debug/net10.0/multi.dll")
+            }]
         );
     }
 
@@ -1621,5 +1847,273 @@ mod tests {
         assert!(message.contains("dotnet 8"), "{message}");
         assert!(message.contains("dotnet.microsoft.com"), "{message}");
         assert!(fixture.log().is_empty());
+    }
+
+    impl Fixture {
+        fn build_output(&self) -> Vec<String> {
+            lock(&self.events)
+                .iter()
+                .filter_map(|event| match event {
+                    ProjectEvent::BuildOutput { line } => Some(line.replace('\\', "/")),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn build_results(&self) -> Vec<(BuildStatus, Vec<BuildProblem>)> {
+            lock(&self.events)
+                .iter()
+                .filter_map(|event| match event {
+                    ProjectEvent::BuildFinished { status, problems } => {
+                        Some((*status, problems.clone()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    /// Configura sem erro; `cmake --build` escreve `lines` e termina com `success`.
+    fn cmake_build(lines: &'static [&'static str], success: bool) -> Box<Script> {
+        Box::new(move |args, _, on_line| {
+            if args[0] != "--build" {
+                return Ok(true);
+            }
+            lines.iter().for_each(|line| on_line(line));
+            Ok(success)
+        })
+    }
+
+    #[test]
+    fn build_configures_first_then_builds_all_with_live_output_and_duration() {
+        let fixture = Fixture::new(
+            &["CMakeLists.txt"],
+            cmake_build(&["[1/1] Linking app"], true),
+        );
+        fixture
+            .project
+            .open(Path::new(ROOT), ProjectChoice::default());
+        fixture.project.close();
+        // Fechado e reaberto sem configurar: o build configura antes.
+        lock(&fixture.log).clear();
+        {
+            let mut inner = fixture.project.lock();
+            inner.state.root = Some(ROOT.into());
+            inner.state.kind = ProjectKind::CMake;
+            inner.state.configs = DEBUG_RELEASE.map(String::from).into();
+        }
+        fixture.project.build().unwrap();
+
+        assert_eq!(
+            fixture.log(),
+            [
+                "query /proj/build/debug".to_string(),
+                configure_line("Debug"),
+                "/bin/cmake --build /proj/build/debug".to_string(),
+            ]
+        );
+        let output = fixture.build_output();
+        assert_eq!(
+            output[..2],
+            [
+                "> /bin/cmake --build /proj/build/debug",
+                "[1/1] Linking app"
+            ]
+        );
+        assert!(output[2].starts_with("Concluída em 0,"), "{output:?}");
+        assert!(output[2].ends_with(" s"));
+        assert_eq!(
+            fixture.build_results(),
+            [(BuildStatus::Succeeded, Vec::new())]
+        );
+
+        // Já configurado: compila direto.
+        lock(&fixture.log).clear();
+        fixture.project.build().unwrap();
+        assert_eq!(fixture.log(), ["/bin/cmake --build /proj/build/debug"]);
+    }
+
+    #[test]
+    fn a_pending_reconfigure_runs_before_the_build() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
+        fixture.open(ProjectChoice::default());
+        fixture.project.lock().reconfigure_at = Some(Instant::now() + TIMEOUT);
+        lock(&fixture.log).clear();
+        fixture.project.build().unwrap();
+        assert_eq!(
+            fixture.log(),
+            [
+                "query /proj/build/debug".to_string(),
+                configure_line("Debug"),
+                "/bin/cmake --build /proj/build/debug".to_string(),
+            ]
+        );
+        assert_eq!(fixture.project.lock().reconfigure_at, None);
+    }
+
+    #[test]
+    fn build_errors_become_problems_and_an_unknown_failure_the_fallback() {
+        let fixture = Fixture::new(
+            &["CMakeLists.txt", "main.cpp"],
+            cmake_build(
+                &[
+                    "/proj/main.cpp:5:10: error: expected ';'",
+                    "/proj/sumiu.cpp:1:1: error: x",
+                ],
+                false,
+            ),
+        );
+        fixture.open(ProjectChoice::default());
+        fixture.project.build().unwrap();
+        let [(status, problems)] = fixture.build_results().try_into().unwrap();
+        assert_eq!(status, BuildStatus::Failed);
+        assert_eq!(
+            problems,
+            [BuildProblem {
+                file: Some("/proj/main.cpp".into()),
+                line: Some(5),
+                column: Some(10),
+                severity: crate::Severity::Error,
+                code: None,
+                message: "expected ';'".into(),
+            }]
+        );
+        assert!(
+            fixture
+                .build_output()
+                .last()
+                .unwrap()
+                .starts_with("Falhou em ")
+        );
+
+        let linker = Fixture::new(&["CMakeLists.txt"], cmake_build(&["ld: undefined"], false));
+        linker.open(ProjectChoice::default());
+        linker.project.build().unwrap();
+        let [(_, problems)] = linker.build_results().try_into().unwrap();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].message, crate::BUILD_FAILED);
+    }
+
+    #[test]
+    fn one_build_at_a_time_and_cancel_kills_it() {
+        let died = Arc::new(AtomicBool::new(false));
+        let script_died = Arc::clone(&died);
+        let fixture = Fixture::new(&["CMakeLists.txt"], move |args, cancel, _| {
+            if args[0] != "--build" {
+                return Ok(true);
+            }
+            die_when_cancelled(cancel, &script_died)
+        });
+        fixture.open(ProjectChoice::default());
+        let project = Arc::clone(&fixture.project);
+        let first = thread::spawn(move || project.build());
+        wait_until(|| fixture.log().len() == 3);
+
+        let busy = fixture.project.build().unwrap_err();
+        assert_eq!(busy.message, "Já há uma compilação em andamento");
+        assert!(fixture.project.build_for_run().is_err());
+        fixture.project.cancel_build();
+        first.join().unwrap().unwrap();
+
+        assert!(died.load(Ordering::Acquire));
+        assert_eq!(
+            fixture.build_results(),
+            [(BuildStatus::Cancelled, Vec::new())]
+        );
+        assert!(
+            fixture
+                .build_output()
+                .last()
+                .unwrap()
+                .starts_with("Cancelada em ")
+        );
+        // Livre de novo.
+        fixture.project.cancel_build();
+        let project = Arc::clone(&fixture.project);
+        let again = thread::spawn(move || project.build());
+        wait_until(|| fixture.log().len() == 4);
+        fixture.project.close();
+        again.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn run_builds_only_the_active_cmake_target_and_runs_its_program() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
+        fixture.open(ProjectChoice::default());
+        fixture.project.select_target("tool").unwrap();
+        lock(&fixture.log).clear();
+
+        let command = fixture.project.build_for_run().unwrap().unwrap();
+        assert_eq!(
+            fixture.log(),
+            ["/bin/cmake --build /proj/build/debug --target tool"]
+        );
+        assert_eq!(
+            command,
+            RunCommand {
+                name: "▶ tool".into(),
+                program: Path::new("/proj/build/debug").join("tool"),
+                args: Vec::new(),
+                cwd: ROOT.into(),
+            }
+        );
+
+        let failing = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], false));
+        failing.open(ProjectChoice::default());
+        assert_eq!(failing.project.build_for_run().unwrap(), None);
+    }
+
+    #[test]
+    fn dotnet_builds_each_project_or_the_target_and_runs_with_dotnet_run() {
+        let fixture = Fixture::new(&["lib.csproj", "app.csproj"], |args, cancel, on_line| {
+            if args[0] == "build" {
+                return Ok(true);
+            }
+            dotnet(args, cancel, on_line)
+        });
+        fixture.open(ProjectChoice::default());
+        lock(&fixture.log).clear();
+        fixture.project.build().unwrap();
+        assert_eq!(
+            fixture.log(),
+            [
+                "/bin/dotnet build /proj/app.csproj -c Debug",
+                "/bin/dotnet build /proj/lib.csproj -c Debug"
+            ]
+        );
+
+        lock(&fixture.log).clear();
+        let command = fixture.project.build_for_run().unwrap().unwrap();
+        assert_eq!(
+            fixture.log(),
+            ["/bin/dotnet build /proj/app.csproj -c Debug"]
+        );
+        assert_eq!(command.name, "▶ app");
+        assert_eq!(command.program, Path::new("/bin/dotnet"));
+        assert_eq!(
+            command.args,
+            dotnet_run_args(&Path::new(ROOT).join("app.csproj"), BuildConfig::Debug)
+        );
+    }
+
+    #[test]
+    fn run_without_an_executable_target_says_so_and_builds_nothing() {
+        let fixture = Fixture::new(&["lib.csproj"], dotnet);
+        fixture.open(ProjectChoice::default());
+        lock(&fixture.log).clear();
+        let error = fixture.project.build_for_run().unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert_eq!(
+            error.message,
+            "Nenhum programa para executar. Escolha um alvo na barra de status."
+        );
+        assert!(fixture.log().is_empty());
+
+        let empty = Fixture::new(&[], succeed);
+        empty.open(ProjectChoice::default());
+        assert_eq!(
+            empty.project.build().unwrap_err().kind,
+            ErrorKind::InvalidInput
+        );
     }
 }

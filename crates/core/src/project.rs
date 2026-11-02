@@ -2,7 +2,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -130,6 +130,9 @@ pub struct CMakeTarget {
     pub name: String,
     /// Caminho absoluto do programa.
     pub path: PathBuf,
+    /// .NET: o `.csproj` do alvo; CMake: `None`.
+    #[serde(skip)]
+    pub project: Option<PathBuf>,
 }
 
 /// Os alvos executáveis da resposta da File API (`<build>/.cmake/api/v1/reply/`).
@@ -177,6 +180,7 @@ pub fn file_api_executables(
             name: name.to_owned(),
             // Relativo à pasta de build, ou absoluto se estiver fora dela (o `join` mantém).
             path: build_dir.join(program),
+            project: None,
         });
     }
     Ok(executables)
@@ -323,20 +327,195 @@ pub(crate) fn has_extension(name: &str, extension: &str) -> bool {
 /// Lê uma linha de erro do MSBuild (`<arquivo>(<linha>,<coluna>): error <CÓDIGO>: <texto>`).
 /// O arquivo fica como o MSBuild escreveu: relativo à pasta do projeto ou absoluto.
 pub fn parse_msbuild_error(line: &str) -> Option<Problem> {
-    let (place, message) = line.trim().split_once("): error ")?;
-    // Corta pelo último `(`: a pasta também pode ter parênteses ("Program Files (x86)").
-    let (file, position) = place.rsplit_once('(')?;
-    let line = position.split(',').next()?.parse().ok()?;
-    // O MSBuild põe o projeto no fim: " [/caminho/app.csproj]".
-    let message = match message.strip_suffix(']') {
-        Some(rest) => rest.rsplit_once(" [").map_or(message, |(text, _)| text),
-        None => message,
+    let problem = parse_msvc_line(line.trim()).filter(|p| p.severity == Severity::Error)?;
+    let message = match problem.code {
+        Some(code) => format!("{code}: {}", problem.message),
+        None => problem.message,
     };
     Some(Problem {
-        file: file.into(),
-        line,
-        message: message.into(),
+        file: problem.file?,
+        line: problem.line?,
+        message,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+/// Um item da compilação no painel Problemas (origem `build`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildProblem {
+    /// Absoluto. `None` só no item de reserva, que leva à Saída.
+    pub file: Option<PathBuf>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub severity: Severity,
+    /// `C2143`, `CS0029`…; o GCC e o Clang não têm.
+    pub code: Option<String>,
+    pub message: String,
+}
+
+pub const BUILD_FAILED: &str = "A compilação falhou. Veja a Saída.";
+
+const SEVERITIES: [(&str, Severity); 4] = [
+    ("fatal error", Severity::Error),
+    ("error", Severity::Error),
+    ("warning", Severity::Warning),
+    ("note", Severity::Info),
+];
+
+/// Os itens do painel Problemas de uma compilação: as linhas reconhecidas cujo arquivo existe
+/// (relativo: primeiro em `dirs[0]`, depois nos seguintes), sem repetição, e o item de reserva
+/// quando ela falhou sem nenhum erro reconhecido.
+pub fn build_problems(
+    lines: &[String],
+    failed: bool,
+    dirs: &[&Path],
+    is_file: impl Fn(&Path) -> bool,
+) -> Vec<BuildProblem> {
+    let mut problems: Vec<BuildProblem> = Vec::new();
+    for mut problem in lines.iter().filter_map(|line| parse_build_line(line)) {
+        let written = problem.file.take().unwrap_or_default();
+        problem.file = dirs
+            .iter()
+            .map(|dir| normalize(&dir.join(&written)))
+            .find(|path| is_file(path));
+        // O dotnet repete os erros no resumo do fim.
+        if problem.file.is_some() && !problems.contains(&problem) {
+            problems.push(problem);
+        }
+    }
+    if failed && !problems.iter().any(|p| p.severity == Severity::Error) {
+        problems.push(BuildProblem {
+            file: None,
+            line: None,
+            column: None,
+            severity: Severity::Error,
+            code: None,
+            message: BUILD_FAILED.into(),
+        });
+    }
+    problems
+}
+
+/// Lê uma linha do GCC/Clang (`arq:l:c: error: texto`, também sem coluna) ou do MSVC/MSBuild
+/// (`arq(l,c): error C2143: texto`, também `(l)`). O arquivo fica como o compilador escreveu.
+pub fn parse_build_line(line: &str) -> Option<BuildProblem> {
+    let line = line.trim();
+    parse_gcc_line(line).or_else(|| parse_msvc_line(line))
+}
+
+fn parse_gcc_line(line: &str) -> Option<BuildProblem> {
+    SEVERITIES.iter().find_map(|&(word, severity)| {
+        let (place, message) = line.split_once(&format!(": {word}: "))?;
+        let (rest, last) = place.rsplit_once(':')?;
+        let last = last.parse().ok()?;
+        // `C:\p\main.cpp:5` não tem coluna: o que vem antes do `:` não é número.
+        let (file, line, column) = match rest
+            .rsplit_once(':')
+            .and_then(|(file, line)| Some((file, line.parse().ok()?)))
+        {
+            Some((file, line)) => (file, line, Some(last)),
+            None => (rest, last, None),
+        };
+        (!file.is_empty()).then(|| BuildProblem {
+            file: Some(file.into()),
+            line: Some(line),
+            column,
+            severity,
+            code: None,
+            message: message.into(),
+        })
+    })
+}
+
+fn parse_msvc_line(line: &str) -> Option<BuildProblem> {
+    SEVERITIES.iter().find_map(|&(word, severity)| {
+        let (place, rest) = line.split_once(&format!("): {word}"))?;
+        // Corta pelo último `(`: a pasta também pode ter parênteses ("Program Files (x86)").
+        let (file, position) = place.rsplit_once('(')?;
+        let mut numbers = position.split(',').map(|number| number.parse().ok());
+        let line = numbers.next()??;
+        let column = numbers.next().flatten();
+        // " C2143: texto", ou ": texto" na nota sem código.
+        let (code, message) = rest.split_once(':')?;
+        let message = message.trim();
+        // O MSBuild põe o projeto no fim: " [/caminho/app.csproj]".
+        let message = match message.strip_suffix(']') {
+            Some(rest) => rest.rsplit_once(" [").map_or(message, |(text, _)| text),
+            None => message,
+        };
+        Some(BuildProblem {
+            file: Some(file.into()),
+            line: Some(line),
+            column,
+            severity,
+            code: Some(code.trim().to_owned()).filter(|code| !code.is_empty()),
+            message: message.into(),
+        })
+    })
+}
+
+/// Tira `.` e `..` sem ir ao disco: o caminho vai para a interface, que recusa `..`.
+fn normalize(path: &Path) -> PathBuf {
+    let mut normal = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normal.pop();
+            }
+            other => normal.push(other),
+        }
+    }
+    normal
+}
+
+/// `cmake --build <pasta>`, ou só um alvo com `--target <alvo>`.
+pub fn cmake_build_args(build_dir: &Path, target: Option<&str>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec!["--build".into(), build_dir.into()];
+    if let Some(target) = target {
+        args.extend(["--target".into(), target.into()]);
+    }
+    args
+}
+
+/// `dotnet build <sln ou csproj> -c <config>`.
+pub fn dotnet_build_args(project: &Path, config: BuildConfig) -> Vec<OsString> {
+    vec![
+        "build".into(),
+        project.into(),
+        "-c".into(),
+        config.name().into(),
+    ]
+}
+
+/// `dotnet run --project <csproj> -c <config> --no-build`.
+pub fn dotnet_run_args(project: &Path, config: BuildConfig) -> Vec<OsString> {
+    vec![
+        "run".into(),
+        "--project".into(),
+        project.into(),
+        "-c".into(),
+        config.name().into(),
+        "--no-build".into(),
+    ]
+}
+
+/// Como rodar o alvo ativo num terminal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunCommand {
+    /// O nome do terminal: `▶ <alvo>`.
+    pub name: String,
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub cwd: PathBuf,
 }
 
 #[cfg(test)]
@@ -510,6 +689,7 @@ mod tests {
         let target = |name: &str| CMakeTarget {
             name: name.into(),
             path: build.join(name),
+            project: None,
         };
         assert_eq!(targets, [target("app"), target("tool")]);
     }
@@ -705,6 +885,226 @@ mod tests {
         assert_eq!(
             parse_msbuild_error("MSBUILD : error MSB1009: Project file does not exist."),
             None
+        );
+    }
+
+    fn item(
+        file: &str,
+        line: u32,
+        column: Option<u32>,
+        severity: Severity,
+        code: Option<&str>,
+        message: &str,
+    ) -> BuildProblem {
+        BuildProblem {
+            file: Some(file.into()),
+            line: Some(line),
+            column,
+            severity,
+            code: code.map(Into::into),
+            message: message.into(),
+        }
+    }
+
+    #[test]
+    fn gcc_and_clang_lines_with_and_without_column() {
+        assert_eq!(
+            parse_build_line("app/main.cpp:5:10: error: expected ';'"),
+            Some(item(
+                "app/main.cpp",
+                5,
+                Some(10),
+                Severity::Error,
+                None,
+                "expected ';'"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("app/main.cpp:5: warning: x"),
+            Some(item("app/main.cpp", 5, None, Severity::Warning, None, "x"))
+        );
+        assert_eq!(
+            parse_build_line("app/main.cpp:2:1: note: declared here"),
+            Some(item(
+                "app/main.cpp",
+                2,
+                Some(1),
+                Severity::Info,
+                None,
+                "declared here"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("C:\\p\\main.c:1:10: fatal error: x.h: No such file"),
+            Some(item(
+                "C:\\p\\main.c",
+                1,
+                Some(10),
+                Severity::Error,
+                None,
+                "x.h: No such file"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("C:\\p\\main.c:7: warning: x"),
+            Some(item("C:\\p\\main.c", 7, None, Severity::Warning, None, "x"))
+        );
+        for other in [
+            "collect2: error: ld returned 1 exit status",
+            "/usr/bin/ld: main.o: in function `main': main.cpp:(.text+0x5): undefined reference",
+            "[1/2] Building CXX object app/CMakeFiles/app.dir/main.cpp.o",
+            "a.cpp:5:3: remark: x",
+        ] {
+            assert_eq!(parse_build_line(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn msvc_lines_with_code_and_with_or_without_column() {
+        assert_eq!(
+            parse_build_line("C:\\p\\app\\main.cpp(5,10): error C2143: syntax error"),
+            Some(item(
+                "C:\\p\\app\\main.cpp",
+                5,
+                Some(10),
+                Severity::Error,
+                Some("C2143"),
+                "syntax error"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("main.cpp(7): warning C4244: conversion"),
+            Some(item(
+                "main.cpp",
+                7,
+                None,
+                Severity::Warning,
+                Some("C4244"),
+                "conversion"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("main.cpp(3): note: see declaration"),
+            Some(item(
+                "main.cpp",
+                3,
+                None,
+                Severity::Info,
+                None,
+                "see declaration"
+            ))
+        );
+        assert_eq!(
+            parse_build_line("main.obj : error LNK2019: unresolved external symbol"),
+            None
+        );
+    }
+
+    #[test]
+    fn dotnet_lines_lose_the_project_suffix_and_repeat_once() {
+        let line = "C:\\p\\Program.cs(3,17): error CS0029: Cannot convert [C:\\p\\hello-cs.csproj]";
+        let expected = item(
+            "C:\\p\\Program.cs",
+            3,
+            Some(17),
+            Severity::Error,
+            Some("CS0029"),
+            "Cannot convert",
+        );
+        assert_eq!(parse_build_line(line), Some(expected));
+
+        let line = "/p/Program.cs(3,17): error CS0029: Cannot convert [/p/hello-cs.csproj]";
+        let lines = [line.to_owned(), format!("    {line}")];
+        let problems = build_problems(&lines, true, &[Path::new("/b")], |_| true);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].file.as_deref(),
+            Some(Path::new("/p/Program.cs"))
+        );
+    }
+
+    #[test]
+    fn a_failure_without_a_recognized_error_gets_exactly_one_fallback_item() {
+        let lines = ["/usr/bin/ld: undefined reference to `falta()'".to_owned()];
+        let dirs = [Path::new("/b")];
+        let fallback = BuildProblem {
+            file: None,
+            line: None,
+            column: None,
+            severity: Severity::Error,
+            code: None,
+            message: "A compilação falhou. Veja a Saída.".into(),
+        };
+        assert_eq!(build_problems(&lines, true, &dirs, |_| true), [fallback]);
+        assert_eq!(build_problems(&lines, false, &dirs, |_| true), []);
+        assert_eq!(build_problems(&[], true, &dirs, |_| true).len(), 1);
+    }
+
+    #[test]
+    fn relative_files_resolve_by_the_build_dir_then_the_root_or_are_dropped() {
+        let root = Path::new("/proj");
+        let build = root.join("build/debug");
+        let dirs = [build.as_path(), root];
+        let exists = |path: &Path| {
+            [
+                "/proj/app/main.cpp",
+                "/proj/build/debug/gen.cpp",
+                "/proj/src/util.cpp",
+            ]
+            .iter()
+            .any(|file| path == Path::new(file))
+        };
+        let file_of = |line: &str| {
+            build_problems(&[line.to_owned()], false, &dirs, exists)
+                .first()
+                .and_then(|problem| problem.file.clone())
+        };
+        // O Ninja roda o compilador na pasta de build.
+        assert_eq!(
+            file_of("../../app/main.cpp:5:10: error: x"),
+            Some(root.join("app/main.cpp"))
+        );
+        assert_eq!(
+            file_of("./gen.cpp:1: error: x"),
+            Some(build.join("gen.cpp"))
+        );
+        assert_eq!(
+            file_of("src/util.cpp:1: error: x"),
+            Some(root.join("src/util.cpp"))
+        );
+        assert_eq!(file_of("sumiu.cpp:1: error: x"), None);
+        assert_eq!(
+            file_of("/proj/app/main.cpp:1: error: x"),
+            Some(root.join("app/main.cpp"))
+        );
+    }
+
+    #[test]
+    fn build_and_run_commands_are_exact() {
+        let build = Path::new("/proj/build/debug");
+        assert_eq!(
+            cmake_build_args(build, None),
+            ["--build", "/proj/build/debug"]
+        );
+        assert_eq!(
+            cmake_build_args(build, Some("app")),
+            ["--build", "/proj/build/debug", "--target", "app"]
+        );
+        let project = Path::new("/proj/hello-cs.csproj");
+        assert_eq!(
+            dotnet_build_args(project, BuildConfig::Release),
+            ["build", "/proj/hello-cs.csproj", "-c", "Release"]
+        );
+        assert_eq!(
+            dotnet_run_args(project, BuildConfig::Debug),
+            [
+                "run",
+                "--project",
+                "/proj/hello-cs.csproj",
+                "-c",
+                "Debug",
+                "--no-build"
+            ]
         );
     }
 }

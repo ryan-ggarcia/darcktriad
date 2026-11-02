@@ -4,9 +4,9 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## Windows
 
-- **Ambiente do compilador da Microsoft (vcvars):** ainda não é aplicado. O cmake, o clangd e o terminal só acham o compilador se ele já estiver no `PATH`. Critério manual 13 de [projeto.md](specs/projeto.md) sem teste.
+- **Ambiente do compilador da Microsoft (vcvars):** ainda não é aplicado. O cmake, a compilação, o clangd e o terminal só acham o compilador se ele já estiver no `PATH`. Critério manual 13 de [projeto.md](specs/projeto.md) sem teste.
 - **Ferramentas:** a busca não olha `C:\Program Files\LLVM\bin`.
-- **Processos que sobram:** cancelar o cmake não encerra o que ele iniciou, e parar o Roslyn deixa o BuildHost rodando.
+- **Processos que sobram:** cancelar o cmake ou a compilação, parar o Roslyn e parar o programa agora encerram a árvore toda com `taskkill /T /F`. Nunca foi testado no Windows (critério 14 de [compilar-e-executar.md](specs/compilar-e-executar.md)).
 - **Testes de integração** (cmake, dotnet, clangd, Roslyn reais) não rodam no Windows.
 
 ## macOS
@@ -27,6 +27,14 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **.NET:** salvar `.csproj`/`.sln` não reconfigura sozinho, e erros de restore sem linha e coluna (ex.: pacote não encontrado) só aparecem na Saída.
 - **CI:** no Ubuntu, os testes com o cmake real provavelmente são pulados, porque o CI não instala o cmake. Só o macOS confirma essa parte.
 
+## Compilar e executar
+
+- **.NET deixa processos rodando:** o `dotnet build` deixa o servidor de compilação (`VBCSCompiler`) e nós do MSBuild abertos depois de terminar, para a próxima compilação ser rápida. Eles saem sozinhos depois de alguns minutos e continuam mesmo com a IDE fechada. É o comportamento normal do dotnet.
+- **.NET com vários frameworks-alvo não roda:** o `dotnet run` pede `--framework`, e o comando da spec não passa.
+- **Cancelar durante a configuração:** se o ✕ for clicado enquanto o CMake configura (antes de compilar), a configuração vai até o fim e só então a compilação é cancelada.
+- **Programa que sai da sessão** (daemon, `setsid`) continua rodando depois de Parar, no macOS e no Linux.
+- **Critério 5 da spec:** `../app/main.cpp` com pasta de build `<raiz>/build/debug` aponta para `<raiz>/build/app/main.cpp`, não para `<raiz>/app/main.cpp`. O núcleo segue a regra (pasta de build, depois raiz), e o teste usa `../../app/main.cpp`.
+
 ## Linguagem (clangd e Roslyn)
 
 - **Pasta de build trocada rápido demais:** trocar Debug/Release duas vezes muito rápido pode deixar o clangd com a pasta da configuração anterior, até a próxima troca ou um "Linguagem: Reiniciar servidor".
@@ -43,6 +51,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 - **Linguagem:** o critério 15 (desempenho com o clangd num arquivo de 10.000 linhas) não tem a fixture `grande`. Os critérios 5 a 14 passaram na janela em 2026-10-31, só no Linux.
 - **Projeto:** o critério 12 (.NET na janela) e o 13 (Windows).
+- **Compilar e executar:** a interface ainda não existe. Os critérios manuais 7 a 17 só têm a parte do núcleo testada (cmake, dotnet e PTY reais, no Linux).
 - **Instaladores:** os do Windows e do macOS nunca foram abertos. O AppImage só foi aberto, sem uso.
 
 ## Adiado de propósito

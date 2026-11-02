@@ -34,6 +34,10 @@ impl FileSystem for LocalFileSystem {
     fn is_dir(&self, path: &Path) -> bool {
         path.is_dir()
     }
+
+    fn is_file(&self, path: &Path) -> bool {
+        path.is_file()
+    }
 }
 
 impl EntryWriter for LocalFileSystem {

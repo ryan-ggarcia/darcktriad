@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use darktriad_core::{Project, ProjectChoice, ProjectEvent, ProjectState, ToolProbe};
@@ -40,14 +41,35 @@ pub fn probe() -> SystemToolProbe {
     SystemToolProbe::new(std::env::temp_dir().join("darktriad-sem-ferramentas"))
 }
 
+pub type TestProject = Project<LocalFileSystem, StdProcessRunner, LocalFileApi, SystemToolProbe>;
+pub type Events = Arc<Mutex<Vec<ProjectEvent>>>;
+
 /// Configura uma cópia da fixture com `tool` e devolve o estado final e as linhas da Saída.
 /// `None` quando não há `tool` para testar.
+// Cada arquivo de teste inclui este módulo e usa só parte dele.
+#[allow(dead_code)]
 pub fn configure(name: &str, tool: &str) -> Option<(TempDir, ProjectState, Vec<String>)> {
+    let (root, project, events) = open(name, tool)?;
+    let output = (events.lock().unwrap().iter())
+        .filter_map(|event| match event {
+            ProjectEvent::Output { line } => Some(line.clone()),
+            _ => None,
+        })
+        .collect();
+    Some((root, project.state(), output))
+}
+
+/// Abre e configura uma cópia da fixture com `tool`. `events` recebe tudo o que o projeto avisa.
+/// `None` quando não há `tool` para testar.
+pub fn open(name: &str, tool: &str) -> Option<(TempDir, TestProject, Events)> {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     if probe().find(tool).is_empty() {
         eprintln!("PULADO: `{tool}` não está no PATH; o teste de integração de {name} não rodou.");
         return None;
     }
-    let path = std::env::temp_dir().join(format!("darktriad-{name}-{}", std::process::id()));
+    let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+    let path =
+        std::env::temp_dir().join(format!("darktriad-{name}-{}-{serial}", std::process::id()));
     let _ = fs::remove_dir_all(&path);
     copy_dir(&fixture(name), &path);
     // No macOS a pasta temporária passa por um link (/var → /private/var), e o CMake informa a
@@ -58,18 +80,14 @@ pub fn configure(name: &str, tool: &str) -> Option<(TempDir, ProjectState, Vec<S
         .map(|e| e.unwrap().file_name())
         .collect();
 
-    let output = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&output);
+    let events = Events::default();
+    let sink = Arc::clone(&events);
     let project = Project::new(
         LocalFileSystem,
         StdProcessRunner,
         LocalFileApi,
         probe(),
-        move |event| {
-            if let ProjectEvent::Output { line } = event {
-                sink.lock().unwrap().push(line);
-            }
-        },
+        move |event| sink.lock().unwrap().push(event),
     );
     project.open(&root.0, ProjectChoice::default());
 
@@ -82,6 +100,5 @@ pub fn configure(name: &str, tool: &str) -> Option<(TempDir, ProjectState, Vec<S
         after.len(),
         "a fixture ganhou arquivos: {after:?}"
     );
-    let output = output.lock().unwrap().clone();
-    Some((root, project.state(), output))
+    Some((root, project, events))
 }

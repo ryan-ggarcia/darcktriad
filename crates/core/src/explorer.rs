@@ -178,6 +178,10 @@ mod tests {
         fn is_dir(&self, _: &Path) -> bool {
             true
         }
+
+        fn is_file(&self, _: &Path) -> bool {
+            false
+        }
     }
 
     impl EntryWriter for FakeDisk {

@@ -14,7 +14,7 @@ mod terminal;
 mod tools;
 mod workspace;
 
-pub use configure::{Problem, Project, ProjectEvent, ProjectState, ProjectStatus};
+pub use configure::{BuildStatus, Problem, Project, ProjectEvent, ProjectState, ProjectStatus};
 pub use editor::{Editor, Eol, FileContent};
 pub use error::{Error, ErrorKind, Result};
 pub use explorer::{Entry, Explorer, is_hidden};
@@ -27,10 +27,12 @@ pub use ports::{
     StateStore, TerminalProcess, TerminalSize, ToolProbe, Trash,
 };
 pub use project::{
-    BuildConfig, CMakeProblem, CMakeTarget, DetectedProject, DotnetProperties, ProjectKind,
-    cmake_build_dir, cmake_configure_args, cmake_preset_args, detect_project, dotnet_property_args,
-    file_api_executables, file_api_query, parse_build_dir, parse_cmake_error,
-    parse_dotnet_properties, parse_msbuild_error, parse_preset_names, parse_solution_projects,
+    BUILD_FAILED, BuildConfig, BuildProblem, CMakeProblem, CMakeTarget, DetectedProject,
+    DotnetProperties, ProjectKind, RunCommand, Severity, build_problems, cmake_build_args,
+    cmake_build_dir, cmake_configure_args, cmake_preset_args, detect_project, dotnet_build_args,
+    dotnet_property_args, dotnet_run_args, file_api_executables, file_api_query, parse_build_dir,
+    parse_build_line, parse_cmake_error, parse_dotnet_properties, parse_msbuild_error,
+    parse_preset_names, parse_solution_projects,
 };
 pub use terminal::{Platform, TerminalEvent, TerminalInfo, Terminals, default_shell, shell_name};
 pub use tools::{TOOLS, Tool, ToolCheck, ToolStatus, check_tools};
