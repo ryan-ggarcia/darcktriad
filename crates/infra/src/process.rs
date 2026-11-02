@@ -10,12 +10,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use darktriad_core::{ProcessRunner, ServerProcess, ServerSpawner, SpawnedServer};
 
 /// De quanto em quanto tempo o pedido de cancelamento é conferido.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
+/// Quanto o cancelamento espera os processos saírem sozinhos antes de matá-los.
+#[cfg(unix)]
+const TERM_GRACE: Duration = Duration::from_millis(500);
 pub(crate) const DOTNET_QUIET: [(&str, &str); 2] =
     [("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1")];
 
@@ -49,7 +52,7 @@ impl ProcessRunner for StdProcessRunner {
 
         loop {
             if cancel.load(Ordering::Acquire) {
-                kill(&mut child);
+                terminate(&mut child);
                 return Err(io::ErrorKind::Interrupted.into());
             }
             match lines.recv_timeout(CANCEL_POLL) {
@@ -211,22 +214,50 @@ fn read_lines(pipe: Box<dyn Read + Send>, sender: &Sender<String>) {
     }
 }
 
-fn kill(child: &mut Child) {
-    // O processo ainda não foi recolhido, então o id do grupo e da sessão continua sendo dele.
+/// Pede ao processo e à sessão dele para sair (SIGTERM: o GCC apaga os seus `/tmp/cc*`), espera
+/// até `TERM_GRACE` e mata o que sobrou.
+fn terminate(child: &mut Child) {
     #[cfg(unix)]
     {
         let session = child.id() as libc::pid_t;
-        // SAFETY: só consulta a sessão e envia sinais aos processos dela. O grupo morre primeiro,
-        // para o cmake e o ninja não iniciarem mais nada durante a varredura.
-        unsafe {
-            libc::kill(-session, libc::SIGKILL);
-            for pid in crate::pty::all_pids() {
-                if libc::getsid(pid) == session {
-                    libc::kill(pid, libc::SIGKILL);
-                }
+        signal_session(session, libc::SIGTERM);
+        let start = Instant::now();
+        while start.elapsed() < TERM_GRACE && !session_ended(child, session) {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    kill(child);
+}
+
+/// O líder saiu (sem ser recolhido) e nenhum outro processo ficou na sessão.
+#[cfg(unix)]
+fn session_ended(child: &Child, session: libc::pid_t) -> bool {
+    exited_unreaped(child)
+        && crate::pty::all_pids()
+            .into_iter()
+            // SAFETY: o getsid só consulta o processo.
+            .all(|pid| pid == session || unsafe { libc::getsid(pid) } != session)
+}
+
+/// Manda `signal` ao grupo e a cada processo da sessão. O grupo vai primeiro, para o cmake e o
+/// ninja não iniciarem mais nada durante a varredura.
+#[cfg(unix)]
+fn signal_session(session: libc::pid_t, signal: libc::c_int) {
+    // SAFETY: só consulta a sessão e envia sinais aos processos dela.
+    unsafe {
+        libc::kill(-session, signal);
+        for pid in crate::pty::all_pids() {
+            if libc::getsid(pid) == session {
+                libc::kill(pid, signal);
             }
         }
     }
+}
+
+fn kill(child: &mut Child) {
+    // O processo ainda não foi recolhido, então o id do grupo e da sessão continua sendo dele.
+    #[cfg(unix)]
+    signal_session(child.id() as libc::pid_t, libc::SIGKILL);
     #[cfg(windows)]
     if !kill_tree(child.id()) {
         let _ = child.kill();
@@ -335,6 +366,65 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// Sem o SIGTERM, o GCC morto deixava o `cc*.s` vazio na pasta temporária a cada cancelamento.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cancel_lets_gcc_delete_its_temporary_files() {
+        if Command::new("gcc").arg("--version").output().is_err() {
+            eprintln!("PULADO: sem gcc");
+            return;
+        }
+        let dir = crate::test_support::TempDir::new("gcc-temp");
+        let temp = dir.join("tmp");
+        fs::create_dir(&temp).unwrap();
+        // Leva dezenas de segundos com -O2: o cancelamento chega com o compilador no meio.
+        let source: String = (0..5000)
+            .map(|i| {
+                format!(
+                    "int f{i}(int x){{int s=0;for(int k=0;k<x;k++)s+=k*{i}^(s>>3);return s;}}\n"
+                )
+            })
+            .collect();
+        fs::write(dir.join("big.c"), source).unwrap();
+        let script = format!("TMPDIR='{}' gcc -O2 -c big.c -o big.o", temp.display());
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&cancel);
+        let cwd = dir.to_path_buf();
+        let worker = thread::spawn(move || {
+            StdProcessRunner.run(
+                Path::new("/bin/sh"),
+                &["-c".into(), script.into()],
+                &cwd,
+                &flag,
+                &mut |_| {},
+            )
+        });
+        let start = Instant::now();
+        while fs::read_dir(&temp).unwrap().next().is_none() {
+            assert!(
+                start.elapsed() < Duration::from_secs(30),
+                "o gcc não criou o temporário"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let start = Instant::now();
+        cancel.store(true, Ordering::Release);
+        let result = worker.join().unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            start.elapsed()
+        );
+        let left: Vec<_> = fs::read_dir(&temp)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.is_empty(), "sobrou: {left:?}");
     }
 
     #[test]

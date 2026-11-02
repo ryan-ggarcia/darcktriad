@@ -133,6 +133,9 @@ pub struct CMakeTarget {
     /// .NET: o `.csproj` do alvo; CMake: `None`.
     #[serde(skip)]
     pub project: Option<PathBuf>,
+    /// .NET com vários frameworks-alvo: o escolhido (o primeiro); senão `None`.
+    #[serde(skip)]
+    pub framework: Option<String>,
 }
 
 /// Os alvos executáveis da resposta da File API (`<build>/.cmake/api/v1/reply/`).
@@ -181,6 +184,7 @@ pub fn file_api_executables(
             // Relativo à pasta de build, ou absoluto se estiver fora dela (o `join` mantém).
             path: build_dir.join(program),
             project: None,
+            framework: None,
         });
     }
     Ok(executables)
@@ -325,9 +329,24 @@ pub(crate) fn has_extension(name: &str, extension: &str) -> bool {
 }
 
 /// Lê uma linha de erro do MSBuild (`<arquivo>(<linha>,<coluna>): error <CÓDIGO>: <texto>`).
-/// O arquivo fica como o MSBuild escreveu: relativo à pasta do projeto ou absoluto.
+/// O arquivo fica como o MSBuild escreveu: relativo à pasta do projeto ou absoluto. O erro sem
+/// linha do NuGet (`<projeto> : error NU1101: <texto>`) vale na linha 1 do projeto.
 pub fn parse_msbuild_error(line: &str) -> Option<Problem> {
-    let problem = parse_msvc_line(line.trim()).filter(|p| p.severity == Severity::Error)?;
+    let line = line.trim();
+    let Some(problem) = parse_msvc_line(line) else {
+        let (file, rest) = line.split_once(" : error ")?;
+        // `MSBUILD : error MSB1009` não aponta arquivo.
+        Path::new(file).extension()?;
+        let (code, message) = rest.split_once(':')?;
+        return Some(Problem {
+            file: file.into(),
+            line: 1,
+            message: format!("{}: {}", code.trim(), without_project(message.trim())),
+        });
+    };
+    if problem.severity != Severity::Error {
+        return None;
+    }
     let message = match problem.code {
         Some(code) => format!("{code}: {}", problem.message),
         None => problem.message,
@@ -337,6 +356,14 @@ pub fn parse_msbuild_error(line: &str) -> Option<Problem> {
         line: problem.line?,
         message,
     })
+}
+
+/// Tira o projeto que o MSBuild põe no fim da mensagem: " [/caminho/app.csproj]".
+fn without_project(message: &str) -> &str {
+    match message.strip_suffix(']') {
+        Some(rest) => rest.rsplit_once(" [").map_or(message, |(text, _)| text),
+        None => message,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -445,12 +472,7 @@ fn parse_msvc_line(line: &str) -> Option<BuildProblem> {
         let column = numbers.next().flatten();
         // " C2143: texto", ou ": texto" na nota sem código.
         let (code, message) = rest.split_once(':')?;
-        let message = message.trim();
-        // O MSBuild põe o projeto no fim: " [/caminho/app.csproj]".
-        let message = match message.strip_suffix(']') {
-            Some(rest) => rest.rsplit_once(" [").map_or(message, |(text, _)| text),
-            None => message,
-        };
+        let message = without_project(message.trim());
         Some(BuildProblem {
             file: Some(file.into()),
             line: Some(line),
@@ -496,16 +518,25 @@ pub fn dotnet_build_args(project: &Path, config: BuildConfig) -> Vec<OsString> {
     ]
 }
 
-/// `dotnet run --project <csproj> -c <config> --no-build`.
-pub fn dotnet_run_args(project: &Path, config: BuildConfig) -> Vec<OsString> {
-    vec![
+/// `dotnet run --project <csproj> -c <config> --no-build`, com `--framework <framework>` quando o
+/// projeto tem vários: sem ele, o `dotnet run` recusa.
+pub fn dotnet_run_args(
+    project: &Path,
+    config: BuildConfig,
+    framework: Option<&str>,
+) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec![
         "run".into(),
         "--project".into(),
         project.into(),
         "-c".into(),
         config.name().into(),
         "--no-build".into(),
-    ]
+    ];
+    if let Some(framework) = framework {
+        args.extend(["--framework".into(), framework.into()]);
+    }
+    args
 }
 
 /// Como rodar o alvo ativo num terminal.
@@ -692,6 +723,7 @@ mod tests {
             name: name.into(),
             path: build.join(name),
             project: None,
+            framework: None,
         };
         assert_eq!(targets, [target("app"), target("tool")]);
     }
@@ -887,6 +919,19 @@ mod tests {
         assert_eq!(
             parse_msbuild_error("MSBUILD : error MSB1009: Project file does not exist."),
             None
+        );
+        // Saída real do `dotnet restore` (SDK 10) com um pacote que não existe.
+        assert_eq!(
+            parse_msbuild_error(
+                "/p/nu.csproj : error NU1101: Unable to find package X. No packages exist with \
+                 this id in source(s): /p/src [/p/a.sln]"
+            ),
+            problem(
+                "/p/nu.csproj",
+                1,
+                "NU1101: Unable to find package X. No packages exist with this id in source(s): \
+                 /p/src"
+            )
         );
     }
 
@@ -1098,7 +1143,7 @@ mod tests {
             ["build", "/proj/hello-cs.csproj", "-c", "Release"]
         );
         assert_eq!(
-            dotnet_run_args(project, BuildConfig::Debug),
+            dotnet_run_args(project, BuildConfig::Debug, None),
             [
                 "run",
                 "--project",
@@ -1107,6 +1152,10 @@ mod tests {
                 "Debug",
                 "--no-build"
             ]
+        );
+        assert_eq!(
+            dotnet_run_args(project, BuildConfig::Debug, Some("net8.0"))[6..],
+            ["--framework", "net8.0"]
         );
     }
 }

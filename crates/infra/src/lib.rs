@@ -2,6 +2,8 @@
 
 mod file_api;
 mod local_fs;
+#[cfg(any(target_os = "macos", test))]
+mod login_shell;
 mod process;
 mod project_walker;
 mod pty;
@@ -11,6 +13,8 @@ mod watcher;
 
 pub use file_api::LocalFileApi;
 pub use local_fs::LocalFileSystem;
+#[cfg(target_os = "macos")]
+pub use login_shell::use_login_shell_path;
 pub use process::{StdProcessRunner, StdServerSpawner};
 pub use project_walker::IgnoreWalker;
 pub use pty::{PortablePty, detect_default_shell};

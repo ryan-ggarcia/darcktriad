@@ -8,7 +8,8 @@ mod menu;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
+use std::thread;
 
 use darktriad_core::{
     Breakpoint, DebugEvent, DebugLaunch, DebugSessions, Editor, Entry, Eol, Error, ErrorKind,
@@ -44,6 +45,18 @@ const PROJECT_FILES_CHANGED: &str = "project-files-changed";
 const MENU_COMMAND: &str = "menu-command";
 /// Evento do projeto: uma linha do canal CMake ou o estado novo.
 const PROJECT_EVENT: &str = "project-event";
+
+/// Entrega a `apply`, numa thread só e na ordem, o que for enviado. Se vários chegam enquanto
+/// `apply` trabalha, só o último é aplicado.
+fn latest_in_order<T: Send + 'static>(apply: impl Fn(T) + Send + 'static) -> mpsc::Sender<T> {
+    let (sender, received) = mpsc::channel();
+    thread::spawn(move || {
+        while let Ok(first) = received.recv() {
+            apply(received.try_iter().last().unwrap_or(first));
+        }
+    });
+    sender
+}
 
 /// Roda `job` numa thread de I/O: nem a thread de UI nem o runtime assíncrono esperam o disco.
 async fn blocking<T: Send + 'static>(
@@ -556,6 +569,9 @@ fn on_menu_command(app: &AppHandle, id: &str) {
 }
 
 fn main() {
+    // Antes de tudo: o resto do app (processos, terminal, busca de ferramentas) herda este PATH.
+    #[cfg(target_os = "macos")]
+    darktriad_infra::use_login_shell_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Explorer::new(LocalFileSystem))
@@ -581,6 +597,12 @@ fn main() {
                 let _ = handle.emit(PROJECT_FILES_CHANGED, ());
             }));
             let handle = app.handle().clone();
+            // O clangd segue a pasta de build ativa, fora do lock do projeto e na ordem dos estados:
+            // trocar Debug/Release duas vezes rápido termina na última escolha.
+            let follow = latest_in_order(move |state: ProjectState| {
+                handle.state::<AppLanguages>().project_changed(&state);
+            });
+            let handle = app.handle().clone();
             let project = Project::new(
                 LocalFileSystem,
                 StdProcessRunner,
@@ -588,12 +610,8 @@ fn main() {
                 SystemToolProbe::new(tools_dir),
                 move |event| {
                     if let ProjectEvent::State { state } = &event {
-                        // O clangd segue a pasta de build ativa; fora do lock do projeto.
-                        let handle = handle.clone();
-                        let state = state.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            handle.state::<AppLanguages>().project_changed(&state);
-                        });
+                        // Só falha com o app fechando.
+                        let _ = follow.send(state.clone());
                     }
                     let _ = handle.emit(PROJECT_EVENT, &event);
                 },
@@ -671,4 +689,32 @@ fn main() {
                 app.state::<AppLanguages>().stop_all();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn latest_in_order_applies_in_order_and_ends_with_the_last() {
+        let applied = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&applied);
+        let send = latest_in_order(move |value: u32| {
+            thread::sleep(Duration::from_millis(1));
+            sink.lock().unwrap().push(value);
+        });
+        for value in 0..200 {
+            send.send(value).unwrap();
+        }
+        let start = Instant::now();
+        while applied.lock().unwrap().last() != Some(&199) {
+            assert!(start.elapsed() < Duration::from_secs(5), "{applied:?}");
+            thread::sleep(Duration::from_millis(5));
+        }
+        let applied = applied.lock().unwrap();
+        assert!(applied.is_sorted(), "{applied:?}");
+    }
 }

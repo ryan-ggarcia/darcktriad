@@ -336,6 +336,7 @@ mod tests {
             name: "app".into(),
             path: "/proj/build/debug/app/app".into(),
             project: None,
+            framework: None,
         }
     }
 
@@ -344,6 +345,7 @@ mod tests {
             name: "hello-cs".into(),
             path: "/proj/bin/Debug/net10.0/hello-cs.dll".into(),
             project: Some("/proj/hello-cs.csproj".into()),
+            framework: None,
         }
     }
 

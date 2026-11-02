@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use darktriad_core::{Entry, EntryWriter, FileStat, FileStore, FileSystem, Trash};
@@ -37,6 +37,10 @@ impl FileSystem for LocalFileSystem {
 
     fn is_file(&self, path: &Path) -> bool {
         path.is_file()
+    }
+
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        fs::canonicalize(path)
     }
 }
 

@@ -326,6 +326,7 @@ fn start_fake(
         name: "app".into(),
         path: "/bin/true".into(),
         project: None,
+        framework: None,
     };
     let (sender, events) = mpsc::channel();
     sessions

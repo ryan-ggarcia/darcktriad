@@ -13,6 +13,10 @@ pub trait FileSystem: Send + Sync {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<Entry>>;
     fn is_dir(&self, path: &Path) -> bool;
     fn is_file(&self, path: &Path) -> bool;
+    /// O caminho real, sem links simbólicos. O padrão serve a quem não tem links.
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        Ok(path.to_path_buf())
+    }
 }
 
 /// Criação e renomeação de itens. Nunca sobrescreve um item existente: devolve `AlreadyExists`.

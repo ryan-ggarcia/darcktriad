@@ -20,8 +20,11 @@ use crate::{
     parse_preset_names, parse_solution_projects, project::has_extension,
 };
 
-/// Quanto esperar depois do último salvamento de um arquivo do CMake para reconfigurar.
+/// Quanto esperar depois do último salvamento de um arquivo do projeto para reconfigurar.
 const RECONFIGURE_DELAY: Duration = Duration::from_secs(1);
+/// De quanto em quanto tempo a reconfiguração pendente confere se a configuração ou a compilação
+/// em andamento terminou.
+const BUSY_POLL: Duration = Duration::from_millis(50);
 /// A detecção lê a raiz e 2 níveis abaixo (os `.csproj`).
 const DETECT_DEPTH: usize = 3;
 const DEBUG_RELEASE: [&str; 2] = ["Debug", "Release"];
@@ -102,6 +105,8 @@ struct Inner {
 }
 
 type Configured = std::result::Result<(Option<PathBuf>, Vec<CMakeTarget>), String>;
+/// Uma configuração começada: a geração, o cancelamento, a raiz e o tipo do projeto.
+type Begun = (u64, Arc<AtomicBool>, PathBuf, ProjectKind);
 
 /// Caso de uso: o projeto da pasta aberta.
 pub struct Project<F, R, A, T> {
@@ -218,7 +223,9 @@ where
     /// resultado em `BuildFinished`. Antes, configura se for preciso.
     pub fn build(&self) -> Result<()> {
         self.exclusive_build(|cancel| {
-            let state = self.configured()?;
+            let Some(state) = self.configured(cancel)? else {
+                return Ok(());
+            };
             self.run_build(cancel, &state, None).map(drop)
         })
     }
@@ -226,7 +233,9 @@ where
     /// Compila só o alvo ativo e devolve como rodá-lo, ou `None` se a compilação não deu certo.
     pub fn build_for_run(&self) -> Result<Option<RunCommand>> {
         self.exclusive_build(|cancel| {
-            let state = self.configured()?;
+            let Some(state) = self.configured(cancel)? else {
+                return Ok(None);
+            };
             let target = (state.targets.iter())
                 .find(|target| Some(&target.name) == state.target.as_ref())
                 .ok_or_else(|| Error::new(ErrorKind::InvalidInput, NO_PROGRAM))?;
@@ -239,7 +248,11 @@ where
                 Some(project) => RunCommand {
                     name,
                     program: self.find_tool("dotnet").map_err(not_found)?,
-                    args: dotnet_run_args(project, self.build_config()),
+                    args: dotnet_run_args(
+                        project,
+                        self.build_config(),
+                        target.framework.as_deref(),
+                    ),
                     cwd,
                     target: target.clone(),
                 },
@@ -254,11 +267,16 @@ where
         })
     }
 
-    /// Cancela a compilação em andamento: o processo e os filhos dele morrem.
+    /// Cancela a compilação em andamento: o processo e os filhos dele morrem, também o cmake ou
+    /// o dotnet da configuração que vem antes.
     pub fn cancel_build(&self) {
-        if let Some(cancel) = lock(&self.build).as_ref() {
-            cancel.store(true, Ordering::Release);
-        }
+        let Some(cancel) = lock(&self.build).clone() else {
+            return;
+        };
+        cancel.store(true, Ordering::Release);
+        // shortcut: também cancela uma configuração pedida por fora durante a compilação (trocar
+        // Debug/Release); ela fica com erro até a próxima. Separar se isso incomodar.
+        self.lock().cancel.store(true, Ordering::Release);
     }
 
     fn exclusive_build<V>(&self, job: impl FnOnce(&AtomicBool) -> Result<V>) -> Result<V> {
@@ -278,8 +296,10 @@ where
     }
 
     /// O estado pronto, configurando antes se o projeto não foi configurado, se há uma
-    /// reconfiguração pendente ou se a pasta de build sumiu.
-    fn configured(&self) -> Result<ProjectState> {
+    /// reconfiguração pendente ou se a pasta de build sumiu. `None` se a compilação foi cancelada
+    /// durante a configuração: o fim (`Cancelled`) já foi avisado.
+    fn configured(&self, cancel: &AtomicBool) -> Result<Option<ProjectState>> {
+        let start = Instant::now();
         let pending = {
             let mut inner = self.lock();
             // O usuário pode ter apagado a pasta de build: compilar nela falharia na hora.
@@ -292,9 +312,13 @@ where
         if pending {
             self.configure()?;
         }
+        if cancel.load(Ordering::Acquire) {
+            self.end_build(BuildStatus::Cancelled, start, Vec::new());
+            return Ok(None);
+        }
         let state = self.state();
         match &state.status {
-            ProjectStatus::Ready => Ok(state),
+            ProjectStatus::Ready => Ok(Some(state)),
             ProjectStatus::Failed { message } => Err(Error::new(ErrorKind::Other, message.clone())),
             _ => Err(Error::new(
                 ErrorKind::Other,
@@ -340,13 +364,6 @@ where
             };
             break;
         }
-        let verb = match status {
-            BuildStatus::Succeeded => "Concluída",
-            BuildStatus::Failed => "Falhou",
-            BuildStatus::Cancelled => "Cancelada",
-        };
-        let seconds = format!("{:.1}", start.elapsed().as_secs_f64()).replace('.', ",");
-        self.build_output(format!("{verb} em {seconds} s"));
         let dirs: Vec<&Path> = state
             .build_dir
             .iter()
@@ -356,8 +373,20 @@ where
         let problems = build_problems(&lines, status == BuildStatus::Failed, &dirs, |path| {
             self.fs.is_file(path)
         });
-        (self.on_event)(ProjectEvent::BuildFinished { status, problems });
+        self.end_build(status, start, problems);
         Ok(status)
+    }
+
+    /// A última linha do canal Build ("Concluída em 3,2 s") e o `BuildFinished`.
+    fn end_build(&self, status: BuildStatus, start: Instant, problems: Vec<BuildProblem>) {
+        let verb = match status {
+            BuildStatus::Succeeded => "Concluída",
+            BuildStatus::Failed => "Falhou",
+            BuildStatus::Cancelled => "Cancelada",
+        };
+        let seconds = format!("{:.1}", start.elapsed().as_secs_f64()).replace('.', ",");
+        self.build_output(format!("{verb} em {seconds} s"));
+        (self.on_event)(ProjectEvent::BuildFinished { status, problems });
     }
 
     /// O programa e os argumentos de cada comando: um só no CMake e na solução .NET, um por
@@ -419,27 +448,43 @@ where
     /// termina. Uma configuração em andamento é cancelada. O resultado (pronto ou erro) fica no
     /// estado, não no `Result`.
     pub fn configure(&self) -> Result<()> {
-        let (generation, cancel, root, kind) = self.begin()?;
-        let _running = lock(&self.running);
-        if self.lock().generation != generation {
-            return Ok(());
-        }
-        let result = self.run_configure(generation, &cancel, &root, kind);
-        self.finish(generation, result);
+        let begun = self.begin(&mut self.lock())?;
+        self.configure_begun(begun);
         Ok(())
     }
 
-    /// Reconfigura quando um arquivo do CMake de `paths` foi salvo, 1 s depois do último
-    /// salvamento. Ignora o que o próprio CMake grava nas pastas de build.
+    fn configure_begun(&self, (generation, cancel, root, kind): Begun) {
+        let _running = lock(&self.running);
+        if self.lock().generation != generation {
+            return;
+        }
+        let result = self.run_configure(generation, &cancel, &root, kind);
+        self.finish(generation, result);
+    }
+
+    /// Reconfigura 1 s depois do último salvamento de um arquivo do projeto em `paths` (CMake,
+    /// `.csproj`, `.sln`), ou quando a pasta de build sumiu. Ignora o que o próprio CMake grava
+    /// nas pastas de build.
     pub fn files_changed(self: &Arc<Self>, paths: &[PathBuf]) {
-        let Some(root) = self.state().root else {
+        let state = self.state();
+        let Some(root) = state.root else {
             return;
         };
-        if !paths.iter().any(|path| self.is_cmake_source(&root, path)) {
+        // No macOS os avisos chegam com o caminho real (`/private/tmp/x`, e não `/tmp/x`).
+        let real_root = self.fs.canonicalize(&root).unwrap_or_else(|_| root.clone());
+        let mut paths = paths
+            .iter()
+            .map(|path| match path.strip_prefix(&real_root) {
+                Ok(relative) => root.join(relative),
+                Err(_) => path.clone(),
+            });
+        // Sem a pasta de build (`rm -rf build`), o clangd fica sem o `compile_commands.json`.
+        let build_dir_gone = (state.build_dir.as_deref()).is_some_and(|dir| !self.fs.is_dir(dir));
+        if !build_dir_gone && !paths.any(|path| self.is_project_source(&root, &path, state.kind)) {
             return;
         }
         let mut inner = self.lock();
-        if !is_cmake(inner.state.kind) {
+        if inner.state.kind != state.kind {
             return;
         }
         let waiting = inner.reconfigure_at.is_some();
@@ -450,30 +495,44 @@ where
         }
     }
 
+    /// Não interrompe a configuração nem a compilação em andamento: espera as duas terminarem.
+    /// A compilação que começa antes leva a reconfiguração pendente com ela (`configured`).
     fn reconfigure_when_quiet(&self) {
-        loop {
+        let begun = loop {
+            let building = lock(&self.build).is_some();
             let mut inner = self.lock();
-            // `close` desiste da reconfiguração.
+            // `close` e a compilação desistem da reconfiguração.
             let Some(at) = inner.reconfigure_at else {
                 return;
             };
             let now = Instant::now();
-            if now >= at {
+            if now >= at && !building && inner.state.status != ProjectStatus::Configuring {
                 inner.reconfigure_at = None;
-                break;
+                // Sob o mesmo lock: nenhuma configuração começa entre a conferência e esta.
+                break self.begin(&mut inner);
             }
             drop(inner);
-            thread::sleep(at - now);
+            thread::sleep(at.saturating_duration_since(now).max(BUSY_POLL));
+        };
+        if let Ok(begun) = begun {
+            self.configure_begun(begun);
         }
-        let _ = self.configure();
     }
 
-    fn is_cmake_source(&self, root: &Path, path: &Path) -> bool {
+    fn is_project_source(&self, root: &Path, path: &Path, kind: ProjectKind) -> bool {
         let name = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
-        let cmake_file = matches!(
-            name,
-            "CMakeLists.txt" | "CMakePresets.json" | "CMakeUserPresets.json"
-        ) || name.ends_with(".cmake");
+        let project_file = match kind {
+            ProjectKind::CMake | ProjectKind::CMakePresets => {
+                matches!(
+                    name,
+                    "CMakeLists.txt" | "CMakePresets.json" | "CMakeUserPresets.json"
+                ) || name.ends_with(".cmake")
+            }
+            ProjectKind::DotnetSolution | ProjectKind::DotnetProjects => ["csproj", "sln", "slnx"]
+                .iter()
+                .any(|extension| has_extension(name, extension)),
+            ProjectKind::EditOnly => false,
+        };
         // Toda pasta de build tem `CMakeFiles`; sem este filtro, configurar dispararia outra configuração.
         let generated = || {
             path.ancestors()
@@ -482,7 +541,7 @@ where
                 .any(|dir| self.fs.is_dir(&dir.join("CMakeFiles")))
         };
         // Só salvamentos: o que foi apagado (um `rm -rf build`, já sem `CMakeFiles`) não conta.
-        cmake_file && path.starts_with(root) && self.fs.is_file(path) && !generated()
+        project_file && path.starts_with(root) && self.fs.is_file(path) && !generated()
     }
 
     /// Os itens da raiz e de até 2 níveis abaixo, relativos a ela, para [`detect_project`].
@@ -508,8 +567,7 @@ where
         files
     }
 
-    fn begin(&self) -> Result<(u64, Arc<AtomicBool>, PathBuf, ProjectKind)> {
-        let mut inner = self.lock();
+    fn begin(&self, inner: &mut Inner) -> Result<Begun> {
         let kind = inner.state.kind;
         let root = (inner.state.root.clone())
             .filter(|_| kind != ProjectKind::EditOnly)
@@ -519,13 +577,13 @@ where
                     "A pasta aberta não tem projeto CMake nem .NET",
                 )
             })?;
-        stop(&mut inner);
+        stop(inner);
         let state = &mut inner.state;
         state.status = ProjectStatus::Configuring;
         state.build_dir = None;
         state.targets.clear();
         state.problems.clear();
-        self.emit_state(&inner);
+        self.emit_state(inner);
         Ok((inner.generation, Arc::clone(&inner.cancel), root, kind))
     }
 
@@ -643,7 +701,8 @@ where
             return Ok(None);
         }
         // Com `TargetFrameworks`, o MSBuild só informa o `TargetPath` de um framework escolhido.
-        let properties = match properties.first_framework() {
+        let framework = properties.first_framework().map(str::to_owned);
+        let properties = match &framework {
             Some(framework) => read(Some(framework))?,
             None => properties,
         };
@@ -658,6 +717,7 @@ where
             name: name.into(),
             path: properties.target_path.into(),
             project: Some(project.into()),
+            framework,
         }))
     }
 
@@ -919,6 +979,9 @@ fn unknown(what: &str, name: &str) -> Error {
 }
 
 fn run_error(program: &str, error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        return "Configuração cancelada.".into();
+    }
     format!("Não foi possível rodar o {program}: {error}")
 }
 
@@ -992,6 +1055,14 @@ mod tests {
                 && (self.root_files.iter()).any(|name| path.file_name() == Some(OsStr::new(name)));
             in_root || self.is_dir(path)
         }
+
+        /// A raiz é um link simbólico para `/real/proj`, como o `/tmp` do macOS.
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            Ok(match path.strip_prefix(ROOT) {
+                Ok(relative) => Path::new("/real/proj").join(relative),
+                Err(_) => path.into(),
+            })
+        }
     }
 
     /// Anota cada processo no log e responde pelo roteiro do teste.
@@ -1034,6 +1105,7 @@ mod tests {
                     name: name.into(),
                     path: build_dir.join(name),
                     project: None,
+                    framework: None,
                 })
                 .into())
         }
@@ -1651,6 +1723,7 @@ mod tests {
             name: name.into(),
             path: path.into(),
             project: Some(Path::new(ROOT).join(format!("{name}.csproj"))),
+            framework: None,
         }
     }
 
@@ -1694,11 +1767,12 @@ mod tests {
     #[test]
     fn dotnet_solution_lists_its_projects_and_multi_target_uses_the_first_framework() {
         let fixture = Fixture::new(&["b.slnx", "a.sln"], |args, cancel, on_line| {
-            if args[0] == "sln" {
-                on_line("src/multi/multi.csproj");
-                return Ok(true);
+            match args[0].as_str() {
+                "sln" => on_line("src/multi/multi.csproj"),
+                "build" => {}
+                _ => return dotnet(args, cancel, on_line),
             }
-            dotnet(args, cancel, on_line)
+            Ok(true)
         });
         fixture.open(ProjectChoice::default());
 
@@ -1721,8 +1795,19 @@ mod tests {
             state.targets,
             [CMakeTarget {
                 project: Some("/proj/src/multi/multi.csproj".into()),
+                framework: Some("net10.0".into()),
                 ..target("multi", "/proj/bin/Debug/net10.0/multi.dll")
             }]
+        );
+        // Sem `--framework`, o `dotnet run` recusa um projeto com vários frameworks-alvo.
+        let command = fixture.project.build_for_run().unwrap().unwrap();
+        assert_eq!(
+            command.args,
+            dotnet_run_args(
+                Path::new("/proj/src/multi/multi.csproj"),
+                BuildConfig::Debug,
+                Some("net10.0")
+            )
         );
     }
 
@@ -1766,6 +1851,7 @@ mod tests {
         let fixture = Fixture::new(&["app.csproj"], move |_, _, on_line| {
             on_line(error);
             on_line(error);
+            on_line("/proj/app.csproj : error NU1101: Unable to find package Nada.");
             Ok(false)
         });
         fixture.open(ProjectChoice::default());
@@ -1780,12 +1866,32 @@ mod tests {
         );
         assert_eq!(
             state.problems,
-            [Problem {
-                file: "/proj/app.csproj".into(),
-                line: 9,
-                message: "MSB4025: The project file could not be loaded.".into(),
-            }]
+            [
+                Problem {
+                    file: "/proj/app.csproj".into(),
+                    line: 9,
+                    message: "MSB4025: The project file could not be loaded.".into(),
+                },
+                // Sem linha no erro: a linha 1 do projeto.
+                Problem {
+                    file: "/proj/app.csproj".into(),
+                    line: 1,
+                    message: "NU1101: Unable to find package Nada.".into(),
+                }
+            ]
         );
+    }
+
+    #[test]
+    fn saving_a_dotnet_project_file_reconfigures() {
+        let fixture = Fixture::new(&["app.csproj", "Program.cs"], dotnet);
+        fixture.open(ProjectChoice::default());
+        lock(&fixture.log).clear();
+        fixture
+            .project
+            .files_changed(&["/proj/Program.cs".into(), "/proj/app.csproj".into()]);
+        wait_until(|| fixture.log().len() == 2);
+        assert_eq!(fixture.log()[0], "/bin/dotnet restore /proj/app.csproj");
     }
 
     #[test]
@@ -1977,20 +2083,41 @@ mod tests {
         assert_eq!(fixture.project.lock().reconfigure_at, None);
     }
 
-    #[test]
-    fn a_deleted_build_dir_is_configured_again_and_its_removal_does_not_reconfigure() {
-        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
-        fixture.open(ProjectChoice::default());
-        // `rm -rf build`: o aviso do observador chega com a pasta e o `CMakeFiles` já sumidos.
+    /// `rm -rf build`: o aviso do observador chega com a pasta e o `CMakeFiles` já sumidos.
+    fn delete_the_build_dir(fixture: &Fixture) {
         lock(&fixture.project.fs.paths).clear();
+        lock(&fixture.log).clear();
         fixture.project.files_changed(&[
             "/proj/build/debug/cmake_install.cmake".into(),
             "/proj/build/debug/CMakeFiles/app.dir/DependInfo.cmake".into(),
         ]);
-        assert_eq!(fixture.project.lock().reconfigure_at, None);
+    }
 
-        lock(&fixture.log).clear();
+    #[test]
+    fn a_deleted_build_dir_is_configured_again_alone() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
+        fixture.open(ProjectChoice::default());
+        delete_the_build_dir(&fixture);
+        wait_until(|| {
+            fixture.log().len() == 2 && fixture.project.state().status == ProjectStatus::Ready
+        });
+        assert_eq!(
+            fixture.log(),
+            [
+                "query /proj/build/debug".to_string(),
+                configure_line("Debug")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_build_right_after_deleting_the_build_dir_configures_once() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], cmake_build(&[], true));
+        fixture.open(ProjectChoice::default());
+        delete_the_build_dir(&fixture);
         fixture.project.build().unwrap();
+        // A compilação levou a reconfiguração pendente: nada roda depois.
+        thread::sleep(Duration::from_millis(700));
         assert_eq!(
             fixture.log(),
             [
@@ -1999,6 +2126,123 @@ mod tests {
                 "/bin/cmake --build /proj/build/debug".to_string(),
             ]
         );
+    }
+
+    /// Configura sem esperar enquanto `hold` é falso; com ele, só termina quando é cancelado (e
+    /// anota em `died`), quando `hold` volta a ser falso ou depois de `TIMEOUT`. `cmake --build`
+    /// dá certo.
+    fn held_configure(hold: &Arc<AtomicBool>, died: &Arc<AtomicBool>) -> Box<Script> {
+        let (hold, died) = (Arc::clone(hold), Arc::clone(died));
+        Box::new(move |args, cancel, _| {
+            if args[0] == "--build" || !hold.load(Ordering::Acquire) {
+                return Ok(true);
+            }
+            let start = Instant::now();
+            while hold.load(Ordering::Acquire) && start.elapsed() < TIMEOUT {
+                if cancel.load(Ordering::Acquire) {
+                    died.store(true, Ordering::Release);
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            Ok(true)
+        })
+    }
+
+    /// Abre o projeto e começa uma compilação que configura antes, com o cmake preso.
+    fn build_while_configure_is_held(
+        fixture: &Fixture,
+        hold: &AtomicBool,
+    ) -> thread::JoinHandle<Result<()>> {
+        fixture.open(ProjectChoice::default());
+        hold.store(true, Ordering::Release);
+        fixture.project.lock().reconfigure_at = Some(Instant::now() + TIMEOUT);
+        lock(&fixture.log).clear();
+        let project = Arc::clone(&fixture.project);
+        let build = thread::spawn(move || project.build());
+        wait_until(|| fixture.log().len() == 2);
+        build
+    }
+
+    #[test]
+    fn saving_cmake_files_while_the_build_configures_waits_and_reconfigures_after() {
+        let (hold, died) = (Arc::default(), Arc::default());
+        let fixture = Fixture::new(&["CMakeLists.txt"], held_configure(&hold, &died));
+        let build = build_while_configure_is_held(&fixture, &hold);
+
+        fixture
+            .project
+            .files_changed(&["/proj/CMakeLists.txt".into()]);
+        thread::sleep(Duration::from_millis(700));
+        assert!(
+            !died.load(Ordering::Acquire),
+            "a configuração foi interrompida"
+        );
+        assert_eq!(fixture.log().len(), 2, "{:?}", fixture.log());
+
+        hold.store(false, Ordering::Release);
+        build.join().unwrap().unwrap();
+        assert_eq!(
+            fixture.build_results(),
+            [(BuildStatus::Succeeded, Vec::new())]
+        );
+        // Salvo depois de a configuração começar: reconfigura quando a compilação termina.
+        wait_until(|| fixture.log().len() == 5);
+        assert_eq!(
+            fixture.log()[2..],
+            [
+                "/bin/cmake --build /proj/build/debug".to_string(),
+                "query /proj/build/debug".to_string(),
+                configure_line("Debug"),
+            ]
+        );
+    }
+
+    #[test]
+    fn cancelling_while_the_build_configures_stops_the_configure_at_once() {
+        let (hold, died) = (Arc::default(), Arc::default());
+        let fixture = Fixture::new(&["CMakeLists.txt"], held_configure(&hold, &died));
+        let build = build_while_configure_is_held(&fixture, &hold);
+
+        let start = Instant::now();
+        fixture.project.cancel_build();
+        build.join().unwrap().unwrap();
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            start.elapsed()
+        );
+        assert!(died.load(Ordering::Acquire));
+        assert_eq!(fixture.log().len(), 2, "compilou: {:?}", fixture.log());
+        assert_eq!(
+            fixture.build_results(),
+            [(BuildStatus::Cancelled, Vec::new())]
+        );
+        assert!(
+            fixture
+                .build_output()
+                .last()
+                .unwrap()
+                .starts_with("Cancelada em ")
+        );
+        assert_eq!(
+            fixture.project.state().status,
+            ProjectStatus::Failed {
+                message: "Configuração cancelada.".into()
+            }
+        );
+    }
+
+    #[test]
+    fn saving_through_the_real_path_of_a_linked_root_reconfigures() {
+        let fixture = Fixture::new(&["CMakeLists.txt"], succeed);
+        fixture.open(ProjectChoice::default());
+        lock(&fixture.log).clear();
+        fixture
+            .project
+            .files_changed(&["/real/proj/CMakeLists.txt".into()]);
+        wait_until(|| fixture.log().len() == 2);
+        assert_eq!(fixture.log()[1], configure_line("Debug"));
     }
 
     #[test]
@@ -2109,6 +2353,7 @@ mod tests {
                     name: "tool".into(),
                     path: Path::new("/proj/build/debug").join("tool"),
                     project: None,
+                    framework: None,
                 },
             }
         );
@@ -2147,7 +2392,11 @@ mod tests {
         assert_eq!(command.program, Path::new("/bin/dotnet"));
         assert_eq!(
             command.args,
-            dotnet_run_args(&Path::new(ROOT).join("app.csproj"), BuildConfig::Debug)
+            dotnet_run_args(
+                &Path::new(ROOT).join("app.csproj"),
+                BuildConfig::Debug,
+                None
+            )
         );
     }
 

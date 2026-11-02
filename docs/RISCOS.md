@@ -11,8 +11,8 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## macOS
 
-- **PATH:** com a IDE aberta pelo Finder, o terminal e a busca de ferramentas não têm o `PATH` do `~/.zprofile` (Homebrew, cmake, dotnet). O shell do terminal não é de login.
-- **Reconfigurar ao salvar** depende de o caminho da pasta aberta não passar por link simbólico (ex.: `/tmp` → `/private/tmp`).
+- **PATH (corrigido na v0.6.2, sem teste num Mac):** ao abrir, o app lê o `PATH` do shell de login (`$SHELL -l -i`, com o `~/.zprofile`) e o passa ao terminal, ao cmake e à busca de ferramentas. Só a leitura da saída tem teste (em qualquer sistema); o código que roda o shell só compila no CI do macOS (no Linux, rodou com o bash). A abertura do app espera o shell, até 3 s; um shell mais lento é deixado de lado.
+- **Reconfigurar ao salvar com a pasta atrás de um link simbólico** (`/tmp` → `/private/tmp`): corrigido na v0.6.2 comparando pelo caminho real, com teste automático; sem teste num Mac.
 
 ## Terminal
 
@@ -25,25 +25,21 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## Projeto (CMake e .NET)
 
-- **.NET:** salvar `.csproj`/`.sln` não reconfigura sozinho, e erros de restore sem linha e coluna (ex.: pacote não encontrado) só aparecem na Saída.
+- **.NET:** o erro de restore sem linha (ex.: `NU1101`, pacote não encontrado) aparece em Problemas na linha 1 do projeto, e não "sem linha": o painel ainda não mostra item com arquivo e sem linha.
 - **CI:** no Ubuntu os testes com o cmake real **rodam** (QA, 2026-11-02): a imagem `ubuntu-22.04` do GitHub já traz o CMake 3.31.6 e o Ninja 1.13.2 (lista de software da imagem 20261026.341; o log do CI mostra a imagem 20261025.340), e o `tests/build.rs` leva 17,9 s lá, contra 20,5 s no macOS. O aviso "PULADO" não aparece no log porque o `cargo test` esconde a saída dos testes que passam. O `ci.yml` não precisou mudar. O clangd não vem na imagem, então os testes do clangd são pulados no Ubuntu.
 
 ## Compilar e executar
 
 - **.NET deixa processos rodando:** o `dotnet build` deixa o servidor de compilação (`VBCSCompiler`) e nós do MSBuild abertos depois de terminar, para a próxima compilação ser rápida. Eles saem sozinhos depois de alguns minutos e continuam mesmo com a IDE fechada. É o comportamento normal do dotnet.
-- **.NET com vários frameworks-alvo não roda:** o `dotnet run` pede `--framework`, e o comando da spec não passa.
-- **Cancelar durante a configuração:** se o ✕ for clicado enquanto o CMake configura (antes de compilar), a configuração vai até o fim e só então a compilação é cancelada.
+- **Cancelar durante a configuração** para na hora (v0.6.2), mas o projeto fica com "CMake: erro (ver Saída)" e a mensagem "Configuração cancelada." até a próxima compilação ou reconfiguração. Trocar Debug/Release durante uma compilação e cancelar a compilação também cancela essa configuração.
 - **Programa que sai da sessão** (daemon, `setsid`) continua rodando depois de Parar, no macOS e no Linux.
 - **Links na Saída só no fim:** as linhas de erro do canal Build viram links quando a compilação termina, não enquanto o texto chega. O link casa nome do arquivo, linha e mensagem; dois arquivos com o mesmo nome, a mesma linha e a mesma mensagem em pastas diferentes podem trocar de destino.
-- **Cancelar deixa lixo em `/tmp`:** os compiladores encerrados à força deixam arquivos temporários vazios do GCC (`/tmp/ccXXXX.s`), alguns por cancelamento.
 - **Tempo de digitação durante a compilação** não foi medido de verdade: pelo WebDriver, a ida e volta de cada tecla foi de 40–100 ms parado e de 90–420 ms compilando (máquina de 2 núcleos, com o clangd reindexando). Precisa de um teste com teclado real.
-- **Salvar o `CMakeLists.txt` enquanto a compilação configura** interrompe a configuração ("A configuração do projeto foi interrompida.").
-- **Apagar o `build/`** só reconfigura na próxima compilação. Até lá, o clangd fica sem o `compile_commands.json`. A correção (29b7ee9) passou na janela, no Linux (QA, 2026-11-02, a58777a): 16 ciclos de apagar o `build/` e apertar Ctrl+Shift+B logo em seguida, no `hello-cpp`; todos terminaram em "Compilação concluída" em ~1,9 s, com o `app` e o `compile_commands.json` de volta.
+- **Salvar o `CMakeLists.txt` ou apagar o `build/` durante uma compilação** (v0.6.2): a reconfiguração espera a configuração e a compilação terminarem e roda depois; apagar o `build/` reconfigura sozinho, sem esperar a próxima compilação. Tem teste automático; falta repetir na janela os 16 ciclos de apagar o `build/` e compilar logo em seguida, que passaram com a correção anterior (29b7ee9, QA, 2026-11-02, a58777a).
 - **Erros da compilação não sublinham o editor:** eles vão para o painel Problemas e para a Saída; o sublinhado continua sendo só do clangd/Roslyn.
 
 ## Linguagem (clangd e Roslyn)
 
-- **Pasta de build trocada rápido demais:** trocar Debug/Release duas vezes muito rápido pode deixar o clangd com a pasta da configuração anterior, até a próxima troca ou um "Linguagem: Reiniciar servidor".
 - **Servidores encerrados à força,** sem o aviso de saída do LSP (inclusive ao fechar a pasta). Não perde nada, mas o clangd não apaga os seus arquivos `preamble-*.pch` (0,2 a 5 MB cada). Desde a v0.6.1 eles ficam na pasta `servers` do cache do app (no Linux, `~/.cache/com.darktriad.ide/servers`), e não mais em `/tmp`, e ela é esvaziada quando o app abre e nenhuma outra instância dele está aberta. Passou na janela, no Linux (QA, 2026-11-02, 3d08e1f): com a pasta fechada e o app morto com `kill -9`, e também com o app morto com o clangd analisando, nenhum `.pch` novo apareceu em `/tmp`, o `.pch` ficou na `servers` e sumiu ao reabrir o app; o clangd morreu junto com o app. Duas instâncias também passaram na janela (QA, 2026-11-02, a58777a): abrir a segunda e depois uma terceira não apagou os `.pch` da que já estava aberta, e o clangd dela continuou mandando erros; abrir o app sozinho depois apagou as sobras. Limites: com duas instâncias abertas, a limpeza fica para a próxima vez que o app abrir sozinho; os `.pch` antigos em `/tmp` (62, 152 MB nesta máquina) não são apagados. Windows e macOS sem teste.
 - **Atalhos Voltar/Avançar no Linux** são Ctrl+Alt+- e Ctrl+Shift+-, como no VS Code, não Alt+← / Alt+→.
 - **Ctrl+clique** não sublinha o nome ao segurar o Ctrl, e o menu de contexto do editor não tem "Ir para definição".
