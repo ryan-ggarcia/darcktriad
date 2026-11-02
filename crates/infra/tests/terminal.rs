@@ -201,12 +201,25 @@ fn writes_reach_the_program_in_order() {
             .terminals
             .write(terminal.id, &format!("a{i}\n"))
             .unwrap();
-        expected.push_str(&format!("a{i}\r\n"));
+        expected.push_str(&format!("a{i}\n"));
     }
-    terminal.wait_for("a1999\r\n");
-    let output = terminal.output();
-    let start = output.find("a0\r\n").unwrap();
-    assert!(output[start..].starts_with(&expected));
+    // Sem os "\r": com a fila de saída cheia, o macOS repete o "\r" do ONLCR ("a1\r\r\n").
+    let output = || terminal.output().replace('\r', "");
+    wait_until("a1999", || output().contains("a1999\n"));
+    let output = output();
+    let start = output.find("a0\n").unwrap();
+    let got = &output[start..];
+    let at = got
+        .bytes()
+        .zip(expected.bytes())
+        .position(|(a, b)| a != b)
+        .unwrap_or(got.len().min(expected.len()));
+    assert!(
+        got.starts_with(&expected),
+        "difere no byte {at}: esperado {:?}, veio {:?}",
+        &expected[at.saturating_sub(20)..(at + 40).min(expected.len())],
+        &got[at.saturating_sub(20)..(at + 40).min(got.len())],
+    );
     terminal.terminals.close(terminal.id).unwrap();
 }
 

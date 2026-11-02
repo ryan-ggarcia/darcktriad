@@ -16,7 +16,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## Terminal
 
-- **Teste instável no macOS:** `writes_reach_the_program_in_order` (2.000 linhas escritas seguidas no `cat`) falha às vezes no CI do macOS. Pode ser o macOS descartando entrada com a fila do terminal cheia, o que afetaria colar textos grandes. Em investigação.
+- **`\r` a mais no macOS:** com a fila de saída do terminal cheia, o macOS às vezes manda `\r\r\n` no lugar de `\r\n` (o kernel repete o `\r` ao tentar de novo). Na tela não muda nada e nenhuma entrada se perde; só quem compara a saída byte a byte (testes) precisa ignorar os `\r`. Era a causa do teste instável `writes_reach_the_program_in_order`.
 - **Sem controle de fluxo:** um programa que escreve sem parar pode deixar a interface lenta. Com 100.000 linhas, a interface travou no máximo cerca de 0,3 s.
 - **Programa que ignora o fechamento** (`nohup … &`) continua rodando se o shell já saiu.
 - **Colar no Linux** usa a área de transferência do navegador e nunca foi testado no WebKitGTK. Pode ser recusado ou pedir confirmação.
@@ -63,8 +63,14 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Só o lldb-dap 23 e o netcoredbg 3.2 foram testados**, e só no Linux. O CI instala o lldb-dap 21 (apt.llvm.org) no Ubuntu e usa o do Xcode no macOS. O netcoredbg 3.2 **não roda no Ubuntu 22.04 nem em distros com glibc < 2.38** (exige GLIBC_2.38 e GLIBCXX_3.4.32), por isso o CI não o instala e o teste de C# só roda localmente. Windows: nenhum teste de depuração.
 - **Windows:** se o adaptador cair, o que ele iniciou (o programa sob o netcoredbg) pode sobrar. No Linux e no macOS isso é encerrado.
 - **Lixo em `/tmp`:** um lldb-dap encerrado à força no meio do início pode deixar o arquivo `/tmp/lldb-dap-run-in-terminal-comm-*`.
-- **Parar com 3 s** (`terminate` → `disconnect` → `debug_stop`) fica na interface, porque é ela que fala DAP. O núcleo só garante o último passo, o encerramento à força.
-- **Pontos de parada** (alternar, não vinculado, linha movida) são lógica da interface; o núcleo só guarda a lista. Essa parte depende do teste do frontend.
+- **Parar pode levar até 6 s** quando o adaptador não responde a nada: 3 s esperando o `terminate` e mais 3 s o `disconnect`, antes do encerramento à força. A spec fala em 3 s. Na janela, com o lldb-dap, o Shift+F5 terminou em 0,6 s.
+- **"O programa terminou com código 1" depois de Parar** (lldb-dap): o código é do lançador do `runInTerminal`, encerrado junto com o programa, não do programa.
+- **Recarregar do disco** um arquivo com pontos de parada mantém as linhas antigas, mesmo que o código delas tenha mudado. Sem isso, todas as bolinhas iriam para a linha 1.
+- **Coleções em blocos:** quando o depurador avisa que há mais de 100 itens, só os blocos aparecem; os campos com nome do objeto (ex.: `Count`) ficam de fora.
+- **Pilha de chamadas** mostra só os 200 frames do topo (ex.: numa recursão infinita).
+- **Margem do editor:** não aparece a bolinha clara ao passar o mouse; o ponto só aparece depois do clique (ou F9).
+- **Barra flutuante** fica fixa no topo, no meio, e pode cobrir abas.
+- **Interface da v0.6 na janela** (Linux, `hello-cpp`, lldb-dap 23, 2026-11-02): bolinha salva reaberta, F5 compila e pausa na linha (faixa, fundo amarelo, seta), barra de status laranja, Variáveis e Pilha de chamadas, F10 e Shift+F5 (sem sobrar `lldb-dap` nem o programa) passaram. Sem teste na janela: netcoredbg (C#), F6, F11, Shift+F11, Ctrl+Shift+F5, queda do adaptador e os critérios 9, 10, 14, 15 e 17. Os pontos de parada (critério 3) e a sequência DAP têm teste automático no `ng test`.
 
 ## Sem teste na janela
 
