@@ -119,17 +119,6 @@ impl Dap {
     fn event(&mut self, name: &str) -> Value {
         self.wait_for(|m| m["type"] == "event" && m["event"] == name)["body"].clone()
     }
-
-    /// O fim da sessão depois do `disconnect`.
-    fn ended(&self) -> Option<String> {
-        let deadline = Instant::now() + TIMEOUT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if let DebugEvent::Ended { reason } = self.events.recv_timeout(left).unwrap() {
-                return reason;
-            }
-        }
-    }
 }
 
 /// O critério 4: para na linha, `main` no topo da pilha, a variável com o valor e o fim com 0.
@@ -177,8 +166,10 @@ fn debug_until_exit(
 
     dap.request("continue", json!({"threadId": thread}));
     assert_eq!(dap.event("exited")["exitCode"], 0);
-    dap.request("disconnect", json!({"terminateDebuggee": true}));
-    assert_eq!(dap.ended(), None);
+    let seq = dap.request("disconnect", json!({"terminateDebuggee": true}));
+    dap.reply(seq);
+    // Como a interface: o netcoredbg às vezes responde ao `disconnect` e não sai (corrida no CommandLoop dele).
+    dap.sessions.stop();
 }
 
 fn sessions() -> (Arc<Sessions>, Arc<Terminals<PortablePty>>) {

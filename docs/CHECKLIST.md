@@ -58,7 +58,7 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem)
 - [ ] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem)
 - [ ] Digitar com o clangd ativo: p95 de 65 ms, meta de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem)
-- [ ] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
+- [x] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
 - [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
 - [ ] Erros da compilação sublinhados no editor (Compilar e executar)
 - [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração)
