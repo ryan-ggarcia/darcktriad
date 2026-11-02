@@ -537,8 +537,13 @@ mod tests {
         let other = StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
         assert!(leftover.exists());
         drop((app, other));
-        StdServerSpawner::with_temp_dir(dir).unwrap();
-        assert!(!leftover.exists());
+        // Um processo que outro teste inicia agora herda o lock até o `exec` e o segura por um instante.
+        let start = Instant::now();
+        while leftover.exists() {
+            assert!(start.elapsed() < Duration::from_secs(5));
+            StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[cfg(target_os = "linux")]
