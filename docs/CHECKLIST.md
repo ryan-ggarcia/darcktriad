@@ -1,6 +1,6 @@
 # Checklist: o que falta corrigir e validar
 
-Estado em 2026-11-02, na v0.6.1. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
+Estado em 2026-11-02, na v0.6.2. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
 
 ## 1. Validar no Windows (precisa de uma máquina Windows)
 
@@ -23,11 +23,12 @@ Estado em 2026-11-02, na v0.6.1. Cada item tem a explicação em [RISCOS.md](RIS
 
 ## 3. Validar no Linux com teclado e mouse reais
 
-O WebDriver não mede nem faz estes. Avisar antes de usar entrada real.
+O WebDriver não mede nem faz estes. **O usuário faz estes testes conforme usa a IDE; os agentes não fazem** (decisão de 2026-11-02). Ao notar um problema, ele vira item do grupo 5.
 
 - [ ] Digitar no editor durante a compilação sem atraso perceptível (Compilar e executar › Tempo de digitação)
 - [ ] Colar no terminal pelo WebKitGTK (Terminal › Colar no Linux)
 - [ ] Clicar nas abas com a janela estreita (800 px) (Sem teste na janela › Depuração)
+- [ ] Digitar com o clangd ativo: decidir se o atraso se percebe (a medida automática oscila em torno da meta de 50 ms) (Sem teste na janela › Linguagem)
 - [ ] Abrir o AppImage, o `.deb` e o `.rpm` e usar o app de verdade (Sem teste na janela › Instaladores)
 
 ## 4. Validar no Linux (o QA pode fazer pelo WebDriver ou com teste automático)
