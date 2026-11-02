@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 use darktriad_core::{ProcessRunner, ServerProcess, ServerSpawner, SpawnedServer};
 
