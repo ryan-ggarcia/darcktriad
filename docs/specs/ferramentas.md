@@ -145,7 +145,7 @@ Origem = a página do próprio projeto que manda baixar dali.
 
 ### Detecção
 
-1. **O que procura:** a lista e as versões mínimas são as do [projeto.md](projeto.md): clangd, cmake, ninja, compilador C/C++, .NET SDK, servidor Roslyn, lldb-dap / gdb e netcoredbg.
+1. **O que procura:** a lista e as versões mínimas são as do [projeto.md](projeto.md): clangd, cmake, ninja, compilador C/C++, .NET SDK, servidor Roslyn, lldb-dap e netcoredbg.
 2. **Onde procura, nesta ordem:** o `PATH`, depois os caminhos conhecidos de cada ferramenta ([projeto.md](projeto.md)), depois a pasta de ferramentas da IDE (`<dados do app>/tools/`).
 3. **Qual vale:** a primeira que atende a versão mínima. O que o usuário instalou por conta própria ganha.
 4. **Primeira abertura:**
@@ -377,8 +377,7 @@ O VS Code não tem atalho para instalar ferramentas. O comando fica **sem atalho
 1. **lldb no Windows e Python:** relatos indicam que o `liblldb.dll` dos pacotes do LLVM para Windows depende de uma DLL do Python que o pacote não traz ([llvm-project#74073](https://github.com/llvm/llvm-project/issues/74073)).
    - O QA deve confirmar com a versão do manifesto.
    - Se ainda for assim, é preciso decidir: incluir o Python "embeddable" oficial de python.org (que publica assinaturas), ou aceitar o lldb-dap só por instalação manual.
-2. **gdb antigo:** Debian 12 traz gdb 13, abaixo do mínimo para DAP. Nessa distro, a depuração C/C++ pelo assistente fica indisponível, e o passo a passo explica isso.
-3. **Dependências novas no Rust:**
+2. **Dependências novas no Rust:**
    - cliente HTTPS, SHA-256, `zip`, `tar`, `flate2` e `zstd` (para o pacote do LLVM);
    - verificação Authenticode pela API do Windows.
 

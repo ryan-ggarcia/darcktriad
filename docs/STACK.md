@@ -11,7 +11,7 @@ IDE para C, C++ e C#. Windows, macOS e Linux.
 | Interface | Angular (TypeScript, componentes standalone, signals, zoneless) |
 | C / C++ | clangd (LSP) + CMake + `compile_commands.json` |
 | C# | Roslyn Language Server + `dotnet` / MSBuild |
-| Depuração | DAP: lldb-dap / GDB (C/C++), netcoredbg (C#) |
+| Depuração | DAP: lldb-dap (C/C++), netcoredbg (C#) |
 | Terminal | xterm.js + portable-pty |
 | Busca / arquivos | crates `ignore` + `grep` (ripgrep) e `notify` |
 | Testes | `cargo test` e `ng test` |

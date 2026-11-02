@@ -63,11 +63,12 @@ A escolha é uma função pura no núcleo. Nunca usa vsdbg nem cpptools (docs/ST
 
 | Projeto / compilador (vem do CMake) | Depurador |
 |---|---|
-| C/C++ com Clang, AppleClang ou MSVC | `lldb-dap` |
-| C/C++ com GCC | `gdb -i dap` se houver GDB ≥ 14 com Python; senão `lldb-dap` |
+| C/C++ (GCC, Clang, AppleClang ou MSVC) | `lldb-dap` |
 | C# (.NET) | `netcoredbg --interpreter=vscode` |
 
 Se faltar o depurador, aparece a mensagem de ferramenta ausente ([projeto.md](projeto.md)).
+
+**Decisão do usuário (2026-11-02):** só `lldb-dap` para C/C++. O `gdb -i dap` fica para depois: só funciona no Linux e talvez não atenda `runInTerminal`, e o `lldb-dap` já lê o DWARF do GCC.
 
 ### Iniciar (F5, sem sessão ativa)
 
@@ -165,9 +166,7 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
 ## Critérios de aceite
 
 1. **[auto]** A escolha do depurador devolve:
-   - GCC com GDB 14 → `gdb -i dap`;
-   - GCC com GDB 13 → `lldb-dap`;
-   - Clang, AppleClang e MSVC → `lldb-dap`;
+   - C/C++ (qualquer compilador) → `lldb-dap`;
    - .NET → `netcoredbg --interpreter=vscode`.
 2. **[auto]** O `launch` montado:
    - para o `app` do `hello-cpp`: `program` com o caminho absoluto do executável, `cwd` igual à raiz e `console` igual a `integratedTerminal`;
@@ -198,7 +197,7 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
 10. **[manual]** Pressione F9 numa linha de comentário e depois F5. Esperado: a bolinha fica vazada com a dica de "não vinculado", ou vai para a próxima linha com código, conforme o depurador responder.
 11. **[manual]** Num programa em laço infinito, sem pontos de parada, pressione F5 e depois F6. Esperado: pausa e mostra a pilha, com frames sem fonte em cinza se for código do sistema.
 12. **[manual]** Pausado num ponto de parada, pressione Ctrl+Shift+F5. Esperado: recompila, reinicia e pausa no mesmo ponto.
-13. **[manual]** Pausado, pressione Shift+F5. Esperado: em até 3 s a sessão termina, e no gerenciador de tarefas / `ps` não sobra o programa nem `lldb-dap`, `gdb` ou `netcoredbg`.
+13. **[manual]** Pausado, pressione Shift+F5. Esperado: em até 3 s a sessão termina, e no gerenciador de tarefas / `ps` não sobra o programa nem `lldb-dap` ou `netcoredbg`.
 14. **[manual]** Adicione `int* p = nullptr; *p = 1;` e pressione F5. Esperado: pausa nessa linha, com a faixa "Pausado: exceção…" (acesso inválido).
 15. **[manual]** Em C#, adicione `throw new Exception("x");` e pressione F5. Esperado: pausa no `throw`, com a mensagem `x` na faixa.
 16. **[manual]** Pausado, encerre o processo `lldb-dap` pelo sistema. Esperado: aparece a mensagem de que o depurador encerrou, a IDE continua, e F5 inicia uma nova sessão.
@@ -226,4 +225,4 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
 - **Windows:**
   - Depurar binários MSVC com `lldb-dap` é menos maduro que o depurador do Visual Studio, que é proibido pela stack.
   - Ver a decisão no README e o critério 19.
-- **GDB em modo DAP:** é preciso confirmar se ele atende `runInTerminal`. Se não atender, a regra de "saída só para leitura" do item 3 de "Iniciar" se aplica.
+- **netcoredbg:** é preciso confirmar se ele atende `runInTerminal`. Se não atender, a regra de "saída só para leitura" do item 3 de "Iniciar" se aplica.

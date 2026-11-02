@@ -86,6 +86,7 @@ A ordem segue as dependências: a linguagem precisa do `compile_commands.json` g
 | Depuração: pontos de parada, continuar/passos, pilha, variáveis | **MVP** | Pedido explícito ([depuracao.md](depuracao.md)). |
 | Expressões observadas (Watch), console de depuração, valor ao passar o mouse | Depois | O painel Variáveis cobre o MVP. |
 | Pontos de parada condicionais, de log, de função, de dados | Depois | Avançado. |
+| GDB como depurador de C/C++ (`gdb -i dap`) | Depois | O `lldb-dap` cobre os três sistemas, inclusive binários do GCC. **Decisão do usuário.** |
 | Anexar a processo em execução | Depois | Fluxo menos comum. |
 | Memória, desmontagem, registradores | Depois | Avançado. |
 | Edit and Continue / Hot Reload | Fora | Muito complexo e depende de suporte específico do depurador; reavaliar se os depuradores abertos (lldb-dap, netcoredbg) passarem a oferecer. |

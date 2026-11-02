@@ -157,7 +157,6 @@ A ordem de busca é: `PATH`, depois os caminhos conhecidos desta tabela, depois 
 | `ninja` | gerador de build | ambiente do vcvars (Windows) | n/a |
 | `clangd` | erros e autocomplete C/C++ | Windows: `C:\Program Files\LLVM\bin`. macOS: `xcrun --find clangd`, `/opt/homebrew/opt/llvm/bin`, `/usr/local/opt/llvm/bin`. Linux: `clangd-<N>` de maior versão | 17 |
 | `lldb-dap` | depurar C/C++ | os mesmos lugares do clangd; macOS também `xcrun --find lldb-dap`; Linux também `lldb-dap-<N>` | 21 (recomendado) |
-| `gdb` | depurar C/C++ compilado com GCC | n/a | 14, com Python (modo DAP) |
 | `dotnet` | compilar e rodar C# | `DOTNET_ROOT`, `~/.dotnet` | SDK 8 |
 | `roslyn-language-server` | erros e autocomplete C# | `~/.dotnet/tools` | n/a (exige runtime .NET 10) |
 | `netcoredbg` | depurar C# | n/a | n/a |
