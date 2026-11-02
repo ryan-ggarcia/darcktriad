@@ -47,6 +47,49 @@ describe('Workspace', () => {
     expect(fakes.workspace.savedSessions).toEqual([{ openFiles: [MAIN, UTIL], activeFile: UTIL }]);
   });
 
+  describe('outra pasta aberta enquanto a última ainda reabre', () => {
+    const OTHER = 'C:\\outra';
+    const OTHER_MAIN = 'C:\\outra\\main.cpp';
+    let release: () => void;
+
+    beforeEach(() => {
+      fakes.files.write(OTHER_MAIN, 'int main() { return 2; }');
+      fakes.workspace.recents = [
+        { path: ROOT, exists: true },
+        { path: OTHER, exists: true },
+      ];
+      fakes.workspace.sessions.set(ROOT, { openFiles: [MAIN], activeFile: MAIN });
+      fakes.workspace.sessions.set(OTHER, { openFiles: [OTHER_MAIN], activeFile: OTHER_MAIN });
+      fakes.workspace.holds.set(ROOT, new Promise((resolve) => (release = resolve)));
+    });
+
+    it('fica só com as abas da pasta clicada, e só elas vão para a sessão', async () => {
+      const starting = workspace.start();
+      await settle();
+      const clicked = workspace.openRecent({ path: OTHER, exists: true });
+      release();
+      await Promise.all([starting, clicked]);
+      await flush();
+
+      expect(folder.path()).toBe(OTHER);
+      expect(tabs.tabs().map((tab) => tab.path())).toEqual([OTHER_MAIN]);
+      expect(fakes.workspace.savedSessions).toEqual([
+        { openFiles: [OTHER_MAIN], activeFile: OTHER_MAIN },
+      ]);
+    });
+
+    it('clicar na própria pasta que reabre não duplica a aba', async () => {
+      const starting = workspace.start();
+      await settle();
+      const clicked = workspace.openRecent({ path: ROOT, exists: true });
+      release();
+      await Promise.all([starting, clicked]);
+      await flush();
+
+      expect(tabs.tabs().map((tab) => tab.path())).toEqual([MAIN]);
+    });
+  });
+
   it('se a última pasta não existe mais, fica na tela inicial', async () => {
     fakes.workspace.recents = [{ path: ROOT, exists: false }];
 

@@ -354,6 +354,24 @@ describe('EditorTabs', () => {
     expect(tabs.session()).toEqual({ openFiles: [APP_MAIN, TOOL_MAIN], activeFile: TOOL_MAIN });
   });
 
+  it('abrir um arquivo enquanto a sessão o restaura dá uma aba só', async () => {
+    const session = { openFiles: [APP_MAIN], activeFile: APP_MAIN };
+    const [, opened] = await Promise.all([tabs.restore(session), open(APP_MAIN)]);
+
+    expect(tabs.tabs()).toEqual([opened]);
+    expect(text(opened).disposed).toBe(false);
+  });
+
+  it('o que ainda era lido antes de fechar tudo não vira aba', async () => {
+    const restoring = tabs.restore({ openFiles: [APP_MAIN], activeFile: APP_MAIN });
+    const opening = tabs.open(TOOL_MAIN);
+    tabs.clear();
+
+    expect(await opening).toBeNull();
+    await restoring;
+    expect(tabs.tabs()).toEqual([]);
+  });
+
   async function openMany(count: number): Promise<Tab[]> {
     const opened: Tab[] = [];
     for (let index = 1; index <= count; index++) {

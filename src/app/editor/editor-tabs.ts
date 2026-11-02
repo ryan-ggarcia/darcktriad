@@ -61,6 +61,8 @@ export class EditorTabs {
   private readonly savedListeners = new Set<(tab: Tab) => void>();
   private readonly opening = new Map<Path, Promise<Tab | null>>();
   private defaultEol?: Promise<Eol>;
+  /** Muda a cada `clear`: o que ainda estava sendo lido antes dele não vira aba. */
+  private epoch = 0;
 
   /** Abre o arquivo numa aba, ou ativa a aba que já o mostra. */
   async open(path: Path): Promise<Tab | null> {
@@ -210,6 +212,8 @@ export class EditorTabs {
 
   /** Fecha tudo sem perguntar; use depois de `confirmDiscard`. */
   clear(): void {
+    this.epoch++;
+    this.opening.clear();
     for (const tab of this.tabs()) tab.buffer?.dispose();
     this.tabs.set([]);
     this.recent = [];
@@ -281,6 +285,7 @@ export class EditorTabs {
 
   /** Reabre as abas da sessão na ordem, pulando o que não abre mais, e ativa a que estava ativa. */
   async restore(session: Session): Promise<void> {
+    const epoch = this.epoch;
     const tabs = await Promise.all(
       session.openFiles.map((path) =>
         this.files
@@ -290,8 +295,10 @@ export class EditorTabs {
       ),
     );
     const restored = tabs.filter((tab) => tab !== null);
+    if (epoch !== this.epoch) return restored.forEach((tab) => tab.buffer?.dispose());
     this.add(restored);
-    const active = restored.find((tab) => tab.path() === session.activeFile) ?? restored[0];
+    const open = session.openFiles.map((path) => this.find(path)).filter((tab) => tab !== null);
+    const active = open.find((tab) => tab.path() === session.activeFile) ?? open[0];
     if (active) this.activate(active);
   }
 
@@ -313,17 +320,24 @@ export class EditorTabs {
   private loadOnce(path: Path): Promise<Tab | null> {
     let pending = this.opening.get(path);
     if (!pending) {
-      pending = this.load(path).finally(() => this.opening.delete(path));
+      pending = this.load(path).finally(() => {
+        if (this.opening.get(path) === pending) this.opening.delete(path);
+      });
       this.opening.set(path, pending);
     }
     return pending;
   }
 
   private async load(path: Path): Promise<Tab | null> {
+    const epoch = this.epoch;
     try {
       const tab = await this.createTab(path, await this.files.read(path));
+      if (epoch !== this.epoch) {
+        tab.buffer?.dispose();
+        return null;
+      }
       this.add([tab]);
-      return tab;
+      return this.find(path);
     } catch (error) {
       void this.dialogs.tell(`Não foi possível abrir ${basename(path)}.`, errorMessage(error));
       return null;
@@ -352,9 +366,17 @@ export class EditorTabs {
     return tab;
   }
 
+  /** Uma aba por arquivo: se outro caminho já abriu o mesmo arquivo, a cópia é descartada. */
   private add(tabs: Tab[]): void {
-    this.tabs.update((open) => [...open, ...tabs]);
-    this.recent.push(...tabs);
+    for (const tab of tabs) {
+      const path = tab.path();
+      if (path !== null && this.find(path)) {
+        tab.buffer?.dispose();
+        continue;
+      }
+      this.tabs.update((open) => [...open, tab]);
+      this.recent.push(tab);
+    }
   }
 
   private remove(tab: Tab): void {

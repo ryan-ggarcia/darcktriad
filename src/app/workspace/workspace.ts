@@ -25,6 +25,9 @@ export class Workspace {
   /** Enquanto a pasta abre, a lista de abas está pela metade e não pode virar sessão. */
   private readonly restoring = signal(false);
   private sessionWrites: Promise<unknown> = Promise.resolve();
+  /** Número da abertura de pasta mais nova: o que chega de uma abertura antiga é descartado. */
+  private opening = 0;
+  private folderOpens: Promise<unknown> = Promise.resolve();
 
   constructor() {
     effect(() => {
@@ -37,8 +40,10 @@ export class Workspace {
   async start(): Promise<void> {
     void this.service.onFsChanged((batch) => this.applyChanges(batch));
     void this.service.onCloseRequested(() => this.confirmClose());
+    const opening = this.opening;
     const recents = await this.loadRecents();
-    if (recents[0]?.exists) await this.openFolder(recents[0].path);
+    // Se o usuário já abriu outra pasta pela tela inicial, a escolha dele vence.
+    if (opening === this.opening && recents[0]?.exists) await this.openFolder(recents[0].path);
   }
 
   async openFolderDialog(): Promise<void> {
@@ -71,7 +76,9 @@ export class Workspace {
 
   /** Troca a pasta da janela, depois de perguntar sobre os arquivos não salvos. */
   async openFolder(path: Path): Promise<void> {
-    if (!(await this.tabs.confirmDiscard())) return;
+    const opening = ++this.opening;
+    const current = () => opening === this.opening;
+    if (!(await this.tabs.confirmDiscard()) || !current()) return;
     this.restoring.set(true);
     this.tabs.clear();
     this.tree.reset();
@@ -81,16 +88,21 @@ export class Workspace {
     // A árvore aparece sem esperar o observador, que pode demorar em pastas enormes.
     const tree = this.tree.refresh();
     try {
-      const opened = await this.service.openFolder(path);
+      // Em fila: o núcleo precisa terminar na última pasta pedida, não na que demorou mais.
+      const request = this.folderOpens.then(() => this.service.openFolder(path));
+      this.folderOpens = request.catch(() => undefined);
+      const opened = await request;
+      if (!current()) return;
       this.folder.watchError.set(opened.watchError);
       this.breakpoints.load(opened.breakpoints);
       await this.tabs.restore(opened.session);
     } catch (error) {
+      if (!current()) return;
       this.folder.path.set(null);
       this.tree.reset();
       void this.dialogs.tell(`Não foi possível abrir a pasta ${path}.`, errorMessage(error));
     } finally {
-      this.restoring.set(false);
+      if (current()) this.restoring.set(false);
     }
     await Promise.all([tree, this.loadRecents()]);
   }

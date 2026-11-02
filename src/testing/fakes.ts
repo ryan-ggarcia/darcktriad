@@ -290,7 +290,11 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
   readonly menus: MenuEntry[][] = [];
   menuCommand?: (id: string) => void;
 
-  openFolder(path: Path): Promise<OpenedFolder> {
+  /** `open_folder` dessas pastas só responde quando a promessa resolver (pasta lenta). */
+  readonly holds = new Map<Path, Promise<void>>();
+
+  async openFolder(path: Path): Promise<OpenedFolder> {
+    await this.holds.get(path);
     if (this.openError) return Promise.reject(this.openError);
     this.recents = [{ path, exists: true }, ...this.recents.filter((item) => item.path !== path)];
     const session = this.sessions.get(path) ?? { openFiles: [], activeFile: null };
