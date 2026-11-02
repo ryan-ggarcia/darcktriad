@@ -1,10 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { createFakes, Fakes, settle } from '../../testing/fakes';
 import { Project } from '../project/project';
+import { Commands } from '../shared/commands';
 import { Terminals } from '../terminal/terminals';
 import { Breakpoints } from './breakpoints';
 import { flatten } from './debug-view';
-import { blocks, Debugger, pauseText, sourcePath, STOP_MS } from './debugger';
+import { blocks, Debugger, PAUSE_RETRY_MS, pauseText, sourcePath, STOP_MS } from './debugger';
 
 const ROOT = '/proj';
 const MAIN = `${ROOT}/app/main.cpp`;
@@ -54,6 +55,8 @@ describe('sessão de depuração', () => {
     fakes.files.write(MAIN, 'int main() {\n  int x = 21;\n  return 0;\n}\n');
     TestBed.configureTestingModule({ providers: fakes.providers });
     debug = TestBed.inject(Debugger);
+    // O efeito da pasta roda já, e não no meio de um teste com relógio falso (ele acabaria a sessão).
+    TestBed.tick();
     breakpoints = TestBed.inject(Breakpoints);
     const project = TestBed.inject(Project);
     await project.start();
@@ -193,21 +196,31 @@ describe('sessão de depuração', () => {
     expect(sent('stepIn')).toEqual([]);
   });
 
-  it('Parar: terminate; sem fim em 3 s, disconnect; com a resposta, debug_stop', async () => {
+  it('Parar: terminate; sem fim em 3 s, disconnect e debug_stop juntos, sem esperar resposta', async () => {
     await startLldb();
     vi.useFakeTimers();
     try {
       const stopped = debug.stop();
       expect(fakes.debug.commands().at(-1)).toBe('terminate');
-      vi.advanceTimersByTime(STOP_MS);
+      vi.advanceTimersByTime(STOP_MS - 1);
+      expect(sent('disconnect')).toEqual([]);
+      vi.advanceTimersByTime(1);
       expect(sent('disconnect')[0].arguments).toEqual({ terminateDebuggee: true });
-      fakes.debug.respond('disconnect');
       await stopped;
       expect(fakes.debug.stops).toBe(1);
       expect(debug.state()).toBeNull();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('Parar: o terminal 🐞 diz que o programa foi encerrado, sem o código do lançador', async () => {
+    await startLldb();
+    void debug.stop();
+    fakes.debug.terminalEvent({ kind: 'exited', code: 1 });
+    expect(fakes.screens.screens[0].text).toContain('O programa foi encerrado');
+    expect(fakes.screens.screens[0].text).not.toContain('código');
+    fakes.debug.emit({ kind: 'ended', reason: null });
   });
 
   it('o programa terminou: terminated leva ao disconnect e a sessão acaba', async () => {
@@ -227,7 +240,9 @@ describe('sessão de depuração', () => {
     fakes.debug.emit({ kind: 'log', line: 'Segmentation fault' });
     fakes.debug.emit({ kind: 'ended', reason });
     expect(debug.state()).toBeNull();
-    expect(fakes.dialogs.asked[0].message).toBe(reason);
+    // Aviso na barra de status, sem caixa que segura o teclado.
+    expect(TestBed.inject(Commands).keyStatus()).toBe(reason);
+    expect(fakes.dialogs.asked).toEqual([]);
     expect(debug.log()).toEqual(['Segmentation fault']);
 
     void debug.start();
@@ -279,6 +294,56 @@ describe('sessão de depuração', () => {
     expect(debug.pauseReason()).toBe('Pausado: ponto de parada');
   });
 
+  it('F6 antes de o programa rodar: guardado até a configuração e repetido enquanto recusado', async () => {
+    fakes.debug.launch = { adapter: 'netcoredbg', launch: { program: '/proj/bin/hello-cs.dll' } };
+    void debug.start();
+    // Ainda compilando: nada vai ao depurador.
+    expect(debug.state()).toBe('starting');
+    void debug.pause();
+    await settle();
+    fakes.debug.respond('initialize');
+    await settle();
+    expect(sent('pause')).toEqual([]);
+    vi.useFakeTimers();
+    try {
+      fakes.debug.dapEvent('initialized');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fakes.debug.commands().at(-1)).toBe('threads');
+      fakes.debug.respond('threads', { threads: [] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sent('pause')[0].arguments).toEqual({ threadId: 0 });
+      // O .NET ainda carrega: recusado; a thread aparece e o pedido seguinte vai com ela.
+      fakes.debug.respond('pause', {}, false);
+      fakes.debug.dapEvent('thread', { reason: 'started', threadId: 40 });
+      await vi.advanceTimersByTimeAsync(PAUSE_RETRY_MS);
+      expect(sent('pause')).toHaveLength(2);
+      expect(sent('pause')[1].arguments).toEqual({ threadId: 40 });
+      fakes.debug.respond('pause');
+      fakes.debug.dapEvent('stopped', { reason: 'pause', threadId: 40 });
+      await vi.advanceTimersByTimeAsync(PAUSE_RETRY_MS * 5);
+      expect(debug.pauseReason()).toBe('Pausado por você');
+      expect(sent('pause')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('F6 recusado e a sessão acaba: o pedido é descartado', async () => {
+    await startLldb();
+    vi.useFakeTimers();
+    try {
+      fakes.debug.dapEvent('thread', { reason: 'started', threadId: 7 });
+      void debug.pause();
+      fakes.debug.respond('pause', {}, false);
+      await vi.advanceTimersByTimeAsync(0);
+      fakes.debug.emit({ kind: 'ended', reason: null });
+      await vi.advanceTimersByTimeAsync(PAUSE_RETRY_MS * 5);
+      expect(sent('pause')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('exceção: a faixa mostra a mensagem do exceptionInfo', async () => {
     fakes.debug.launch = { adapter: 'netcoredbg', launch: { program: '/proj/bin/hello-cs.dll' } };
     void debug.start();
@@ -310,6 +375,8 @@ describe('sessão de depuração', () => {
     // F5 com o .NET ainda configurando: o alvo só aparece depois.
     fakes.project.emitState({ target: null });
     void debug.start();
+    // A barra diz "Iniciando depuração…" em vez de um nome inventado.
+    expect(debug.target()).toBe('');
     fakes.project.emitState({ target: 'hello-cs' });
     await settle();
     fakes.debug.respond('initialize');

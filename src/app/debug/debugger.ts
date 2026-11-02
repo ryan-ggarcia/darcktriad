@@ -3,6 +3,7 @@ import { DebugService } from '../debug.service';
 import { EditorTabs } from '../editor/editor-tabs';
 import { DebugEvent, DebugLaunch, errorMessage, Path } from '../ipc';
 import { Project, withLine } from '../project/project';
+import { Commands } from '../shared/commands';
 import { Dialogs } from '../shared/dialogs';
 import { exitMessage, Terminals, TerminalSession } from '../terminal/terminals';
 import { CurrentFolder } from '../workspace/current-folder';
@@ -10,8 +11,11 @@ import { Breakpoints, DapBreakpoint } from './breakpoints';
 import { DapClient, DapReply } from './dap-client';
 
 export const DEBUG_CHANNEL = 'Depuração';
-/** Espera de cada passo do Parar: `terminate` → `disconnect` → `debug_stop`. */
+/** Espera do Parar: sem o fim depois do `terminate`, `disconnect` e `debug_stop` juntos. */
 export const STOP_MS = 3000;
+/** O F6 recusado antes de o programa rodar de fato é repetido neste intervalo, por até ~10 s. */
+export const PAUSE_RETRY_MS = 200;
+const PAUSE_TRIES = 50;
 /** Coleções grandes aparecem em blocos deste tamanho. */
 const BLOCK = 100;
 /** shortcut: só os 200 frames do topo; numa recursão infinita o resto não aparece. Paginar se alguém precisar. */
@@ -117,11 +121,12 @@ export class Debugger {
   private readonly breakpoints = inject(Breakpoints);
   private readonly tabs = inject(EditorTabs);
   private readonly dialogs = inject(Dialogs);
+  private readonly commands = inject(Commands);
   private readonly folder = inject(CurrentFolder);
 
   /** Nulo sem sessão; `starting` inclui a compilação. */
   readonly state = signal<DebugState | null>(null);
-  /** O alvo depurado: "🐞 Depurando app". */
+  /** O alvo depurado: "🐞 Depurando app"; vazio enquanto ainda não se sabe. */
   readonly target = signal('');
   /** A faixa "Pausado: …". */
   readonly pauseReason = signal<string | null>(null);
@@ -154,6 +159,8 @@ export class Debugger {
   /** O adaptador pediu `runInTerminal`: o programa tem terminal com teclado. */
   private inTerminal = false;
   private outputTerminal: Promise<TerminalSession | null> | null = null;
+  /** O terminal do `runInTerminal`, marcado no Parar. */
+  private runTerminal: TerminalSession | null = null;
   private onInitialized = () => undefined as void;
   private ended: Promise<void> = Promise.resolve();
   private onEnded = () => undefined as void;
@@ -173,7 +180,7 @@ export class Debugger {
     if (this.state()) return;
     const session = ++this.session;
     this.state.set('starting');
-    this.target.set(this.project.state().target ?? 'programa');
+    this.target.set(this.project.state().target ?? '');
     this.log.set([]);
     this.ended = new Promise((resolve) => (this.onEnded = resolve));
     const launch = await this.project.startAfterBuild(() =>
@@ -228,21 +235,38 @@ export class Debugger {
     const filters = this.adapter === 'netcoredbg' ? ['user-unhandled'] : [];
     void client.request('setExceptionBreakpoints', { filters });
     void client.request('configurationDone');
+    if (this.pauseRequested) void this.sendPause(client);
   }
 
-  /** F6. */
+  /** F6; antes da configuração (inclusive compilando), o pedido fica guardado até ela. */
   async pause(): Promise<void> {
-    const client = this.client;
-    if (this.state() !== 'running' || !client || this.pauseRequested) return;
+    const state = this.state();
+    if ((state !== 'running' && state !== 'starting') || this.pauseRequested) return;
     this.pauseRequested = true;
-    // O lldb-dap recusa `threads` com o programa rodando, mas ignora o `threadId` do `pause`; o
-    // netcoredbg responde `threads` e exige uma thread que exista.
-    const threadId =
-      this.threadId ??
-      (await client.request<{ threads?: { id: number }[] }>('threads'))?.threads?.[0]?.id ??
-      0;
-    if (client !== this.client || this.state() !== 'running') return;
-    if (!(await client.request('pause', { threadId }))) this.pauseRequested = false;
+    if (this.configured && this.client) await this.sendPause(this.client);
+  }
+
+  /**
+   * O depurador recusa o `pause` enquanto o programa não roda de fato (lldb-dap: logo depois do
+   * evento `process`; netcoredbg: até a primeira thread): repete até aceitar, pausar ou acabar.
+   */
+  private async sendPause(client: DapClient): Promise<void> {
+    const pending = () =>
+      client === this.client && this.state() === 'running' && this.pauseRequested;
+    for (let tries = 1; ; tries++) {
+      // O lldb-dap recusa `threads` com o programa rodando, mas ignora o `threadId` do `pause`; o
+      // netcoredbg responde `threads` e exige uma thread que exista.
+      const threadId =
+        this.threadId ??
+        (await client.request<{ threads?: { id: number }[] }>('threads'))?.threads?.[0]?.id ??
+        0;
+      if (!pending()) return;
+      if (await client.request('pause', { threadId })) return;
+      if (tries === PAUSE_TRIES) break;
+      await new Promise((resolve) => setTimeout(resolve, PAUSE_RETRY_MS));
+      if (!pending()) return;
+    }
+    if (client === this.client) this.pauseRequested = false;
   }
 
   stepOver(): void {
@@ -258,16 +282,22 @@ export class Debugger {
   }
 
   /**
-   * Shift+F5: pede `terminate`; sem o fim em 3 s, `disconnect`; sem resposta em mais 3 s,
-   * `debug_stop`. Resolve quando a sessão acaba.
+   * Shift+F5: pede `terminate`; sem o fim em 3 s, `disconnect` e logo depois `debug_stop`.
+   * Resolve quando a sessão acaba.
    */
   stop(): Promise<void> {
     if (!this.state()) return Promise.resolve();
     const client = this.client;
     if (!this.stopping) {
       this.stopping = true;
+      // O código de saída do lançador do `runInTerminal` não é o do programa.
+      if (this.runTerminal) this.runTerminal.stoppedByUser = true;
       if (client) {
-        this.stopTimer = setTimeout(() => this.disconnect(), STOP_MS);
+        const session = this.session;
+        this.stopTimer = setTimeout(() => {
+          this.disconnect();
+          void this.kill(session);
+        }, STOP_MS);
         void client.request('terminate').then((ok) => ok || this.disconnect());
       } else {
         // Ainda compilando: o `debug_start` responde null e a sessão acaba.
@@ -375,7 +405,8 @@ export class Debugger {
       case 'exited':
         // Com `runInTerminal`, o próprio terminal avisa o fim.
         if (!this.inTerminal) {
-          const code = typeof body['exitCode'] === 'number' ? body['exitCode'] : null;
+          const code =
+            typeof body['exitCode'] === 'number' && !this.stopping ? body['exitCode'] : null;
           this.writeProgram(`\n\n${exitMessage(code, true)}\n`);
         }
         return;
@@ -398,6 +429,7 @@ export class Debugger {
           onEvent,
         ),
       );
+      this.runTerminal = session;
       return session
         ? { success: true, body: {} }
         : { success: false, message: 'O terminal não abriu.' };
@@ -478,16 +510,18 @@ export class Debugger {
     const client = this.client;
     if (!client || this.disconnecting) return;
     this.disconnecting = true;
-    clearTimeout(this.stopTimer);
     const session = this.session;
-    const timeout = new Promise((resolve) => (this.stopTimer = setTimeout(resolve, STOP_MS)));
+    const timeout = new Promise((resolve) => setTimeout(resolve, STOP_MS));
     void Promise.race([client.request('disconnect', { terminateDebuggee: true }), timeout]).then(
-      async () => {
-        if (session !== this.session || !this.state()) return;
-        await this.service.stop().catch(warn);
-        if (session === this.session) this.finish(null);
-      },
+      () => this.kill(session),
     );
+  }
+
+  /** `debug_stop`: o núcleo encerra o adaptador e o programa, e a sessão acaba. */
+  private async kill(session: number): Promise<void> {
+    if (session !== this.session || !this.state()) return;
+    await this.service.stop().catch(warn);
+    if (session === this.session) this.finish(null);
   }
 
   /** A sessão acabou: tudo volta ao normal; `reason` não nulo é a mensagem de que o adaptador caiu. */
@@ -501,11 +535,12 @@ export class Debugger {
     this.threadId = undefined;
     this.configured = this.stopping = this.disconnecting = this.inTerminal = false;
     this.pauseRequested = this.supportsExceptionInfo = false;
-    this.outputTerminal = null;
+    this.outputTerminal = this.runTerminal = null;
     this.breakpoints.forgetSession();
     this.onInitialized();
     this.onEnded();
-    if (reason) void this.dialogs.tell(reason);
+    // Na barra de status, sem segurar o teclado: o F5 já inicia outra sessão.
+    if (reason) this.commands.flash(reason);
   }
 
   private async sendBreakpoints(file: Path): Promise<void> {

@@ -88,13 +88,18 @@ import { Project } from './project';
           class="status-item status-debugging"
           [title]="
             commands.hint(
-              'Depurando ' + debug.target() + '. Mostrar Executar e Depurar',
+              (debug.target() ? 'Depurando ' + debug.target() : 'Iniciando depuração') +
+                '. Mostrar Executar e Depurar',
               'showDebug'
             )
           "
           (click)="commands.run('showDebug')"
         >
-          🐞 Depurando {{ debug.target() }}
+          @if (debug.target()) {
+            🐞 Depurando {{ debug.target() }}
+          } @else {
+            🐞 Iniciando depuração…
+          }
         </button>
       </span>
     }

@@ -31,6 +31,8 @@ export class TerminalSession {
   id: number | null = null;
   exited = false;
   closed = false;
+  /** Encerrado pelo Parar da depuração: o fim não mostra o código, que é do lançador. */
+  stoppedByUser = false;
 
   /** `program`: o terminal `▶ <alvo>` do Executar sem depurar, em vez de um shell. */
   constructor(
@@ -232,7 +234,8 @@ export class Terminals {
     } else {
       session.exited = true;
       if (this.program() === session) this.program.set(null);
-      session.screen.write(`\r\n\r\n${exitMessage(event.code, session.program)}\r\n`);
+      const code = session.stoppedByUser ? null : event.code;
+      session.screen.write(`\r\n\r\n${exitMessage(code, session.program)}\r\n`);
     }
   }
 

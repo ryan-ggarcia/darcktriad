@@ -168,7 +168,8 @@ export class App {
       project: () => this.project.channel() !== null,
       debugging: () => this.debug.state() !== null,
       debugPaused: () => this.debug.state() === 'paused',
-      debugRunning: () => this.debug.state() === 'running',
+      // Também no início: o F6 fica guardado até o programa rodar.
+      debugRunning: () => this.debug.state() === 'running' || this.debug.state() === 'starting',
     });
     this.commands.register({
       newFile: () => this.tabs.newUntitled(),

@@ -659,8 +659,18 @@ export class FakeDebugService implements Partial<DebugService> {
     return Promise.resolve();
   }
 
-  runInTerminal(args: string[], cwd: Path): Promise<TerminalInfo> {
+  /** Os eventos do terminal do último `runInTerminal`. */
+  terminalEvent: (event: TerminalEvent) => void = () => undefined;
+
+  runInTerminal(
+    args: string[],
+    cwd: Path,
+    _cols: number,
+    _rows: number,
+    onEvent: (event: TerminalEvent) => void,
+  ): Promise<TerminalInfo> {
     this.terminals.push({ args, cwd });
+    this.terminalEvent = onEvent;
     return Promise.resolve({ id: 200, name: '🐞 app' });
   }
 
