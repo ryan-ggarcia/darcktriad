@@ -17,11 +17,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dependências do Tauri (Linux)
+      - name: Dependências do Tauri e depuradores (Linux)
         if: runner.os == 'Linux'
         run: |
+          # O lldb do Ubuntu 22.04 (14) ainda não tem o lldb-dap: vem do repositório oficial do LLVM.
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf lldb-21
+          # netcoredbg do release do GitHub, conferido pelo SHA-256 que o GitHub publica para o arquivo.
+          curl -sSL -o "$RUNNER_TEMP/netcoredbg.tar.gz" https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-amd64.tar.gz
+          echo "080eb3b2d2152465f599d3b33d1ee6e747794e11cc0a3773ec689f5e5f2c5afa  $RUNNER_TEMP/netcoredbg.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/netcoredbg.tar.gz" -C "$HOME"
+          echo "$HOME/netcoredbg" >> "$GITHUB_PATH"
 
       - uses: dtolnay/rust-toolchain@stable
         with:

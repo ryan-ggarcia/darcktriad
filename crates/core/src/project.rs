@@ -516,6 +516,8 @@ pub struct RunCommand {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub cwd: PathBuf,
+    /// O alvo compilado: a depuração parte dele.
+    pub target: CMakeTarget,
 }
 
 #[cfg(test)]

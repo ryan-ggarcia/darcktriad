@@ -241,12 +241,14 @@ where
                     program: self.find_tool("dotnet").map_err(not_found)?,
                     args: dotnet_run_args(project, self.build_config()),
                     cwd,
+                    target: target.clone(),
                 },
                 None => RunCommand {
                     name,
                     program: target.path.clone(),
                     args: Vec::new(),
                     cwd,
+                    target: target.clone(),
                 },
             }))
         })
@@ -2103,6 +2105,11 @@ mod tests {
                 program: Path::new("/proj/build/debug").join("tool"),
                 args: Vec::new(),
                 cwd: ROOT.into(),
+                target: CMakeTarget {
+                    name: "tool".into(),
+                    path: Path::new("/proj/build/debug").join("tool"),
+                    project: None,
+                },
             }
         );
 

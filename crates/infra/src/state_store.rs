@@ -37,7 +37,7 @@ impl StateStore for JsonStateStore {
 
 #[cfg(test)]
 mod tests {
-    use darktriad_core::{ProjectChoice, RecentFolder, Session};
+    use darktriad_core::{Breakpoint, ProjectChoice, RecentFolder, Session};
 
     use super::*;
     use crate::test_support::TempDir;
@@ -66,6 +66,10 @@ mod tests {
                     config: Some("Release".into()),
                     target: Some("tool".into()),
                 },
+                breakpoints: vec![Breakpoint {
+                    file: root.join("hello-cpp/app/main.cpp"),
+                    line: 8,
+                }],
             }],
         };
 

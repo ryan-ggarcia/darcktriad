@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::configure::command_line;
-use crate::tools::tool;
+use crate::tools::{missing_tool, tool};
 use crate::{
     Error, ErrorKind, ProjectKind, ProjectState, Result, ServerProcess, ServerSpawner,
     SpawnedServer, ToolProbe, ToolStatus,
@@ -142,7 +142,7 @@ impl RestartPolicy {
 }
 
 /// Uma mensagem com a moldura do LSP: `Content-Length` conta bytes, não caracteres.
-fn encode_frame(message: &str) -> Vec<u8> {
+pub(crate) fn encode_frame(message: &str) -> Vec<u8> {
     let mut frame = format!("Content-Length: {}\r\n\r\n", message.len()).into_bytes();
     frame.extend_from_slice(message.as_bytes());
     frame
@@ -366,7 +366,7 @@ where
             let state = match server.launch {
                 None => ServerState::NoProject,
                 Some(_) => ServerState::Stopped {
-                    reason: missing_tool(language).message,
+                    reason: missing_tool(language.program()).message,
                 },
             };
             server.emit(state);
@@ -407,8 +407,14 @@ where
         let servers = Arc::clone(self);
         let emit = move |event| servers.emit(language, generation, event);
         let messages = emit.clone();
-        thread::spawn(move || read_messages(stdout, &messages));
-        thread::spawn(move || read_log(stderr, &emit));
+        thread::spawn(move || {
+            read_messages(
+                stdout,
+                &|message| messages(LanguageEvent::Message { message }),
+                &|line| messages(LanguageEvent::Log { line }),
+            );
+        });
+        thread::spawn(move || read_log(stderr, &|line| emit(LanguageEvent::Log { line })));
         let (requests, receiver) = mpsc::channel();
         thread::spawn(move || write_messages(stdin, &receiver));
         let servers = Arc::clone(self);
@@ -464,7 +470,7 @@ where
     fn find(&self, language: Language) -> Result<PathBuf> {
         match tool(language.program()).check(&self.tools) {
             ToolStatus::Present { path, .. } => Ok(path),
-            _ => Err(missing_tool(language)),
+            _ => Err(missing_tool(language.program())),
         }
     }
 
@@ -482,7 +488,12 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn read_messages(mut stdout: Box<dyn Read + Send>, emit: &dyn Fn(LanguageEvent)) {
+/// Entrega cada mensagem do stdout do servidor a `message`; um cabeçalho inválido vira linha de `log`.
+pub(crate) fn read_messages(
+    mut stdout: Box<dyn Read + Send>,
+    message: &dyn Fn(String),
+    log: &dyn Fn(String),
+) {
     let mut decoder = FrameDecoder::default();
     let mut buffer = vec![0; READ_BUFFER];
     loop {
@@ -493,30 +504,26 @@ fn read_messages(mut stdout: Box<dyn Read + Send>, emit: &dyn Fn(LanguageEvent))
             Err(_) => return,
         }
         while let Some(frame) = decoder.next_message() {
-            emit(match frame {
-                Ok(message) => LanguageEvent::Message { message },
-                Err(header) => LanguageEvent::Log {
-                    line: format!("Cabeçalho LSP inválido descartado: {header}"),
-                },
-            });
+            match frame {
+                Ok(body) => message(body),
+                Err(header) => log(format!("Cabeçalho inválido descartado: {header}")),
+            }
         }
     }
 }
 
 /// Manda cada linha do stderr, sem o fim de linha. Texto que não é UTF-8 vira �.
-fn read_log(stderr: Box<dyn Read + Send>, emit: &dyn Fn(LanguageEvent)) {
+pub(crate) fn read_log(stderr: Box<dyn Read + Send>, log: &dyn Fn(String)) {
     let mut reader = BufReader::new(stderr);
     let mut line = Vec::new();
     while matches!(reader.read_until(b'\n', &mut line), Ok(read) if read > 0) {
         let text = String::from_utf8_lossy(&line);
-        emit(LanguageEvent::Log {
-            line: text.trim_end_matches(['\r', '\n']).to_owned(),
-        });
+        log(text.trim_end_matches(['\r', '\n']).to_owned());
         line.clear();
     }
 }
 
-fn write_messages(mut stdin: Box<dyn Write + Send>, requests: &Receiver<String>) {
+pub(crate) fn write_messages(mut stdin: Box<dyn Write + Send>, requests: &Receiver<String>) {
     for message in requests {
         // Um erro aqui é o servidor terminando, e isso já chega à interface pelo estado.
         if (stdin.write_all(&encode_frame(&message)))
@@ -526,20 +533,6 @@ fn write_messages(mut stdin: Box<dyn Write + Send>, requests: &Receiver<String>)
             return;
         }
     }
-}
-
-fn missing_tool(language: Language) -> Error {
-    let tool = tool(language.program());
-    let minimum = (tool.minimum)
-        .map(|minimum| format!(" {minimum} ou mais novo"))
-        .unwrap_or_default();
-    Error::new(
-        ErrorKind::NotFound,
-        format!(
-            "Para {}, é preciso o {}{minimum}. {}",
-            tool.purpose, tool.program, tool.install
-        ),
-    )
 }
 
 fn not_started() -> Error {

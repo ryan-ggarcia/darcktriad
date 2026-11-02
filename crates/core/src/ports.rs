@@ -140,9 +140,9 @@ pub trait FileApi: Send + Sync {
     fn executables(&self, build_dir: &Path) -> Result<Vec<CMakeTarget>>;
 }
 
-/// Um servidor de linguagem recém-iniciado, falando pelo stdio.
+/// Um servidor de linguagem ou adaptador de depuração recém-iniciado, falando pelo stdio.
 pub struct SpawnedServer {
-    /// As mensagens do servidor, com a moldura do LSP.
+    /// As mensagens do servidor, com a moldura `Content-Length` (LSP e DAP usam a mesma).
     pub stdout: Box<dyn Read + Send>,
     /// O log do servidor.
     pub stderr: Box<dyn Read + Send>,
@@ -154,11 +154,13 @@ pub struct SpawnedServer {
 pub trait ServerProcess: Send + Sync {
     /// Encerra o servidor e o que ele iniciou. Não espera o fim: isso é com o `wait`.
     fn kill(&self) -> io::Result<()>;
-    /// Espera o servidor terminar e devolve o código de saída (`None` se morreu por sinal).
+    /// Espera o servidor terminar e devolve o código de saída (`None` se morreu por sinal). O que
+    /// ele iniciou e ainda roda é encerrado junto.
     fn wait(&self) -> io::Result<Option<i32>>;
 }
 
-/// Início de servidores de linguagem (clangd, Roslyn…): só o programa e os argumentos mudam.
+/// Início de servidores de linguagem (clangd, Roslyn…) e adaptadores de depuração (lldb-dap,
+/// netcoredbg): só o programa e os argumentos mudam.
 pub trait ServerSpawner: Send + Sync {
     fn spawn(&self, program: &Path, args: &[OsString], cwd: &Path) -> io::Result<SpawnedServer>;
 }

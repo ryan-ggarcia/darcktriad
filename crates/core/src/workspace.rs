@@ -23,6 +23,14 @@ pub struct ProjectChoice {
     pub target: Option<String>,
 }
 
+/// Um ponto de parada marcado pelo usuário.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Breakpoint {
+    pub file: PathBuf,
+    /// A partir de 1.
+    pub line: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentFolder {
@@ -31,6 +39,8 @@ pub struct RecentFolder {
     pub session: Session,
     #[serde(default)]
     pub project: ProjectChoice,
+    #[serde(default)]
+    pub breakpoints: Vec<Breakpoint>,
 }
 
 /// O que o app guarda entre execuções. A primeira pasta recente é a última usada.
@@ -53,6 +63,8 @@ pub struct RecentFolderView {
 pub struct OpenedFolder {
     pub path: PathBuf,
     pub session: Session,
+    /// Os pontos de parada salvos para esta pasta.
+    pub breakpoints: Vec<Breakpoint>,
     /// Motivo de as mudanças externas não serem detectadas; `None` quando o observador funciona.
     pub watch_error: Option<String>,
 }
@@ -114,9 +126,11 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
                 path: path.into(),
                 session: Session::default(),
                 project: ProjectChoice::default(),
+                breakpoints: Vec::new(),
             },
         };
         let session = recent.session.clone();
+        let breakpoints = recent.breakpoints.clone();
         recents.insert(0, recent);
         recents.truncate(MAX_RECENT_FOLDERS);
         inner.root = Some(path.into());
@@ -126,6 +140,7 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
         Ok(OpenedFolder {
             path: path.into(),
             session,
+            breakpoints,
             watch_error,
         })
     }
@@ -187,6 +202,11 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
     /// Guarda a configuração e o alvo da pasta aberta.
     pub fn save_project_choice(&self, choice: ProjectChoice) -> Result<()> {
         self.update_open_folder(|recent| recent.project = choice)
+    }
+
+    /// Guarda os pontos de parada da pasta aberta.
+    pub fn save_breakpoints(&self, breakpoints: Vec<Breakpoint>) -> Result<()> {
+        self.update_open_folder(|recent| recent.breakpoints = breakpoints)
     }
 
     fn update_open_folder(&self, update: impl FnOnce(&mut RecentFolder)) -> Result<()> {
@@ -400,6 +420,44 @@ mod tests {
         );
         restarted.open(Path::new("a")).unwrap();
         assert_eq!(restarted.project_choice(), choice);
+    }
+
+    #[test]
+    fn breakpoints_are_saved_per_folder_and_survive_a_restart() {
+        let workspace = workspace_with(&["a", "b"]);
+        let breakpoints = vec![
+            Breakpoint {
+                file: "a/main.cpp".into(),
+                line: 8,
+            },
+            Breakpoint {
+                file: "a/core/soma.cpp".into(),
+                line: 3,
+            },
+        ];
+        workspace.open(Path::new("a")).unwrap();
+        workspace.save_breakpoints(breakpoints.clone()).unwrap();
+        assert!(
+            workspace
+                .open(Path::new("b"))
+                .unwrap()
+                .breakpoints
+                .is_empty()
+        );
+
+        let saved = workspace.store.saved.lock().unwrap().clone();
+        let restarted = Workspace::new(
+            FakeFolders::new(&["a", "b"]),
+            FakeWatcher::default(),
+            FakeStore {
+                saved: Mutex::new(saved),
+                unreadable: false,
+            },
+        );
+        assert_eq!(
+            restarted.open(Path::new("a")).unwrap().breakpoints,
+            breakpoints
+        );
     }
 
     #[test]

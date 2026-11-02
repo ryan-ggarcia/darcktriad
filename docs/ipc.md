@@ -1,6 +1,6 @@
-# Contrato IPC: núcleo ↔ interface (v0.5)
+# Contrato IPC: núcleo ↔ interface (v0.6)
 
-Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md), [projeto.md](specs/projeto.md) (parte CMake e .NET), [linguagem.md](specs/linguagem.md) (servidores de linguagem) e [compilar-e-executar.md](specs/compilar-e-executar.md). A implementação está em `src-tauri/src/main.rs`.
+Tudo o que a interface pode pedir ao núcleo Rust para cumprir [editor.md](specs/editor.md), [explorador.md](specs/explorador.md) e [paleta-de-comandos.md](specs/paleta-de-comandos.md), [terminal.md](specs/terminal.md), [projeto.md](specs/projeto.md) (parte CMake e .NET), [linguagem.md](specs/linguagem.md) (servidores de linguagem) [compilar-e-executar.md](specs/compilar-e-executar.md) e [depuracao.md](specs/depuracao.md) (parte do núcleo). A implementação está em `src-tauri/src/main.rs`.
 
 - **Comandos:** `invoke<T>('nome', { ...parâmetros })`, de `@tauri-apps/api/core`. Todos são assíncronos e rodam fora da thread de UI.
 - **Eventos:** `listen<T>('nome', handler)`, de `@tauri-apps/api/event`.
@@ -57,7 +57,13 @@ interface Session {
 interface OpenedFolder {
   path: Path;
   session: Session;          // abas salvas para esta pasta (vazia na primeira vez)
+  breakpoints: Breakpoint[]; // pontos de parada salvos para esta pasta (vazio na primeira vez)
   watchError: string | null; // não nulo: mudanças externas não serão detectadas
+}
+
+interface Breakpoint {
+  file: Path;   // absoluto
+  line: number; // a partir de 1
 }
 
 interface RecentFolder {
@@ -171,6 +177,17 @@ type LanguageEvent =
   | { kind: 'message'; message: string }    // uma mensagem do LSP: o JSON, sem o cabeçalho Content-Length
   | { kind: 'log'; line: string }           // uma linha do canal clangd ou C# da Saída
   | { kind: 'state'; state: ServerState };
+
+/** A resposta do `debug_start`. */
+interface DebugLaunch {
+  adapter: 'lldb-dap' | 'netcoredbg'; // para as mensagens ("O depurador (lldb-dap) encerrou…")
+  launch: object;                     // os `arguments` do pedido `launch`: mande como vieram
+}
+
+type DebugEvent =
+  | { kind: 'message'; message: string }        // uma mensagem do DAP: o JSON, sem o cabeçalho Content-Length
+  | { kind: 'log'; line: string }               // uma linha do canal Depuração da Saída
+  | { kind: 'ended'; reason: string | null };   // o adaptador saiu e a sessão acabou; não nulo = caiu, já pronto para mostrar
 ```
 
 Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com uma **string**, não com `AppError`. Trate os dois casos no tratador de erros.
@@ -186,12 +203,14 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 | `recent_folders` | — | `RecentFolder[]` | — |
 | `remove_recent_folder` | `{ path: Path }` | `void` | `invalidInput`; `other` (falha ao gravar o estado) |
 | `save_session` | `{ session: Session }` | `void` | `invalidInput` (nenhuma pasta aberta ou caminho inválido); `other` |
+| `save_breakpoints` | `{ breakpoints: Breakpoint[] }` | `void` | `invalidInput` (nenhuma pasta aberta, caminho inválido ou `line` 0); `other` |
 
 - `open_folder` passa a observar a pasta (evento `fs-changed`), substitui a pasta anterior e põe esta no topo das recentes. Se `watchError` não for nulo, mostre a faixa fixa "Mudanças externas não são detectadas automaticamente: use Atualizar." A pasta abre mesmo assim.
 - `open_folder` também começa a montar, em segundo plano, o índice do Abrir rápido (`project_files`). A resposta não espera o índice.
 - `open_folder` pode demorar no Linux em pastas enormes, porque o observador percorre a árvore. Chame `list_dir` da raiz em paralelo para mostrar a árvore sem esperar.
 - `close_folder` para de observar e esvazia o índice do Abrir rápido. Chame `save_session` antes.
 - `recent_folders` vem da mais recente para a mais antiga, no máximo 10. A primeira é a última pasta usada.
+- `save_breakpoints` grava a lista inteira de pontos de parada da pasta aberta, na pasta de dados do app (nunca na pasta do projeto). Chame a cada mudança (F9, X, "Remover todos", e quando o depurador move um ponto de linha). Eles voltam em `OpenedFolder.breakpoints`. A linha guardada é a do editor, não a que o depurador devolveu.
 - `save_session` grava as abas da pasta aberta, na pasta de dados do app. Chame sempre que a lista, a ordem ou a aba ativa mudarem, e antes de fechar a pasta ou a janela. Abas sem título não entram.
 
 ### Explorador
@@ -370,7 +389,7 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 |---|---|---|---|
 | `tools_check` | — | `ToolCheck[]` | `notFound` (sem pasta de dados do app) |
 
-- Uma linha por ferramenta, na ordem da tabela de [projeto.md](specs/projeto.md): `cmake`, `ninja`, `clangd`, `lldb-dap`, `gdb`, `dotnet`, `roslyn-language-server`, `netcoredbg`.
+- Uma linha por ferramenta, na ordem da tabela de [projeto.md](specs/projeto.md): `cmake`, `ninja`, `clangd`, `lldb-dap`, `dotnet`, `roslyn-language-server`, `netcoredbg`. O `gdb` saiu: o C/C++ depura só com o `lldb-dap`.
 - **Onde procura:** `PATH`, depois os caminhos conhecidos, depois `<dados do app>/tools/`. Vale a primeira que atende a versão mínima.
   - Linux: `clangd-<N>` e `lldb-dap-<N>` do `PATH`, da maior versão para a menor.
   - macOS: `xcrun --find` (só com as Command Line Tools instaladas), `/opt/homebrew/opt/llvm/bin` e `/usr/local/opt/llvm/bin`.
@@ -402,6 +421,36 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
   - clangd publica (`textDocument/publishDiagnostics`).
   - Roslyn não publica: ele só responde ao `textDocument/diagnostic` (pull). Declare `capabilities.textDocument.diagnostic.dynamicRegistration: true` no `initialize`: o Roslyn registra (`client/registerCapability`) um provedor por categoria (`identifier`: `syntax`, `DocumentCompilerSemantic`, `DocumentAnalyzerSyntax`…). Peça cada categoria registrada depois de abrir ou alterar o arquivo. Os erros do compilador (ex.: `CS0029`) vêm em `DocumentCompilerSemantic`. Antes da notificação `workspace/projectInitializationComplete`, o arquivo ainda não tem as referências do projeto.
 - **Parar:** `language_stop` encerra o servidor e o que ele iniciou. Nenhum evento chega depois. Abrir outra pasta, `close_folder` e fechar a IDE param todos os servidores sozinhos; depois de abrir outra pasta, chame `language_start` de novo.
+
+### Depuração (DAP)
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `debug_start` | `{ onEvent: Channel<DebugEvent> }` | `DebugLaunch \| null` | os de `project_build`; `invalidInput` com "Nenhum programa para executar…" (como `project_run`); `notFound` (o `lldb-dap` ou o `netcoredbg` não foi encontrado; `message` diz para quê e como instalar); `other` (o adaptador não iniciou) |
+| `debug_send` | `{ message: string }` | `void` | `notFound` (nenhuma sessão ativa) |
+| `debug_run_in_terminal` | `{ args: string[], cwd: Path, cols: number, rows: number, onEvent: Channel<TerminalEvent> }` | `TerminalInfo` | `notFound` (nenhuma sessão ativa); `invalidInput` (`args` vazio, `cwd` inválido, `cols`/`rows` zero); `notFound`/`other` (o programa não iniciou) |
+| `debug_stop` | — | `void` | — |
+
+- **Quem fala DAP é a interface,** como no LSP. O núcleo compila, escolhe o depurador, monta os argumentos do `launch`, inicia o adaptador, põe e tira a moldura `Content-Length` e repassa o JSON como texto. `seq`, pedidos, respostas, eventos, pontos de parada e a sequência de parar são da interface.
+- **Salvar antes:** é da interface, como no `project_run`.
+- **Iniciar (F5):** `debug_start` compila só o alvo ativo (igual ao `project_run`: a saída e o `buildFinished` chegam por `project-event`) e, se deu certo, inicia o adaptador. Com `null`, a compilação falhou ou foi cancelada: abra o painel Problemas e não inicie nada. Uma sessão por vez: `debug_start` encerra à força a anterior. Crie o canal antes da chamada.
+  - Depurador: alvo CMake (C/C++, qualquer compilador) → `lldb-dap`; alvo .NET → `netcoredbg --interpreter=vscode`.
+  - `launch`: `program` (o executável; no .NET, o `TargetPath` `.dll`), `args: []`, `cwd` (a raiz do projeto), `console: 'integratedTerminal'` e, no `lldb-dap`, também `runInTerminal: true` (o anterior ao 21 só conhece este; o 23 aceita os dois).
+- **Sequência que funciona com os dois** (testada no lldb-dap 23 e no netcoredbg 3.2):
+  1. `initialize` com `{ adapterID: adapter, linesStartAt1: true, columnsStartAt1: true, pathFormat: 'path', supportsRunInTerminalRequest: true }`; espere a resposta.
+  2. `launch` com `DebugLaunch.launch`. **Não espere a resposta:** o lldb-dap só responde depois do `configurationDone`; o netcoredbg responde na hora.
+  3. Espere o evento `initialized`. No lldb-dap ele só chega depois do `runInTerminal` (abaixo).
+  4. `setBreakpoints` por arquivo com pontos, `setExceptionBreakpoints` (`{ filters: ['user-unhandled'] }` no netcoredbg; `{ filters: [] }` no lldb-dap, que já para em falhas como acesso inválido) e `configurationDone`.
+- **`runInTerminal`** (pedido reverso do lldb-dap): chame `debug_run_in_terminal` com `arguments.args` e `arguments.cwd` do pedido e o tamanho do painel, e responda ao adaptador `{ type: 'response', request_seq, command: 'runInTerminal', success: true, body: {} }`. O terminal se chama `🐞 <alvo>`; o teclado vai por `terminal_write`, como nos outros. Se falhar, responda `success: false` com a `message`.
+- **Sem `runInTerminal`** (o netcoredbg nunca pede): o programa não tem entrada pelo teclado (`Console.ReadLine` espera para sempre), e a saída chega como eventos `output` com `category: 'stdout'`/`'stderr'`. A regra da spec vale: terminal `🐞 <alvo>` só para leitura, com o aviso. Dá para saber que não haverá pedido quando a resposta do `launch` chega sem ele ter vindo.
+- **Pontos de parada:** a resposta do `setBreakpoints` traz um item por ponto, na mesma ordem: `verified: false` → não vinculado; `line` diferente → mova a bolinha. Acompanhe também o evento `breakpoint` (`reason: 'changed'`, casando pelo `id`): o netcoredbg responde `verified: false` ("pending") antes de o programa carregar e só depois manda `changed` com `verified: true`. Não marque como não vinculado de vez antes disso.
+- **Variáveis:** o lldb-dap devolve os escopos Locals, Globals e Registers; o netcoredbg, Locals. Os valores de texto vêm entre aspas (`"2 + 3 = 5"`).
+- **Parar (Shift+F5):** é da interface: mande `terminate`; quando chegar `terminated` (ou em 3 s), mande `disconnect` com `{ terminateDebuggee: true }`; quando o adaptador responder (ou em 3 s), chame `debug_stop`. Os dois adaptadores saem sozinhos depois do `disconnect` (chega `ended` com `reason: null`); o `debug_stop` é o último recurso e pode ser chamado sempre, mesmo sem sessão.
+- **`debug_stop`:** encerra à força o adaptador, tudo o que ele iniciou e o terminal `🐞` (o programa). Nenhum evento da sessão chega depois (o terminal ainda manda o `exited` dele).
+- **`ended`:** o adaptador saiu sozinho. O núcleo já encerrou o que ele iniciou e o terminal `🐞`. Sempre o último evento da sessão. `reason` não nulo quando ele saiu com código diferente de 0 ou morto ("O depurador (lldb-dap) encerrou inesperadamente. Veja o canal Depuração na Saída."): mostre a mensagem. Depois disso `debug_send` dá `notFound` e F5 inicia uma sessão nova.
+- **Canal Depuração:** cada `log` é uma linha. A primeira é o comando, com `> `; depois vem o stderr do adaptador, e no fim "O lldb-dap terminou com código N.". Saída do programa via eventos `output` do DAP não passa por aqui.
+- **Programa terminou:** o evento `exited` do DAP traz `exitCode`. No `runInTerminal`, o terminal `🐞` também manda `exited` com o mesmo código.
+- **Fechar a pasta ou a IDE:** a sessão é encerrada à força.
 
 ### Diálogos nativos
 
@@ -466,7 +515,7 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
 - Projeto:
   - .NET: salvar `.csproj`/`.sln` não reconfigura (use `project_reconfigure`), e erros de restore sem linha e coluna (ex.: `NU1101`) só aparecem na Saída.
   - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`, também para compilar), e a busca de ferramentas não olha `C:\Program Files\LLVM\bin`. Cancelar a configuração ou a compilação encerra a árvore de processos com `taskkill /T /F`, nunca testado no Windows.
-  - Unix: o cmake, o dotnet e os servidores de linguagem rodam numa sessão própria (`setsid`), e encerrar mata todos os processos dela. Quem sai da sessão (daemons) sobrevive.
+  - Unix: o cmake, o dotnet, os servidores de linguagem e os depuradores rodam numa sessão própria (`setsid`), e encerrar mata todos os processos dela. Quando um servidor ou depurador sai sozinho, o que ficou na sessão dele também é encerrado. Quem sai da sessão (daemons) sobrevive. O `lldb-server` que o lldb-dap inicia fica na sessão dele e morre junto (conferido no Linux).
   - .NET: o `dotnet build` deixa o servidor de compilação (`VBCSCompiler`) e nós do MSBuild rodando depois de terminar, para a próxima ser mais rápida. Eles saem sozinhos depois de alguns minutos parados e não são encerrados ao fechar a IDE. Projeto com vários frameworks-alvo não roda: o `dotnet run` pede `--framework`, que o núcleo não passa.
   - No macOS, a reconfiguração ao salvar depende dos caminhos do `fs-changed`, que vêm canônicos (veja abaixo).
   - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, aberta pelo Finder, ela não tem o `PATH` do `~/.zprofile` (Homebrew).
@@ -475,6 +524,10 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
   - A busca do clangd e do Roslyn roda `--version` ao iniciar (até 5 s cada candidato); a ferramenta instalada com a IDE aberta só é achada se o `PATH` da IDE já a incluía.
   - O núcleo encerra o servidor à força (sem `shutdown`/`exit` do LSP). Hoje isso não perde nada, porque nenhum dos dois grava estado ao sair.
   - Cada mudança de estado do projeto é tratada numa thread própria no `main.rs`. Dois estados `ready` quase simultâneos (ex.: trocar Debug/Release duas vezes muito rápido) podem ser aplicados fora de ordem, e o clangd ficar com a pasta de build da configuração anterior até a próxima mudança ou um `language_restart`.
+- Depuração:
+  - O núcleo inicia todos os processos sem `DEBUGINFOD_URLS`: com ele, o lldb-dap travava baixando os símbolos do próprio lldb-dap (o lançador do `runInTerminal`). Os símbolos das bibliotecas do sistema não são baixados.
+  - O netcoredbg não atende o `runInTerminal`: programa C# depurado não lê o teclado.
+  - Windows: se o adaptador cair, o que ele iniciou (ex.: o programa sob o netcoredbg) pode sobrar; o encerramento da árvore só existe no `debug_stop`. Nada da depuração foi testado no Windows nem no macOS.
 - Terminal:
   - Não há controle de fluxo na saída: um programa que escreve sem parar (ex.: `yes`, ~36 MB/s) entrega tudo à interface, que pode ficar lenta. Com `seq 100000` a interface travou no máximo ~0,3 s no teste na janela.
   - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).

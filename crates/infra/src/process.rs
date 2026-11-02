@@ -69,6 +69,9 @@ fn command(program: &Path, args: &[OsString], cwd: &Path) -> Command {
         .current_dir(cwd)
         // Os dotnet que a IDE roda não mandam telemetria em nome do usuário nem põem o banner na Saída.
         .envs(DOTNET_QUIET)
+        // shortcut: sem símbolos do debuginfod; o lldb-dap travava baixando os do próprio lldb-dap
+        // (o lançador do runInTerminal). Ligar quando houver um limite de tempo ou progresso.
+        .env_remove("DEBUGINFOD_URLS")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     // Sessão própria: encerrar mata também o que o processo iniciou (ninja, compiladores, BuildHost
@@ -120,11 +123,30 @@ impl ServerProcess for ServerChild {
 
     fn wait(&self) -> io::Result<Option<i32>> {
         loop {
-            if let Some(status) = lock(&self.0).try_wait()? {
+            let mut child = lock(&self.0);
+            // O que o servidor iniciou não sobrevive a ele (ex.: o programa sob o netcoredbg).
+            #[cfg(unix)]
+            if exited_unreaped(&child) {
+                kill(&mut child);
+            }
+            if let Some(status) = child.try_wait()? {
                 return Ok(status.code());
             }
+            drop(child);
             thread::sleep(CANCEL_POLL);
         }
+    }
+}
+
+/// O processo terminou e ainda não foi recolhido: o id da sessão continua sendo dele.
+#[cfg(unix)]
+fn exited_unreaped(child: &Child) -> bool {
+    // SAFETY: o `waitid` com WNOWAIT só consulta o filho e preenche `info`; não o recolhe.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        let flags = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
+        libc::waitid(libc::P_PID, child.id(), &mut info, flags) == 0
+            && info.si_signo == libc::SIGCHLD
     }
 }
 
@@ -314,6 +336,45 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn a_server_that_exits_on_its_own_takes_its_children_along() {
+        let spawned = StdServerSpawner
+            .spawn(
+                Path::new("/bin/sh"),
+                &["-c".into(), "sleep 30 & echo $!; read x; exit 3".into()],
+                &std::env::temp_dir(),
+            )
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(spawned.stdout).read_line(&mut line).unwrap();
+        let grandchild: libc::pid_t = line.trim().parse().unwrap();
+        let mut stdin = spawned.stdin;
+        stdin.write_all(b"fim\n").unwrap();
+        stdin.flush().unwrap();
+
+        assert_eq!(spawned.process.wait().unwrap(), Some(3));
+        let start = Instant::now();
+        while is_alive(grandchild) && !is_zombie(grandchild) {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "o filho continua vivo"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn debuginfod_is_off_for_the_processes_of_the_ide() {
+        let spawned = StdServerSpawner
+            .spawn(Path::new("/usr/bin/env"), &[], &std::env::temp_dir())
+            .unwrap();
+        let mut env = String::new();
+        BufReader::new(spawned.stdout)
+            .read_to_string(&mut env)
+            .unwrap();
+        assert!(!env.contains("DEBUGINFOD_URLS="), "{env}");
     }
 
     #[cfg(target_os = "linux")]

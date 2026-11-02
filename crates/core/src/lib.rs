@@ -2,6 +2,7 @@
 //! Este crate não conhece nenhuma implementação concreta: tudo entra por trait.
 
 mod configure;
+mod debug;
 mod editor;
 mod error;
 mod explorer;
@@ -15,6 +16,7 @@ mod tools;
 mod workspace;
 
 pub use configure::{BuildStatus, Problem, Project, ProjectEvent, ProjectState, ProjectStatus};
+pub use debug::{DebugEvent, DebugLaunch, DebugSessions, Debugger};
 pub use editor::{Editor, Eol, FileContent};
 pub use error::{Error, ErrorKind, Result};
 pub use explorer::{Entry, Explorer, is_hidden};
@@ -37,6 +39,6 @@ pub use project::{
 pub use terminal::{Platform, TerminalEvent, TerminalInfo, Terminals, default_shell, shell_name};
 pub use tools::{TOOLS, Tool, ToolCheck, ToolStatus, check_tools};
 pub use workspace::{
-    AppState, ChangeBatch, OpenedFolder, ProjectChoice, RecentFolder, RecentFolderView, Session,
-    Workspace,
+    AppState, Breakpoint, ChangeBatch, OpenedFolder, ProjectChoice, RecentFolder, RecentFolderView,
+    Session, Workspace,
 };

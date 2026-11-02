@@ -6,14 +6,16 @@
 
 mod menu;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use darktriad_core::{
-    Editor, Entry, Eol, Error, ErrorKind, Explorer, FileContent, FileIndex, Language,
-    LanguageEvent, LanguageServers, OpenedFolder, Project, ProjectEvent, ProjectFiles,
-    ProjectState, RecentFolderView, Session, TerminalEvent, TerminalInfo, TerminalSize, Terminals,
-    ToolCheck, Workspace, check_tools, validate_name, validate_path,
+    Breakpoint, DebugEvent, DebugLaunch, DebugSessions, Editor, Entry, Eol, Error, ErrorKind,
+    Explorer, FileContent, FileIndex, Language, LanguageEvent, LanguageServers, OpenedFolder,
+    Project, ProjectEvent, ProjectFiles, ProjectState, RecentFolderView, Session, TerminalEvent,
+    TerminalInfo, TerminalSize, Terminals, ToolCheck, Workspace, check_tools, validate_name,
+    validate_path,
 };
 use darktriad_infra::{
     IgnoreWalker, JsonStateStore, LocalFileApi, LocalFileSystem, NotifyWatcher, PortablePty,
@@ -28,9 +30,10 @@ type AppExplorer = Explorer<LocalFileSystem>;
 type AppEditor = Editor<LocalFileSystem>;
 type AppWorkspace = Workspace<LocalFileSystem, NotifyWatcher, JsonStateStore>;
 type AppIndex = FileIndex<IgnoreWalker>;
-type AppTerminals = Terminals<PortablePty>;
+type AppTerminals = Arc<Terminals<PortablePty>>;
 type AppProject = Arc<Project<LocalFileSystem, StdProcessRunner, LocalFileApi, SystemToolProbe>>;
 type AppLanguages = Arc<LanguageServers<StdServerSpawner, SystemToolProbe>>;
+type AppDebug = Arc<DebugSessions<StdServerSpawner, SystemToolProbe, PortablePty>>;
 
 const MAIN_WINDOW: &str = "main";
 /// Evento com as mudanças no disco dentro da pasta aberta.
@@ -141,8 +144,9 @@ async fn open_folder(app: AppHandle, path: PathBuf) -> Result<OpenedFolder, Erro
     validate_path(&path)?;
     let worker = app.clone();
     let (opened, job, choice) = blocking(move || {
-        // Os servidores de linguagem eram da pasta anterior.
+        // Os servidores de linguagem e a depuração eram da pasta anterior.
         worker.state::<AppLanguages>().stop_all();
+        worker.state::<AppDebug>().stop();
         let workspace = worker.state::<AppWorkspace>();
         let opened = workspace.open(&path)?;
         let job = worker.state::<AppIndex>().start(&path);
@@ -173,6 +177,7 @@ async fn close_folder(app: AppHandle) -> Result<(), Error> {
         app.state::<AppIndex>().clear();
         app.state::<AppProject>().close();
         app.state::<AppLanguages>().stop_all();
+        app.state::<AppDebug>().stop();
         Ok(())
     })
     .await
@@ -219,6 +224,20 @@ async fn save_session(app: AppHandle, session: Session) -> Result<(), Error> {
         validate_path(path)?;
     }
     blocking(move || app.state::<AppWorkspace>().save_session(session)).await
+}
+
+#[tauri::command]
+async fn save_breakpoints(app: AppHandle, breakpoints: Vec<Breakpoint>) -> Result<(), Error> {
+    for breakpoint in &breakpoints {
+        validate_path(&breakpoint.file)?;
+        if breakpoint.line == 0 {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "As linhas começam em 1",
+            ));
+        }
+    }
+    blocking(move || app.state::<AppWorkspace>().save_breakpoints(breakpoints)).await
 }
 
 #[tauri::command]
@@ -395,6 +414,67 @@ async fn language_stop(app: AppHandle, language: Language) -> Result<(), Error> 
     blocking(move || app.state::<AppLanguages>().stop(language)).await
 }
 
+/// Compila o alvo ativo e inicia o depurador dele. `None` se a compilação não deu certo. As
+/// mensagens do DAP, o log e o fim chegam por `on_event`.
+#[tauri::command]
+async fn debug_start(
+    app: AppHandle,
+    on_event: Channel<DebugEvent>,
+) -> Result<Option<DebugLaunch>, Error> {
+    blocking(move || {
+        let Some(command) = app.state::<AppProject>().build_for_run()? else {
+            return Ok(None);
+        };
+        app.state::<AppDebug>()
+            .start(&command.target, &command.cwd, move |event| {
+                // Só falha com a interface já fechada, quando não há mais quem avisar.
+                let _ = on_event.send(event);
+            })
+            .map(Some)
+    })
+    .await
+}
+
+// Síncrono de propósito, como o `language_send`.
+#[tauri::command]
+fn debug_send(app: AppHandle, message: String) -> Result<(), Error> {
+    app.state::<AppDebug>().send(&message)
+}
+
+/// O pedido reverso `runInTerminal` do adaptador: roda `args` no terminal `🐞 <alvo>`.
+#[tauri::command]
+async fn debug_run_in_terminal(
+    app: AppHandle,
+    args: Vec<String>,
+    cwd: PathBuf,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<TerminalInfo, Error> {
+    validate_path(&cwd)?;
+    blocking(move || {
+        let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
+        app.state::<AppDebug>().run_in_terminal(
+            &args,
+            &cwd,
+            TerminalSize { cols, rows },
+            move |event| {
+                let _ = on_event.send(event);
+            },
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn debug_stop(app: AppHandle) -> Result<(), Error> {
+    blocking(move || {
+        app.state::<AppDebug>().stop();
+        Ok(())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn pick_folder(window: Window) -> Result<Option<PathBuf>, Error> {
     pick(window, |dialog| dialog.blocking_pick_folder()).await
@@ -480,10 +560,16 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Explorer::new(LocalFileSystem))
         .manage(Editor::new(LocalFileSystem))
-        .manage(Terminals::new(PortablePty, detect_default_shell()))
         .on_menu_event(|app, event| on_menu_command(app, event.id().as_ref()))
         .setup(|app| {
             let tools_dir = app.path().app_data_dir()?.join("tools");
+            let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
+            app.manage::<AppTerminals>(Arc::clone(&terminals));
+            app.manage::<AppDebug>(Arc::new(DebugSessions::new(
+                StdServerSpawner,
+                SystemToolProbe::new(tools_dir.clone()),
+                terminals,
+            )));
             app.manage::<AppLanguages>(Arc::new(LanguageServers::new(
                 StdServerSpawner,
                 SystemToolProbe::new(tools_dir.clone()),
@@ -544,6 +630,7 @@ fn main() {
             recent_folders,
             remove_recent_folder,
             save_session,
+            save_breakpoints,
             project_files,
             set_menu,
             terminal_create,
@@ -562,6 +649,10 @@ fn main() {
             language_send,
             language_restart,
             language_stop,
+            debug_start,
+            debug_send,
+            debug_run_in_terminal,
+            debug_stop,
             pick_folder,
             pick_file,
             pick_save_path,
@@ -572,6 +663,7 @@ fn main() {
             if let RunEvent::Exit = event {
                 // Nenhum shell (nem o que roda nele), programa, compilação ou servidor de linguagem
                 // sobrevive à IDE.
+                app.state::<AppDebug>().stop();
                 app.state::<AppTerminals>().close_all();
                 app.state::<AppProject>().close();
                 app.state::<AppLanguages>().stop_all();

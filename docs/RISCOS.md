@@ -52,6 +52,16 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Contador da barra** mostra só erros e avisos; itens informativos (ex.: `IDE0059` do C#) aparecem só no painel Problemas.
 - **C# em projeto grande:** a cada alteração (300 ms depois de parar de digitar), o editor pede ao Roslyn os erros das 8 categorias. Foi rápido no `hello-cs`, mas nunca foi medido num projeto grande.
 
+## Depuração (núcleo da v0.6)
+
+- **Sem símbolos baixados do sistema:** o núcleo tira o `DEBUGINFOD_URLS` dos processos que inicia. Com ele (padrão no Arch, Fedora e Ubuntu), o lldb-dap travava minutos baixando os símbolos do próprio lldb-dap ao usar o terminal integrado. Efeito: entrar em funções da libc mostra só desmontagem.
+- **C# não lê o teclado ao depurar:** o netcoredbg 3.2 não pede o `runInTerminal`, e o `Console.ReadLine` do programa espera para sempre. O critério 8 de [depuracao.md](specs/depuracao.md) (digitar `abc`) não tem como passar assim. O teste automático do `hello-cs` troca o `ReadLine` por um texto fixo.
+- **Só o lldb-dap 23 e o netcoredbg 3.2 foram testados**, e só no Linux. O CI agora instala o lldb-dap 21 (repositório apt.llvm.org) e o netcoredbg 3.2.0-1092 no Ubuntu, e no macOS o teste usa o lldb-dap do Xcode: nada disso rodou ainda (sem push). Windows: nenhum teste de depuração.
+- **Windows:** se o adaptador cair, o que ele iniciou (o programa sob o netcoredbg) pode sobrar. No Linux e no macOS isso é encerrado.
+- **Lixo em `/tmp`:** um lldb-dap encerrado à força no meio do início pode deixar o arquivo `/tmp/lldb-dap-run-in-terminal-comm-*`.
+- **Parar com 3 s** (`terminate` → `disconnect` → `debug_stop`) fica na interface, porque é ela que fala DAP. O núcleo só garante o último passo, o encerramento à força.
+- **Pontos de parada** (alternar, não vinculado, linha movida) são lógica da interface; o núcleo só guarda a lista. Essa parte depende do teste do frontend.
+
 ## Sem teste na janela
 
 - **Linguagem:** o critério 15 (desempenho com o clangd num arquivo de 10.000 linhas) não tem a fixture `grande`. Os critérios 5 a 14 passaram na janela em 2026-10-31, só no Linux.

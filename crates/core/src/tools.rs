@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::ToolProbe;
+use crate::{Error, ErrorKind, ToolProbe};
 
 /// Uma ferramenta que a IDE procura.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -18,7 +18,7 @@ pub struct Tool {
 }
 
 /// A tabela de ferramentas da spec do projeto.
-pub const TOOLS: [Tool; 8] = [
+pub const TOOLS: [Tool; 7] = [
     Tool {
         program: "cmake",
         purpose: "configurar e compilar C/C++",
@@ -44,13 +44,6 @@ pub const TOOLS: [Tool; 8] = [
         minimum: None,
         install: "Vem com o LLVM (https://github.com/llvm/llvm-project/releases); no macOS, com \
                   as Command Line Tools (xcode-select --install).",
-    },
-    Tool {
-        program: "gdb",
-        purpose: "depurar C/C++ compilado com GCC",
-        // shortcut: não confere se o gdb tem Python (modo DAP), só a versão; conferir ao ligar o depurador.
-        minimum: Some("14"),
-        install: "Instale o gdb pelo gerenciador de pacotes do sistema (ex.: apt-get install gdb).",
     },
     Tool {
         program: "dotnet",
@@ -113,6 +106,21 @@ pub(crate) fn tool(program: &str) -> &'static Tool {
         .iter()
         .find(|tool| tool.program == program)
         .expect("ferramenta fora da tabela")
+}
+
+/// O erro de ferramenta ausente, com o para quê e o passo a passo.
+pub(crate) fn missing_tool(program: &str) -> Error {
+    let tool = tool(program);
+    let minimum = (tool.minimum)
+        .map(|minimum| format!(" {minimum} ou mais novo"))
+        .unwrap_or_default();
+    Error::new(
+        ErrorKind::NotFound,
+        format!(
+            "Para {}, é preciso o {}{minimum}. {}",
+            tool.purpose, tool.program, tool.install
+        ),
+    )
 }
 
 impl Tool {
