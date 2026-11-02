@@ -34,7 +34,7 @@ O WebDriver não mede nem faz estes. Avisar antes de usar entrada real.
 
 - [x] Apagar o `build/` e compilar logo em seguida, 8 vezes (correção 29b7ee9 só tem teste automático) (Compilar e executar › Apagar o `build/`)
 - [x] .NET na janela: critério 12 de [projeto.md](specs/projeto.md) (Sem teste na janela › Projeto)
-- [ ] Desempenho do clangd num arquivo de 10.000 linhas: criar a fixture `grande` e o critério 15 de [linguagem.md](specs/linguagem.md) (Sem teste na janela › Linguagem) → FALHOU: p95 de 65 ms com o clangd ativo (meta 50 ms); 35 ms com ele parado
+- [ ] Desempenho do clangd num arquivo de 10.000 linhas: criar a fixture `grande` e o critério 15 de [linguagem.md](specs/linguagem.md) (Sem teste na janela › Linguagem) → FALHOU por pouco na v0.6.2: p95 de 44 a 52 ms (4 de 5 rodadas abaixo da meta de 50 ms); era 65 ms
 - [x] C# num projeto grande: tempo dos diagnósticos do Roslyn (Linguagem › C# em projeto grande)
 - [x] 4ª queda do clangd em 5 minutos mostra o botão Reiniciar (Linguagem › Queda repetida)
 - [x] Parar com o depurador travado termina em ~3 s (Sem teste na janela › Depuração)
@@ -50,25 +50,25 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] **Windows:** procurar ferramentas em `C:\Program Files\LLVM\bin` (Windows)
 - [x] **macOS:** terminal e busca de ferramentas com o `PATH` do `~/.zprofile` quando a IDE é aberta pelo Finder (macOS)
 - [x] **macOS:** reconfigurar ao salvar quando a pasta passa por link simbólico (macOS)
-- [x] Salvar o `CMakeLists.txt` durante a configuração da compilação não pode interromper a configuração (Compilar e executar)
-- [x] Cancelar enquanto o CMake configura deve parar na hora (Compilar e executar)
-- [x] Apagar o `build/` deve reconfigurar sem esperar a próxima compilação, para o clangd não ficar sem o `compile_commands.json` (Compilar e executar)
-- [x] .NET com vários frameworks-alvo: passar `--framework` no `dotnet run` (Compilar e executar)
-- [x] .NET: salvar `.csproj`/`.sln` reconfigura; erros de restore sem linha aparecem em Problemas (Projeto)
-- [x] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem)
+- [x] Salvar o `CMakeLists.txt` durante a configuração da compilação não pode interromper a configuração (Compilar e executar) → passou na janela (QA, 03b186a)
+- [x] Cancelar enquanto o CMake configura deve parar na hora (Compilar e executar) → passou na janela (QA, 03b186a)
+- [x] Apagar o `build/` deve reconfigurar sem esperar a próxima compilação, para o clangd não ficar sem o `compile_commands.json` (Compilar e executar) → passou na janela (QA, 03b186a)
+- [x] .NET com vários frameworks-alvo: passar `--framework` no `dotnet run` (Compilar e executar) → passou na janela (QA, 03b186a), com `net10.0;net10.0-browser`, sem baixar o 8.0
+- [x] .NET: salvar `.csproj`/`.sln` reconfigura; erros de restore sem linha aparecem em Problemas (Projeto) → passou na janela (QA, 03b186a)
+- [x] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem) → passou na janela (QA, 03b186a)
 - [ ] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem)
-- [ ] Digitar com o clangd ativo: p95 de 65 ms, meta de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem) → sem causa achada na interface; números em RISCOS.md, decisão do CTO
+- [ ] Digitar com o clangd ativo: meta de p95 abaixo de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem) → com a máquina livre, pelo WebDriver no arquivo de 10.000 linhas: 49, 45, 44, 52 e 45 ms; pelo inspetor: todas as 12 rodadas abaixo de 50 ms (34 a 46 ms). Não passa por uma rodada; números em RISCOS.md, decisão do CTO
 - [x] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
 - [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
 - [ ] Erros da compilação sublinhados no editor (Compilar e executar)
-- [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido; falta o do lldb-dap
+- [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido e passou na janela (QA, 03b186a); falta o do lldb-dap
 - [ ] Programas que saem da sessão (`setsid`, `nohup … &`) continuam depois de Parar ou de fechar o terminal (Terminal; Compilar e executar)
 - [ ] Terminal sem controle de fluxo: muita saída pode travar a interface por ~0,3 s (Terminal)
-- [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto
+- [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto; passou na janela (QA, 03b186a)
 - [ ] Fonte do terminal em Linux sem as fontes monoespaçadas conhecidas (Terminal)
-- [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração)
+- [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração) → passou na janela (QA, 03b186a)
 - [ ] Depuração: campos com nome (ex.: `Count`) junto com os blocos de coleções grandes (Depuração)
-- [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração)
+- [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração) → passou na janela (QA, 03b186a)
 - [ ] Depuração: bolinha clara ao passar o mouse na margem (Depuração)
 - [ ] Linguagem: Ctrl+clique sublinha o nome; "Ir para definição" no menu de contexto (Linguagem)
 - [ ] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem)
