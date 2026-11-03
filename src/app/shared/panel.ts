@@ -1,12 +1,15 @@
 import { Injectable, signal } from '@angular/core';
 
-export type PanelTab = 'problems' | 'output' | 'terminal';
+/** `debug` é o canal Depuração da Saída, com aba própria. */
+export type PanelTab = 'problems' | 'output' | 'terminal' | 'debug';
 
-/** O painel inferior: se aparece e qual aba mostra (Problemas, Saída ou Terminal). */
+/** O painel inferior: se aparece, qual aba mostra e se ocupa a área dos editores. */
 @Injectable({ providedIn: 'root' })
 export class Panel {
   readonly visible = signal(false);
   readonly tab = signal<PanelTab>('terminal');
+  /** Expandido: o painel cobre os editores até ser recolhido. */
+  readonly maximized = signal(false);
   /** O canal escolhido na Saída (CMake, dotnet, clangd, C#); nulo é o primeiro que houver. */
   readonly outputChannel = signal<string | null>(null);
 

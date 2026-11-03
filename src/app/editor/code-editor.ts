@@ -19,7 +19,8 @@ import { KeyStroke, PLATFORM } from '../shared/keybindings';
 import { EditorTabs } from './editor-tabs';
 import { MonacoBuffer } from './monaco-buffers';
 import { loadMonaco } from './monaco-loader';
-import { DARK_TRIAD_THEME, THEME_DATA } from './monaco-theme';
+import { Appearance, CODE_FONT } from '../shared/appearance';
+import { defineMonacoThemes, monacoThemeName } from './monaco-theme';
 import { Tab } from './tab';
 
 /** Uma instância do Monaco para todas as abas: trocar de aba troca o modelo e a posição. */
@@ -35,10 +36,12 @@ export class CodeEditor {
 
   private readonly tabs = inject(EditorTabs);
   private readonly commands = inject(Commands);
+  private readonly appearance = inject(Appearance);
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
   /** O da janela: os provedores e marcadores seguem valendo sem nenhuma aba aberta. */
   private readonly rootInjector = inject(EnvironmentInjector);
   private readonly editor = signal<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  private monaco: typeof Monaco | null = null;
   private readonly viewStates = new WeakMap<Tab, Monaco.editor.ICodeEditorViewState | null>();
   private shown: Tab | null = null;
   private destroyed = false;
@@ -74,6 +77,11 @@ export class CodeEditor {
         },
       });
     });
+    // O tema do Monaco é global: vale para o editor e para os widgets dele.
+    effect(() => {
+      const theme = monacoThemeName(this.appearance.theme(), this.appearance.glass());
+      if (this.editor()) this.monaco?.editor.setTheme(theme);
+    });
     effect(() => {
       const editor = this.editor();
       const target = this.tabs.goTo();
@@ -104,13 +112,17 @@ export class CodeEditor {
 
   private async create(): Promise<void> {
     const monaco = await loadMonaco();
+    // O Monaco mede a fonte ao criar: com a JetBrains Mono ainda carregando, o cursor sairia do lugar.
+    await document.fonts?.load(`14px ${CODE_FONT}`).catch(() => undefined);
     if (this.destroyed) return;
-    monaco.editor.defineTheme(DARK_TRIAD_THEME, THEME_DATA);
+    this.monaco = monaco;
+    defineMonacoThemes(monaco);
     const editor = monaco.editor.create(this.host, {
       model: null,
-      theme: DARK_TRIAD_THEME,
+      theme: monacoThemeName(this.appearance.theme(), this.appearance.glass()),
       automaticLayout: true,
       fontSize: 14,
+      fontFamily: `${CODE_FONT}, Consolas, 'Cascadia Mono', Menlo, 'DejaVu Sans Mono', monospace`,
       // A margem das bolinhas dos pontos de parada e da seta da linha atual.
       glyphMargin: true,
     });

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,10 @@ pub struct Breakpoint {
 #[serde(rename_all = "camelCase")]
 pub struct RecentFolder {
     pub path: PathBuf,
+    /// Milissegundos desde 1970 (UTC) da última abertura. `None` nas entradas gravadas antes do
+    /// campo existir.
+    #[serde(default)]
+    pub last_opened: Option<u64>,
     #[serde(default)]
     pub session: Session,
     #[serde(default)]
@@ -56,6 +61,7 @@ pub struct AppState {
 pub struct RecentFolderView {
     pub path: PathBuf,
     pub exists: bool,
+    pub last_opened: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -120,15 +126,17 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
             .map(|error| error.to_string());
 
         let recents = &mut inner.state.recent_folders;
-        let recent = match recents.iter().position(|recent| recent.path == path) {
+        let mut recent = match recents.iter().position(|recent| recent.path == path) {
             Some(index) => recents.remove(index),
             None => RecentFolder {
                 path: path.into(),
+                last_opened: None,
                 session: Session::default(),
                 project: ProjectChoice::default(),
                 breakpoints: Vec::new(),
             },
         };
+        recent.last_opened = now_millis();
         let session = recent.session.clone();
         let breakpoints = recent.breakpoints.clone();
         recents.insert(0, recent);
@@ -157,18 +165,19 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
 
     /// A existência é conferida a cada chamada: a pasta pode ter sumido desde a última execução.
     pub fn recent_folders(&self) -> Vec<RecentFolderView> {
-        let paths: Vec<PathBuf> = self
+        let recents: Vec<(PathBuf, Option<u64>)> = self
             .lock()
             .state
             .recent_folders
             .iter()
-            .map(|recent| recent.path.clone())
+            .map(|recent| (recent.path.clone(), recent.last_opened))
             .collect();
-        paths
+        recents
             .into_iter()
-            .map(|path| RecentFolderView {
+            .map(|(path, last_opened)| RecentFolderView {
                 exists: self.fs.is_dir(&path),
                 path,
+                last_opened,
             })
             .collect()
     }
@@ -230,6 +239,12 @@ impl<F: FileSystem, W: FolderWatcher, S: StateStore> Workspace<F, W, S> {
 
 fn no_folder_open() -> Error {
     Error::new(ErrorKind::InvalidInput, "Nenhuma pasta aberta")
+}
+
+/// `None` com o relógio do sistema antes de 1970.
+fn now_millis() -> Option<u64> {
+    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    u64::try_from(elapsed.as_millis()).ok()
 }
 
 #[cfg(test)]
@@ -335,6 +350,48 @@ mod tests {
         assert_eq!(watching.as_deref(), Some(Path::new("a")));
         let saved = workspace.store.saved.lock().unwrap().clone().unwrap();
         assert_eq!(saved.recent_folders.len(), 2);
+    }
+
+    #[test]
+    fn open_records_when_each_recent_was_last_opened() {
+        let workspace = workspace_with(&["a", "b"]);
+        let before = now_millis().unwrap();
+
+        workspace.open(Path::new("a")).unwrap();
+        let first = workspace.recent_folders()[0].last_opened.unwrap();
+        workspace.open(Path::new("b")).unwrap();
+        workspace.open(Path::new("a")).unwrap();
+
+        let recents = workspace.recent_folders();
+        let after = now_millis().unwrap();
+        let reopened = recents[0].last_opened.unwrap();
+        assert!(
+            (before..=after).contains(&first),
+            "{before} {first} {after}"
+        );
+        assert!((first..=after).contains(&reopened), "{first} {reopened}");
+        assert!(recents[1].last_opened.is_some_and(|b| b <= reopened));
+    }
+
+    #[test]
+    fn recents_saved_without_last_opened_load_as_null() {
+        let state: AppState =
+            serde_json::from_str(r#"{ "recentFolders": [{ "path": "a" }] }"#).unwrap();
+        let workspace = Workspace::new(
+            FakeFolders::new(&["a"]),
+            FakeWatcher::default(),
+            FakeStore {
+                saved: Mutex::new(Some(state)),
+                unreadable: false,
+            },
+        );
+
+        let view = serde_json::to_value(workspace.recent_folders()).unwrap();
+
+        assert_eq!(
+            view,
+            serde_json::json!([{ "path": "a", "exists": true, "lastOpened": null }])
+        );
     }
 
     #[test]

@@ -8,20 +8,24 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Ferramentas:** a busca não olha `C:\Program Files\LLVM\bin`.
 - **Processos que sobram:** cancelar o cmake ou a compilação, parar o Roslyn e parar o programa agora encerram a árvore toda com `taskkill /T /F`. Nunca foi testado no Windows (critério 14 de [compilar-e-executar.md](specs/compilar-e-executar.md)).
 - **Testes de integração** (cmake, dotnet, clangd, Roslyn reais) não rodam no Windows.
+- **Mensagem enganosa do CMake:** sem o cmake no `PATH`, a barra de status mostra "CMake: erro (ver Saída)", mas a Saída fica vazia. O motivo só aparece no diálogo do F5.
+- **Testado na janela só com os projetos de exemplo (2026-11-03, Windows 11 build 26300, Clang 23.1.4, sem MSVC):** em C++, configurar, clangd, compilar, executar e depurar (ponto de parada, variáveis, pilha, F10). Em C#, Roslyn pronto, executar com entrada pelo terminal e parar em ponto de parada com o netcoredbg. As ferramentas foram instaladas à mão; a instalação pela IDE da [ferramentas.md](specs/ferramentas.md) ainda não existe.
 
 ## macOS
 
 - **Abertura mais lenta:** para pegar o `PATH` do shell de login, o app espera o shell antes de abrir a janela, por até 3 s. Nunca rodou num Mac.
+- **API privada na janela transparente:** a página transparente depende do `drawsBackground` do WebKit, que impede publicar na Mac App Store e pode parar de funcionar numa versão futura do macOS. O app é distribuído pelo GitHub. Detalhes em [ipc.md](ipc.md#limites-conhecidos).
 - **Teste de velocidade instável no CI:** `listing_a_folder_with_5000_files_fits_the_budget` falhou 1 vez no macOS (2f45e62) e passou nos commits seguintes. Parece lentidão da máquina do CI.
 - **PATH (corrigido na v0.6.2, sem teste num Mac):** ao abrir, o app lê o `PATH` do shell de login (`$SHELL -l -i`, com o `~/.zprofile`) e o passa ao terminal, ao cmake e à busca de ferramentas. Só a leitura da saída tem teste (em qualquer sistema); o código que roda o shell só compila no CI do macOS (no Linux, rodou com o bash). A abertura do app espera o shell, até 3 s; um shell mais lento é deixado de lado.
 - **Reconfigurar ao salvar com a pasta atrás de um link simbólico** (`/tmp` → `/private/tmp`): corrigido na v0.6.2 comparando pelo caminho real, com teste automático; sem teste num Mac.
 
 ## Paleta e menu
 
-- **Atalhos de navegador no Windows:** o núcleo os desliga no WebView2, mas F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J nunca foram apertados com teclas reais no app final (critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md)).
-- **Itens do menu sempre habilitados:** clicar num comando que não vale agora (ex.: Salvar sem aba aberta) não faz nada.
+- **Itens do menu sempre habilitados no macOS:** no menu nativo, clicar num comando que não vale agora (ex.: Salvar sem aba aberta) não faz nada. No Windows e no Linux, o menu da interface mostra esses itens desabilitados.
 - **Recortar, copiar e colar pelo menu** agem só no editor, no Windows e no Linux. No terminal e nos campos de texto, só o atalho funciona.
 - **Comandos recentes da paleta** ficam só na memória e somem ao reiniciar.
+- **Sem Alt+letra nos menus** no Windows e no Linux (ex.: Alt+A para Arquivo): fica para a Etapa 2.
+- **Ctrl+` no Windows:** numa execução com teclas reais, o terminal ficou fechado na 3ª tecla. Não se repetiu em 5 teclas reais nem em 20 pelo DevTools (2026-11-03), e a causa não foi encontrada.
 
 ## Terminal
 
@@ -30,7 +34,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Programa que ignora o fechamento** (`nohup … &`) continua rodando se o shell já saiu.
 - **Colar no Linux** usa a área de transferência do navegador e nunca foi testado no WebKitGTK. Pode ser recusado ou pedir confirmação.
 - **Atalho no teclado ABNT2:** o WebKitGTK não diz qual é o layout do teclado (o `getLayoutMap` não existe nele), então o app aprende o caractere no primeiro aperto da tecla e o guarda (`localStorage`, na pasta de dados do app). Só a primeira abertura de todas mostra "Ctrl+`" até esse aperto. Quem trocar de layout vê o caractere antigo até apertar a tecla de novo. Passou na janela, no Linux (2026-11-02; QA, 03b186a, com a tecla sintética): aprendeu, fechou, reabriu e já mostrou "Ctrl+'".
-- **Fonte:** em Linux sem Adwaita Mono, DejaVu Sans Mono, Liberation Mono ou Ubuntu Mono, o terminal cai numa fonte com espaçamento ruim (ex.: "Interf ace").
+- **Fonte:** o terminal agora usa a JetBrains Mono embutida no app, em qualquer sistema. Antes, em Linux sem Adwaita Mono, DejaVu Sans Mono, Liberation Mono ou Ubuntu Mono, caía numa fonte com espaçamento ruim (ex.: "Interf ace"). Falta conferir no Linux.
 
 ## Projeto (CMake e .NET)
 
@@ -83,9 +87,12 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 ## Visual (tema preto e roxo)
 
 - **Animações só na entrada:** avisos, faixas e diálogos entram animados e somem direto, porque animar a saída exigiria segurar o elemento na tela. Na barra de status, anima a mensagem de `keyStatus` e cada item novo; o texto que muda dentro de um item que já existe (ex.: "C++: indexando 40%") não anima, de propósito.
-- **Só visto no Linux** (WebKitGTK). Bordas, barras de rolagem (`::-webkit-scrollbar`) e `prefers-reduced-motion` não foram vistos no Windows nem no macOS.
-- **Sem teste com mouse real:** hover e pressionar (`scale`) não foram vistos em uso. A barra de status e as abas do painel rolam sem barra visível quando a janela é estreita: chega-se aos itens com a roda do mouse ou com Tab.
+- **Visto no Linux (WebKitGTK) e no Windows 11; no macOS, nunca.** `prefers-reduced-motion` não foi visto no Windows.
+- **Mouse real só no Windows:** cliques, arrastar e redimensionar foram testados com o mouse de verdade (2026-11-03); o efeito de pressionar (`scale`) não foi conferido. A barra de status e as abas do painel rolam sem barra visível quando a janela é estreita: chega-se aos itens com a roda do mouse ou com Tab.
 - **Velocidade (2026-11-02, máquina de 2 núcleos, mesmo método do QA em Linguagem):** WebDriver, 10.000 linhas, 200 teclas, do `keydown` até o DOM mudar: p95 de 36, 39, 41, 40 e 43 ms (mediana de 24 a 34 ms). Limite: é a mudança no DOM, não o pixel; o tempo até o quadro seguinte não foi medido com o tema novo.
+- **Vidro no Windows:** usa o Acrylic a partir do Windows 11 22H2; versões mais antigas ficam no sólido. Atrás dos painéis há um gradiente como o do Rubaxe; no sólido, ele é bem suave e só aparece nas barras e nos vãos. A cor do Acrylic vem do sistema, então as opacidades foram medidas em pixels reais numa só máquina (build 26300, 2026-11-03), com branco atrás no tema escuro e preto atrás no claro: o pior texto ficou em 4,96:1 e 4,52:1, e os ícones da barra de atividades, no canto mais forte do gradiente, em 3,78:1 e 3,23:1. Outra versão do Windows pode tingir diferente; nunca foi testado. O explorador é sólido nos dois materiais.
+- **Velocidade do vidro (Windows 11, 2026-11-03, tela de 75 Hz, teclas e mouse reais, uma rodada de cada):** ao arrastar e redimensionar, os quadros ficam em p95 de 14 ms no vidro e no sólido, com máximo de 20 ms no vidro e 15 ms no sólido. Da tecla até depois da pintura seguinte, 40 teclas: p95 de 12 ms nos dois. O tempo de composição do próprio Windows não entra nessa conta.
+- **Vidro no macOS e no Linux:** nunca visto. No macOS, as opacidades são conservadoras e sem medida. O Linux não desfoca, começa no sólido e, com o vidro ligado, fica quase opaco.
 
 ## Sem teste na janela
 
@@ -117,7 +124,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 
 ## Testes
 
-- **Testes de tempo na máquina local:** com a máquina de 2 núcleos ocupada (a IDE instalada aberta, outro agente compilando), os testes de tempo do explorador e do Ctrl+P falham sem bug no app. No CI, com a máquina livre, passam. Hoje a regra é rodar de novo sozinho antes de concluir que falhou.
+- **Testes de tempo na máquina local:** os arquivos do `ng test` agora rodam um de cada vez (`vitest-base.config.mts`), porque em paralelo roubavam CPU uns dos outros; a suíte até ficou mais rápida (6,5 s contra 7,5 a 10,5 s). Foram 7 de 7 sem repetir teste, na máquina de 8 núcleos sem nada pesado rodando. Com outro processo pesado (compilador, IDE aberta), os testes de tempo do explorador e do Ctrl+P ainda podem falhar sem bug no app: rode de novo sozinho antes de concluir que falhou.
 - **Versões diferentes do lldb-dap:** aqui é o 23; no CI, o 21 (Ubuntu) e o do Xcode (macOS). O lldb-dap 21 e o do Xcode exigem o `pathFormat` no `initialize`, que o 23 aceita sem: um teste novo só falhou no CI (6a2d037, corrigido em 9c63b10). A interface sempre mandou o `pathFormat`.
 - **Adaptador que sobra:** um teste do lldb-dap que falha no meio não encerra o adaptador.
 

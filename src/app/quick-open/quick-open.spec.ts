@@ -74,6 +74,7 @@ describe('QuickOpen', () => {
       debugging: () => false,
       debugPaused: () => false,
       debugRunning: () => false,
+      glass: () => true,
     });
     fixture = TestBed.createComponent(QuickOpen);
     quick = fixture.componentInstance;

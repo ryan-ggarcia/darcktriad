@@ -68,7 +68,8 @@ interface Breakpoint {
 
 interface RecentFolder {
   path: Path;
-  exists: boolean; // falso: mostrar riscada
+  exists: boolean;           // falso: mostrar riscada
+  lastOpened: number | null; // última abertura, em ms desde 1970 (UTC): `new Date(lastOpened)`; null nas recentes gravadas até a v0.8.1 que não foram reabertas
 }
 
 interface ChangeBatch {
@@ -221,7 +222,7 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - `open_folder` também começa a montar, em segundo plano, o índice do Abrir rápido (`project_files`). A resposta não espera o índice.
 - `open_folder` pode demorar no Linux em pastas enormes, porque o observador percorre a árvore. Chame `list_dir` da raiz em paralelo para mostrar a árvore sem esperar.
 - `close_folder` para de observar e esvazia o índice do Abrir rápido. Chame `save_session` antes.
-- `recent_folders` vem da mais recente para a mais antiga, no máximo 10. A primeira é a última pasta usada.
+- `recent_folders` vem da mais recente para a mais antiga, no máximo 10. A primeira é a última pasta usada. `lastOpened` é atualizado a cada `open_folder` (também ao reabrir a mesma pasta); salvar sessão, pontos de parada ou a escolha do projeto não o muda.
 - `save_breakpoints` grava a lista inteira de pontos de parada da pasta aberta, na pasta de dados do app (nunca na pasta do projeto). Chame a cada mudança (F9, X, "Remover todos", e quando o depurador move um ponto de linha). Eles voltam em `OpenedFolder.breakpoints`. A linha guardada é a do editor, não a que o depurador devolveu.
 - `save_session` grava as abas da pasta aberta, na pasta de dados do app. Chame sempre que a lista, a ordem ou a aba ativa mudarem, e antes de fechar a pasta ou a janela. Abas sem título não entram.
 
@@ -289,21 +290,49 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
   - Depois disso, o evento só chega quando a lista muda (arquivo criado, removido ou renomeado). Salvar um arquivo não dispara o evento.
 - Com 50.000 arquivos, a resposta tem cerca de 1,5 MB. Guarde a última lista e só peça de novo quando chegar `project-files-changed`.
 
-### Menu nativo
+### Janela
+
+Não há comandos próprios: a interface usa a API de janela do Tauri, `getCurrentWindow()` de `@tauri-apps/api/window`. A configuração está em `src-tauri/tauri.conf.json` (Windows e Linux) e `src-tauri/tauri.macos.conf.json` (macOS).
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| Barra de título | nenhuma (`decorations: false`): a interface desenha a dela | nenhuma: idem | a do sistema, transparente, por cima da página (`titleBarStyle: Overlay`, sem título) |
+| Botões | da interface: — □ ✕ à direita | da interface | as bolinhas nativas, à esquerda: deixe ~78 px livres no começo da barra |
+| Menu | HTML, na barra da interface | HTML, na barra da interface | nativo (`set_menu`) |
+| Moldura | sombra do sistema; cantos arredondados no Windows 11 | nenhuma (sem sombra) | a do sistema |
+| Janela transparente | sim | sim | sim |
+| Efeitos (`setEffects`) | `mica` (Windows 11), `acrylic` | nenhum: não faz nada, sem erro | os materiais do macOS (`underWindowBackground`, `sidebar`…) |
+
+- **Permissões liberadas** (`src-tauri/capabilities/default.json`): `core:default` (já inclui `isMaximized`, `theme`, os eventos como `onResized` e o duplo clique da área de arrastar) mais `close`, `destroy`, `minimize`, `toggleMaximize`, `startDragging`, `setEffects`/`clearEffects` (os dois usam o mesmo comando, `set_effects`) e `setTheme`. Qualquer outro método que muda a janela (ex.: `setSize`, `setTitle`, `maximize`) é recusado com uma string de erro. Peça a permissão no núcleo.
+- **Arrastar:** ponha `data-tauri-drag-region` na barra. Sem valor, vale só o clique direto no elemento que tem o atributo, não nos filhos. Com `data-tauri-drag-region="deep"`, vale a subárvore toda. Botões, links, campos e elementos com `tabindex` ou `role` interativo (`button`, `menuitem`, `tab`…) nunca arrastam, a não ser que tenham o atributo; `data-tauri-drag-region="false"` corta o arraste num pedaço. Duplo clique na área maximiza e restaura (Windows e Linux no `mousedown`; macOS no `mouseup`, como o sistema). Só precisa de `startDragging()` quem não usar o atributo, e só dentro de um `mousedown` do botão esquerdo.
+- **Redimensionar:** pelas bordas, nos três sistemas. Sem moldura, o Tauri trata a borda sozinho. No Windows, as laterais e a base usam a faixa invisível de ~7 px fora da janela, como toda janela do Windows 11; o topo usa uma faixa de 5 px (na escala 100%) por cima da página. No Linux, a faixa é de 5 px vezes a escala, por cima da página, nas quatro bordas. Cliques nessa faixa não chegam à página: não ponha botões colados no topo da barra.
+- **Maximizar:** `toggleMaximize()`. Para trocar o ícone □/❐, leia `isMaximized()` ao iniciar e a cada `onResized` (não há evento próprio de maximizar).
+- **Tamanho mínimo:** `minWidth` 800 e `minHeight` 500, em `tauri.conf.json` e `tauri.macos.conf.json` (o do macOS substitui a lista de janelas inteira). No Windows, o número conta a borda invisível: a página fica com 784×491. Vale para quem arrasta a borda; um `SetWindowPos` de outro programa passa por cima.
+- **Fechar:** o ✕ da interface chama `close()`. Ele passa pelo mesmo caminho do ✕ e do Alt+F4 do sistema, do ⌘Q do macOS e da barra de tarefas: dispara `onCloseRequested`, onde a interface pergunta sobre arquivos não salvos e, no fim, chama `destroy()` (veja [Fluxos](#fluxos)). Nunca chame `destroy()` direto do botão.
+- **Tema:** chame `setTheme('dark' | 'light')` com o tema da IDE. Ele muda o tom do Mica e do Acrylic no Windows e a aparência da janela e do vibrancy no macOS. `setTheme(null)` volta ao do sistema. Sem chamar, a janela segue o tema do sistema, que pode ser outro que o da IDE.
+- **Vidro e sólido:**
+  - A janela nasce transparente nos três sistemas: aparece atrás da página tudo o que ela não pinta. No modo sólido, pinte um fundo opaco no `html` ou no `body` e não ligue efeito. Com a página opaca, a tela é a de uma janela comum. O único custo é no Windows, ao redimensionar: o Tauri repinta por software o fundo da janela a cada passo (no teste, cerca de 4 ms de CPU a mais por passo numa janela de 1280×800, sem atraso visível). Parada, a janela não gasta nada a mais.
+  - **Ligar:** `setEffects({ effects: [Effect.Acrylic] })` no Windows 11 22H2 ou mais novo ou, no macOS, `setEffects({ effects: [Effect.UnderWindowBackground], state: EffectState.Active })`. Depois, deixe transparente ou semitransparente o fundo onde o vidro deve aparecer. O Acrylic desfoca o que estiver atrás, inclusive outras janelas; a cor vem do sistema e acompanha `setTheme` (o parâmetro `color` é ignorado a partir do 22H2), por isso a opacidade da página tem de ser medida, não calculada. O `Effect.Mica` mostra só o papel de parede borrado, nunca as janelas de trás.
+  - **Desligar:** pinte o fundo opaco primeiro e depois chame `clearEffects()`.
+  - **Ordem:** o efeito sempre por baixo da página. Pintar o fundo transparente antes do `setEffects` mostra por um instante a área de trabalho sem desfoque.
+  - **Versões do Windows:** o Mica só existe no Windows 11; no 10, o `setEffects` com Mica não faz nada e não dá erro. O Acrylic só é fluido a partir do Windows 11 22H2; antes disso (Windows 10 e Windows 11 21H2) ele usa uma API antiga que deixa a janela lenta ao arrastar e redimensionar. Ofereça o vidro só a partir do 22H2 (`navigator.userAgentData.getHighEntropyValues(['platformVersion'])` dá `platformVersion` 14 ou maior).
+  - **Linux:** não há desfoque, e `setEffects`/`clearEffects` não fazem nada. O vidro é só fundo semitransparente (o Rubaxe usa opacidade .92 para o texto continuar legível). Sem compositor (X11 puro), o que for transparente fica preto.
+  - O `backdrop-filter` do CSS desfoca só o que a página desenha, nunca a área de trabalho.
+
+### Menu nativo (macOS)
 
 | Comando | Parâmetros | Retorno | Erros |
 |---|---|---|---|
 | `set_menu` | `{ items: MenuEntry[] }` | `void` | `invalidInput` (atalho que o macOS não entende); `other` |
 
+- **Só no macOS.** No Windows e no Linux, `set_menu` responde sem fazer nada e `menu-command` nunca chega: o menu é HTML, na barra de título da interface.
 - Troca o menu inteiro da janela. O nível de cima são os submenus da barra (Arquivo, Editar…). Chame ao iniciar e de novo sempre que um rótulo, um atalho ou a lista de pastas recentes mudar. "Pastas recentes" é um `submenu` com um `command` por pasta, com o id que a interface quiser.
 - Clicar num `command` emite `menu-command` com o `id` dele. A interface executa o comando pelo registro, conferindo se ele está disponível agora.
-- `accelerator`: o atalho no formato do Tauri, já o do sistema em que a interface roda: `Ctrl+Shift+P`, `F1`, `Ctrl+K Ctrl+O` no Windows e no Linux; `Cmd+Shift+P`, `Ctrl+G` no macOS. Sem atalho: omita ou mande `null`.
-- **Windows e Linux:** o atalho aparece no menu só como texto, depois de uma tabulação. A tecla continua indo só para a página, e o despachante da interface é o único que a trata. Registrado no menu, o atalho roubaria a tecla da webview no Linux.
-- **macOS:**
-  - O atalho é registrado no menu. A página recebe a tecla antes do menu: chame `preventDefault()` em todo atalho que o despachante tratar, senão o menu também age.
-  - O núcleo põe antes dos itens da interface o menu do app, com "Sobre o Dark Triad" (painel nativo) e "Sair do Dark Triad" (⌘Q). Esse Sair fecha a janela pelo mesmo caminho do botão fechar (`onCloseRequested`), que pergunta sobre arquivos não salvos. Não mande "Arquivo: Sair" no macOS.
-  - O menu não tem "Fechar janela", então ⌘W fica livre para "Fechar editor". Até o primeiro `set_menu`, vale o menu padrão do Tauri.
-  - Itens com `role` viram os itens nativos de edição, com o rótulo enviado e o atalho padrão do sistema. Mande Desfazer, Refazer, Recortar, Copiar, Colar e Selecionar tudo com `role`: sem eles, ⌘C, ⌘V e companhia não chegam aos campos de texto da página. Clicar num item com `role` faz a ação nativa e não emite `menu-command`. Fora do macOS, `role` é ignorado e o item é um `command` comum.
+- `accelerator`: o atalho no formato do Tauri: `Cmd+Shift+P`, `Ctrl+G`, `F1`. Sem atalho: omita ou mande `null`.
+- O atalho é registrado no menu. A página recebe a tecla antes do menu: chame `preventDefault()` em todo atalho que o despachante tratar, senão o menu também age.
+- O núcleo põe antes dos itens da interface o menu do app, com "Sobre o Dark Triad" (painel nativo) e "Sair do Dark Triad" (⌘Q). Esse Sair fecha a janela pelo mesmo caminho do botão fechar (`onCloseRequested`), que pergunta sobre arquivos não salvos. Não mande "Arquivo: Sair" no macOS.
+- O menu não tem "Fechar janela", então ⌘W fica livre para "Fechar editor". Até o primeiro `set_menu`, vale o menu padrão do Tauri.
+- Itens com `role` viram os itens nativos de edição, com o rótulo enviado e o atalho padrão do sistema. Mande Desfazer, Refazer, Recortar, Copiar, Colar e Selecionar tudo com `role`: sem eles, ⌘C, ⌘V e companhia não chegam aos campos de texto da página. Clicar num item com `role` faz a ação nativa e não emite `menu-command`.
 
 ### Teclado
 
@@ -519,7 +548,7 @@ Sem payload (`null`). A lista de `project_files` mudou ou terminou de ser montad
 
 ### `menu-command`
 
-Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`).
+Payload: `string`, o `id` do item clicado no menu nativo (`set_menu`). Só no macOS.
 
 ### `project-event`
 
@@ -530,7 +559,7 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
 - **Ao iniciar:** chame `recent_folders()`. Se a primeira tem `exists: true`, chame `open_folder`. Se não, mostre a tela inicial. Clicar numa recente riscada chama `remove_recent_folder`.
 - **Restaurar abas:** depois de `open_folder`, chame `read_file` para cada caminho de `session.openFiles`, na ordem. Pule os que devolverem `notFound` e ative `session.activeFile`. O conteúdo vem do disco: alterações não salvas não são guardadas no MVP.
 - **Abrir pasta / abrir arquivo:** `pick_folder` → `open_folder`; `pick_file` → `read_file`.
-- **Fechar a janela:** use `getCurrentWindow().onCloseRequested(...)` de `@tauri-apps/api/window`. Com abas modificadas, chame `event.preventDefault()`, faça a pergunta única e, no fim, chame `save_session` e `getCurrentWindow().destroy()`. A permissão `core:window:allow-destroy` já está liberada. Sem `preventDefault`, a janela fecha sozinha.
+- **Fechar a janela:** use `getCurrentWindow().onCloseRequested(...)` de `@tauri-apps/api/window`. Com abas modificadas, chame `event.preventDefault()`, faça a pergunta única e, no fim, chame `save_session` e `getCurrentWindow().destroy()`. Sem `preventDefault`, a janela fecha sozinha. O ✕ da barra da interface chama `getCurrentWindow().close()`, que chega a esse mesmo `onCloseRequested`.
 
 ## Limites conhecidos
 
@@ -541,7 +570,10 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
   - Arquivos cujo nome não é UTF-8 válido não entram na lista.
   - Com `watchError`, o índice não acompanha as mudanças até a pasta ser aberta de novo.
   - Mudanças no `.git/info/exclude` só valem depois de reabrir a pasta, porque o observador ignora `.git`.
-- Menu no Linux: o texto do atalho fica alinhado pela tabulação, não à direita como no Windows.
+- Janela:
+  - Janela sem moldura, sombra, maximizar e o vidro só foram testados no Windows 11 (build 26300). No Linux e no macOS, nunca. Arrastar pela barra e redimensionar pelas quatro bordas foram testados com o mouse de verdade, nessa mesma máquina (2026-11-03).
+  - Linux: a janela transparente depende do compositor. Sem ele, ou com drivers que não lidam bem com janelas transparentes no WebKitGTK, as áreas que a página não pinta podem ficar pretas ou com restos da imagem anterior. Se isso aparecer, `"transparent": false` num `tauri.linux.conf.json` desliga o vidro só no Linux.
+  - macOS: a página transparente usa uma API privada do WebKit (`drawsBackground`), que o Tauri 2.12 ou mais novo usa sempre que a janela é transparente. Ela impede publicar na Mac App Store (o app é distribuído pelo GitHub) e pode parar de funcionar numa versão futura do macOS.
 - Projeto:
   - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`, também para compilar), e a busca de ferramentas não olha `C:\Program Files\LLVM\bin`. Cancelar a configuração ou a compilação encerra a árvore de processos com `taskkill /T /F`, nunca testado no Windows.
   - Unix: o cmake, o dotnet, os servidores de linguagem e os depuradores rodam numa sessão própria (`setsid`), e encerrar mata todos os processos dela. Quando um servidor ou depurador sai sozinho, o que ficou na sessão dele também é encerrado. Quem sai da sessão (daemons) sobrevive. O `lldb-server` que o lldb-dap inicia fica na sessão dele e morre junto (conferido no Linux).

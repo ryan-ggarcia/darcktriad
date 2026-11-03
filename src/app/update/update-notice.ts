@@ -53,96 +53,103 @@ export function amount(state: Installing): string {
 }
 
 /**
- * O aviso da atualização, abaixo do editor: nunca pega o foco. O `role=status` fica sempre na
- * página, porque leitores de tela só anunciam mudanças numa região que já existia. O progresso
- * fica fora dela, senão cada percentual seria lido em voz alta.
+ * O aviso da atualização, flutuando no canto do editor: nunca pega o foco. O `role=status` fica
+ * sempre na página (fora do cartão, que entra e sai animado), porque leitores de tela só anunciam
+ * mudanças numa região que já existia. O progresso fica fora dela, senão cada percentual seria lido
+ * em voz alta.
  */
 @Component({
   selector: 'app-update-notice',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[class.update-notice]': '!!updates.state()',
-    '[class.banner]': '!!updates.state()',
-    '[class.banner-info]': "!!updates.state() && updates.state()?.kind !== 'failed'",
-  },
   template: `
-    <p class="update-message" role="status" aria-atomic="true">{{ message() }}</p>
+    <p class="sr-only" role="status" aria-atomic="true">{{ message() }}</p>
     @if (updates.state(); as state) {
-      @if (state.kind === 'installing') {
-        <progress
-          class="update-progress"
-          max="100"
-          aria-label="Progresso da atualização"
-          [attr.value]="percent(state)"
-        ></progress>
-        <span>{{ amount(state) }}</span>
-      }
-      <!-- O botão clicado some com o estado: o foco volta para o editor, em vez de se perder. -->
-      <div class="update-actions" (click)="tabs.requestFocus()">
-        @switch (state.kind) {
-          @case ('available') {
-            <button
-              type="button"
-              class="primary"
-              title="Atualizar: baixa e instala a versão nova. Dá para continuar trabalhando."
-              (click)="updates.install()"
-            >
-              Atualizar
-            </button>
-            <button
-              type="button"
-              title="Depois: esconde este aviso até a próxima abertura"
-              (click)="updates.hide()"
-            >
-              Depois
-            </button>
+      <div
+        class="update-notice banner"
+        [class.banner-info]="state.kind !== 'failed'"
+        animate.leave="float-leave"
+      >
+        <p class="update-message" aria-hidden="true">{{ message() }}</p>
+        @if (state.kind === 'installing') {
+          <progress
+            class="update-progress"
+            max="100"
+            aria-label="Progresso da atualização"
+            [attr.value]="percent(state)"
+          ></progress>
+          <span>{{ amount(state) }}</span>
+        }
+        <!-- O botão clicado some com o estado: o foco volta para o editor, em vez de se perder. -->
+        <div class="update-actions" (click)="tabs.requestFocus()">
+          @switch (state.kind) {
+            @case ('available') {
+              <button
+                type="button"
+                class="primary"
+                title="Atualizar: baixa e instala a versão nova. Dá para continuar trabalhando."
+                (click)="updates.install()"
+              >
+                Atualizar
+              </button>
+              <button
+                type="button"
+                title="Depois: esconde este aviso até a próxima abertura"
+                (click)="updates.hide()"
+              >
+                Depois
+              </button>
+            }
+            @case ('ready') {
+              <button
+                type="button"
+                class="primary"
+                title="Reiniciar agora: pergunta antes sobre o que não foi salvo ou está rodando"
+                (click)="updates.restart()"
+              >
+                Reiniciar agora
+              </button>
+              <button
+                type="button"
+                title="Depois: continua nesta versão; o aviso volta pelo comando Ajuda: Verificar atualizações"
+                (click)="updates.hide()"
+              >
+                Depois
+              </button>
+            }
+            @case ('failed') {
+              <button
+                type="button"
+                class="primary"
+                title="Tentar de novo: verifica outra vez e refaz o que falhou"
+                (click)="updates.retry()"
+              >
+                Tentar de novo
+              </button>
+              <button type="button" title="Fechar este aviso" (click)="updates.hide()">
+                Fechar
+              </button>
+            }
+            @case ('upToDate') {
+              <button type="button" title="Fechar este aviso" (click)="updates.hide()">
+                Fechar
+              </button>
+            }
           }
-          @case ('ready') {
-            <button
-              type="button"
-              class="primary"
-              title="Reiniciar agora: pergunta antes sobre o que não foi salvo ou está rodando"
-              (click)="updates.restart()"
-            >
-              Reiniciar agora
-            </button>
-            <button
-              type="button"
-              title="Depois: continua nesta versão; o aviso volta pelo comando Ajuda: Verificar atualizações"
-              (click)="updates.hide()"
-            >
-              Depois
-            </button>
-          }
-          @case ('failed') {
-            <button
-              type="button"
-              class="primary"
-              title="Tentar de novo: verifica outra vez e refaz o que falhou"
-              (click)="updates.retry()"
-            >
-              Tentar de novo
-            </button>
-            <button type="button" title="Fechar este aviso" (click)="updates.hide()">Fechar</button>
-          }
-          @case ('upToDate') {
-            <button type="button" title="Fechar este aviso" (click)="updates.hide()">Fechar</button>
-          }
+        </div>
+        <!-- Texto vindo da internet: só como texto (textContent), nunca como HTML ou Markdown. -->
+        @if (state.kind === 'available' && state.notes?.trim()) {
+          <details class="update-notes">
+            <summary title="Ver novidades desta versão">Ver novidades</summary>
+            <div
+              class="update-notes-text"
+              tabindex="0"
+              role="region"
+              aria-label="Novidades"
+              [textContent]="state.notes"
+            ></div>
+          </details>
         }
       </div>
-      <!-- Texto vindo da internet: só como texto (textContent), nunca como HTML ou Markdown. -->
-      @if (state.kind === 'available' && state.notes?.trim()) {
-        <details class="update-notes">
-          <summary title="Ver novidades desta versão">Ver novidades</summary>
-          <div
-            class="update-notes-text"
-            tabindex="0"
-            role="region"
-            aria-label="Novidades"
-            [textContent]="state.notes"
-          ></div>
-        </details>
-      }
     }
   `,
 })

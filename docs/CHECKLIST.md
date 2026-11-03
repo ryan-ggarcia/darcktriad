@@ -8,12 +8,12 @@ Estado em 2026-11-03, na v0.8.1. Cada item tem a explicação em [RISCOS.md](RIS
 - [ ] Projeto com MSVC: critério 13 de [projeto.md](specs/projeto.md) — depende de corrigir o vcvars (item 5) (Windows)
 - [ ] Cancelar a compilação, parar e reiniciar o programa sem sobrar processo (`taskkill /T /F`): critério 14 de [compilar-e-executar.md](specs/compilar-e-executar.md) (Windows)
 - [ ] Compilar e executar inteiro (critérios 7 a 17 de compilar-e-executar.md) (Sem teste na janela › Compilar e executar)
-- [ ] Depuração com lldb-dap e netcoredbg; critério 19 (MSVC com lldb-dap) de [depuracao.md](specs/depuracao.md) (Depuração)
+- [ ] Depuração com lldb-dap e netcoredbg: feita em 2026-11-03 com Clang e nos projetos de exemplo; falta o critério 19 (MSVC com lldb-dap) de [depuracao.md](specs/depuracao.md) (Depuração)
 - [ ] Queda do depurador não deixa o programa rodando (Depuração › Windows)
 - [ ] Atualizar pela IDE com um release real, pelo `.exe` (NSIS) e pelo `.msi`: aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
 - [ ] Temporários do clangd na pasta `servers` do app e limpeza ao abrir (Linguagem › Servidores encerrados à força)
 - [ ] Testes de integração (cmake, dotnet, clangd, Roslyn reais) rodando no CI do Windows (Windows)
-- [ ] F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J com teclas reais não fazem nada de navegador: critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md) (Paleta e menu)
+- [x] F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J com teclas reais não fazem nada de navegador: critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md) (Windows 11, build de produção, 2026-11-03)
 
 ## 2. Validar no macOS (precisa de um Mac)
 
@@ -70,7 +70,7 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] Programas que saem da sessão (`setsid`, `nohup … &`) continuam depois de Parar ou de fechar o terminal (Terminal; Compilar e executar)
 - [ ] Terminal sem controle de fluxo: muita saída pode travar a interface por ~0,3 s (Terminal)
 - [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto; passou na janela (QA, 03b186a)
-- [ ] Fonte do terminal em Linux sem as fontes monoespaçadas conhecidas (Terminal)
+- [ ] Conferir no Linux o espaçamento da JetBrains Mono embutida no terminal (Terminal)
 - [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração) → passou na janela (QA, 03b186a)
 - [ ] Depuração: campos com nome (ex.: `Count`) junto com os blocos de coleções grandes (Depuração)
 - [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração) → passou na janela (QA, 03b186a)
@@ -85,7 +85,7 @@ Bugs e limites, do mais importante para o menos importante.
 
 Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esconderem um bug de verdade (detalhes em [RISCOS.md](RISCOS.md), seção Testes).
 
-- [ ] Testes de tempo do frontend (`explorer-view.spec.ts` "cada passo de rolagem…", `quick-open.spec.ts` 50.000 arquivos) falham com a máquina de 2 núcleos ocupada (ex.: a IDE instalada aberta, outro agente compilando). Passam sozinhos e no CI.
+- [x] Testes de tempo do frontend (`explorer-view.spec.ts` "cada passo de rolagem…", `quick-open.spec.ts` 50.000 arquivos): os arquivos agora rodam em série e o teste não repete mais. Com outro processo pesado na máquina ainda podem falhar (RISCOS.md, Testes).
 - [ ] Teste de velocidade `listing_a_folder_with_5000_files_fits_the_budget` falhou 1 vez no CI do macOS (2f45e62).
 - [ ] Testes do depurador rodam aqui com o lldb-dap 23, mas o CI usa o 21 (Ubuntu) e o do Xcode (macOS): um teste novo passou aqui e falhou lá (faltava o `pathFormat`, 6a2d037). Rodar localmente também com uma versão antiga, ou conferir o CI antes de considerar pronto.
 - [ ] Testes do lldb-dap deixam o adaptador rodando quando falham no meio (não há `stop` em caso de pânico).

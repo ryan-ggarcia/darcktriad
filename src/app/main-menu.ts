@@ -1,4 +1,4 @@
-import { effect, inject, Injectable, Injector } from '@angular/core';
+import { computed, effect, inject, Injectable, Injector } from '@angular/core';
 import { MenuEntry, RecentFolder } from './ipc';
 import { bindingsFor, CommandId, COMMANDS, Commands, isCommandId } from './shared/commands';
 import { formatAccelerator, Platform, PLATFORM } from './shared/keybindings';
@@ -141,7 +141,10 @@ function withoutLoneSeparators(items: MenuEntry[]): MenuEntry[] {
   );
 }
 
-/** Liga o menu nativo (docs/ipc.md, `set_menu` e `menu-command`) ao registro de comandos. */
+/**
+ * Os menus a partir do registro de comandos. No macOS, o menu nativo (docs/ipc.md, `set_menu` e
+ * `menu-command`); no Windows e no Linux, o HTML da barra da janela (shell/menu-bar.ts).
+ */
 @Injectable({ providedIn: 'root' })
 export class MainMenu {
   private readonly service = inject(WorkspaceService);
@@ -149,12 +152,15 @@ export class MainMenu {
   private readonly commands = inject(Commands);
   private readonly injector = inject(Injector);
 
-  /** Monta o menu agora e de novo quando as pastas recentes mudam. */
-  start(): void {
+  readonly entries = computed(() => buildMenu(this.workspace.recents(), PLATFORM));
+
+  /** No macOS, monta o menu nativo agora e de novo quando as pastas recentes mudam. */
+  start(platform: Platform = PLATFORM): void {
+    if (platform !== 'mac') return;
     effect(
       () => {
         this.service
-          .setMenu(buildMenu(this.workspace.recents(), PLATFORM))
+          .setMenu(buildMenu(this.workspace.recents(), platform))
           .catch((error) => console.warn('Falha ao montar o menu', error));
       },
       { injector: this.injector },
@@ -162,7 +168,8 @@ export class MainMenu {
     void this.service.onMenuCommand((id) => this.run(id));
   }
 
-  private run(id: string): void {
+  /** O item escolhido: uma pasta recente ou um comando do registro, se ele vale agora. */
+  run(id: string): void {
     if (id.startsWith(RECENT_FOLDER)) {
       const path = id.slice(RECENT_FOLDER.length);
       const recent = this.workspace.recents().find((item) => item.path === path);

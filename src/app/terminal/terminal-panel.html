@@ -7,14 +7,45 @@
   tabindex="0"
   [attr.aria-valuenow]="height()"
   (pointerdown)="startResize($event)"
-  (keydown.arrowup)="resizeTo(height() + 20)"
-  (keydown.arrowdown)="resizeTo(height() - 20)"
+  (keydown.arrowup)="nudge(20)"
+  (keydown.arrowdown)="nudge(-20)"
 ></div>
 
 @let tab = panel.tab();
 @let problems = problemCount();
 <header class="panel-header">
   <div role="tablist" aria-label="Abas do painel">
+    <button
+      type="button"
+      role="tab"
+      id="panel-tab-terminal"
+      class="panel-tab"
+      aria-controls="panel-terminal"
+      [title]="commands.hint('Terminal', 'toggleTerminal')"
+      [class.active]="tab === 'terminal'"
+      [attr.aria-selected]="tab === 'terminal'"
+      (click)="terminals.show()"
+    >
+      Terminal
+    </button>
+    <button
+      type="button"
+      role="tab"
+      id="panel-tab-output"
+      class="panel-tab"
+      aria-controls="panel-output"
+      [title]="
+        commands.hint(
+          'Saída: o log do projeto (CMake ou dotnet), da compilação e dos servidores de linguagem',
+          'toggleOutput'
+        )
+      "
+      [class.active]="tab === 'output'"
+      [attr.aria-selected]="tab === 'output'"
+      (click)="panel.show('output')"
+    >
+      Saída
+    </button>
     <button
       type="button"
       role="tab"
@@ -39,33 +70,15 @@
     <button
       type="button"
       role="tab"
-      id="panel-tab-output"
+      id="panel-tab-debug"
       class="panel-tab"
       aria-controls="panel-output"
-      [title]="
-        commands.hint(
-          'Saída: o log do projeto (CMake ou dotnet), da compilação e dos servidores de linguagem',
-          'toggleOutput'
-        )
-      "
-      [class.active]="tab === 'output'"
-      [attr.aria-selected]="tab === 'output'"
-      (click)="panel.show('output')"
+      title="Depuração: o log do depurador (o mesmo canal Depuração da Saída)"
+      [class.active]="tab === 'debug'"
+      [attr.aria-selected]="tab === 'debug'"
+      (click)="panel.show('debug')"
     >
-      Saída
-    </button>
-    <button
-      type="button"
-      role="tab"
-      id="panel-tab-terminal"
-      class="panel-tab"
-      aria-controls="panel-terminal"
-      [title]="commands.hint('Terminal', 'toggleTerminal')"
-      [class.active]="tab === 'terminal'"
-      [attr.aria-selected]="tab === 'terminal'"
-      (click)="terminals.show()"
-    >
-      Terminal
+      Depuração
     </button>
   </div>
   <div class="panel-actions" role="toolbar" aria-label="Ações do painel">
@@ -82,7 +95,7 @@
         }
       </select>
     }
-    @if (tab === 'output' && output.lines().length) {
+    @if ((tab === 'output' || tab === 'debug') && output.lines().length) {
       <button
         type="button"
         class="panel-text-button"
@@ -103,6 +116,20 @@
         <app-icon name="add" />
       </button>
     }
+    <button
+      type="button"
+      class="icon-button"
+      [attr.aria-label]="panel.maximized() ? 'Recolher painel' : 'Expandir painel'"
+      [attr.aria-pressed]="panel.maximized()"
+      [title]="
+        panel.maximized()
+          ? 'Recolher painel: volta à altura de antes e mostra os editores'
+          : 'Expandir painel: ocupa a área dos editores'
+      "
+      (click)="panel.maximized.set(!panel.maximized())"
+    >
+      <app-icon [name]="panel.maximized() ? 'chevron-down' : 'chevron-up'" />
+    </button>
     <button
       type="button"
       class="icon-button"
@@ -131,8 +158,8 @@
   id="panel-output"
   class="panel-body"
   role="tabpanel"
-  aria-labelledby="panel-tab-output"
-  [hidden]="tab !== 'output'"
+  [attr.aria-labelledby]="tab === 'debug' ? 'panel-tab-debug' : 'panel-tab-output'"
+  [hidden]="tab !== 'output' && tab !== 'debug'"
 >
   <app-output-view />
 </div>

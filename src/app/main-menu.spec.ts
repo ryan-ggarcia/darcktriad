@@ -19,8 +19,8 @@ function item(items: MenuEntry[], label: string): Command | undefined {
 
 describe('menu principal', () => {
   const recents = [
-    { path: 'C:\\proj', exists: true },
-    { path: 'C:\\velha', exists: false },
+    { path: 'C:\\proj', exists: true, lastOpened: null },
+    { path: 'C:\\velha', exists: false, lastOpened: null },
   ];
 
   it('tem só os menus e comandos que já existem, com o atalho de cada um', () => {
@@ -99,13 +99,13 @@ describe('menu principal', () => {
     expect(item(file, 'Fechar pasta')?.accelerator).toBeNull();
   });
 
-  it('chama set_menu ao iniciar e executa o comando escolhido no menu pelo registro', async () => {
+  it('no macOS, chama set_menu ao iniciar e executa o comando escolhido no menu nativo', async () => {
     const fakes = createFakes();
     TestBed.configureTestingModule({ providers: fakes.providers });
     const ran: string[] = [];
     TestBed.inject(Commands).register({ showCommands: () => ran.push('showCommands') });
-    TestBed.inject(MainMenu).start();
-    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    TestBed.inject(MainMenu).start('mac');
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true, lastOpened: null }];
     await TestBed.inject(Workspace).start();
     TestBed.tick();
     await settle();
@@ -118,5 +118,17 @@ describe('menu principal', () => {
     fakes.workspace.menuCommand!('showCommands');
     fakes.workspace.menuCommand!('naoExiste');
     expect(ran).toEqual(['showCommands']);
+  });
+
+  it('no Windows e no Linux, não usa o menu nativo: a barra superior desenha o mesmo registro', async () => {
+    const fakes = createFakes();
+    TestBed.configureTestingModule({ providers: fakes.providers });
+    const menu = TestBed.inject(MainMenu);
+    menu.start('windows');
+    TestBed.tick();
+    await settle();
+
+    expect(fakes.workspace.menus).toEqual([]);
+    expect(menu.entries()).toContainEqual(expect.objectContaining({ label: 'Arquivo' }));
   });
 });

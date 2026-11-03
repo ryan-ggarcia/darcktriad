@@ -20,8 +20,9 @@ export class OutputChannels {
       ...(this.debug.state() || this.debug.log().length ? [DEBUG_CHANNEL] : []),
     ];
   });
-  /** O escolhido, ou o primeiro que houver. */
+  /** O escolhido, ou o primeiro que houver. Na aba Depuração, sempre o canal dela. */
   readonly current = computed(() => {
+    if (this.panel.tab() === 'debug') return DEBUG_CHANNEL;
     const chosen = this.panel.outputChannel();
     return chosen && this.channels().includes(chosen) ? chosen : (this.channels()[0] ?? null);
   });

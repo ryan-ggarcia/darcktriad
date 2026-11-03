@@ -84,7 +84,7 @@ No IntelliJ/CLion é difícil saber o que cada coisa faz e onde fica. Quero digi
 
 **Menu principal**
 
-1. É um menu nativo nos três sistemas, gerado a partir do registro de comandos, com o atalho de cada item. Os menus são:
+1. É gerado a partir do registro de comandos, com o atalho de cada item: menu nativo no macOS, menu da própria interface no Windows e no Linux. Os menus são:
    - **Arquivo:** Novo arquivo, Abrir arquivo, Abrir pasta, Pastas recentes, Salvar, Salvar como, Salvar tudo, Fechar editor, Fechar pasta, Sair.
    - **Editar:** Desfazer, Refazer, Recortar, Copiar, Colar, Localizar, Substituir, Comentar linha.
    - **Ver:** Paleta de comandos, Abrir rápido, Explorador, Executar e Depurar, Problemas, Saída, Terminal, Mostrar/ocultar barra lateral.

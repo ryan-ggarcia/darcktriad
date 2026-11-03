@@ -28,13 +28,13 @@ describe('App', () => {
 
   it('sem pasta, mostra a tela inicial com as recentes (a que sumiu, riscada)', async () => {
     fakes.workspace.recents = [
-      { path: 'C:\\velha', exists: false },
-      { path: 'C:\\proj', exists: true },
+      { path: 'C:\\velha', exists: false, lastOpened: null },
+      { path: 'C:\\proj', exists: true, lastOpened: null },
     ];
 
     const page = await render();
 
-    expect(page.querySelector('.welcome-actions')?.textContent).toContain('Abrir pasta');
+    expect(page.querySelector('.welcome-cards')?.textContent).toContain('Abrir pasta');
     const recents = [...page.querySelectorAll('.recent')];
     expect(recents.map((item) => item.querySelector('.recent-name')?.textContent)).toEqual([
       'velha',
@@ -45,7 +45,7 @@ describe('App', () => {
   });
 
   it('reabre a última pasta e mostra a árvore na ordem do núcleo, sem itens escondidos', async () => {
-    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true, lastOpened: null }];
     fakes.explorer.add(
       'C:\\proj\\app\\',
       'C:\\proj\\core\\',
@@ -68,7 +68,7 @@ describe('App', () => {
   });
 
   it('todo botão visível tem dica, com o atalho quando há', async () => {
-    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true, lastOpened: null }];
     fakes.explorer.add('C:\\proj\\main.cpp');
 
     const page = await render();
@@ -76,9 +76,9 @@ describe('App', () => {
     const buttons = [...page.querySelectorAll('button')];
     expect(buttons.length).toBeGreaterThan(4);
     for (const button of buttons) expect(button.title, button.outerHTML).not.toBe('');
-    expect(page.querySelector('.activity-button')?.getAttribute('title')).toBe(
-      'Explorador (Ctrl+Shift+E)',
-    );
+    expect(
+      page.querySelector('.activity-button[aria-label=Explorador]')?.getAttribute('title'),
+    ).toBe('Explorador (Ctrl+Shift+E)');
   });
 
   it('Ctrl+Shift+P abre a paleta; Ctrl+K mostra o acorde na barra de status', async () => {
@@ -103,11 +103,13 @@ describe('App', () => {
       'Paleta de comandos',
     );
     expect(page.querySelector<HTMLInputElement>('.quick-input')?.value).toBe('>');
-    expect(fakes.workspace.menus.length).toBeGreaterThan(0);
+    // Fora do macOS o menu é o da barra superior, em HTML; o nativo não é usado.
+    expect(page.querySelector('[role=menubar]')?.textContent).toContain('Arquivo');
+    expect(fakes.workspace.menus).toEqual([]);
   });
 
   it('projeto CMake: barra de status, escolha da configuração pela paleta e fechar a pasta', async () => {
-    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true }];
+    fakes.workspace.recents = [{ path: 'C:\\proj', exists: true, lastOpened: null }];
     const page = await render();
     fakes.project.emitState({
       root: 'C:\\proj',
@@ -145,7 +147,7 @@ describe('App', () => {
   });
 
   it('projeto .NET: barra de status, comandos do projeto e canal dotnet na Saída', async () => {
-    fakes.workspace.recents = [{ path: 'C:\\hello-cs', exists: true }];
+    fakes.workspace.recents = [{ path: 'C:\\hello-cs', exists: true, lastOpened: null }];
     const page = await render();
     const commands = TestBed.inject(Commands);
     expect(commands.isAvailable('reconfigure')).toBe(false);
@@ -175,6 +177,25 @@ describe('App', () => {
     const options = page.querySelectorAll('.panel-channel option');
     expect([...options].map((option) => option.textContent)).toEqual(['dotnet', 'Build']);
     expect(page.querySelector('app-output-view')?.textContent).toContain('CMake ou .NET');
+  });
+
+  it('a largura da barra lateral mudada pelas setas vale na próxima abertura', async () => {
+    localStorage.clear();
+    let page = await render();
+    const width = () => page.querySelector<HTMLElement>('.sidebar')!.style.width;
+    expect(width()).toBe('260px');
+
+    page
+      .querySelector('.sidebar-sash')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    TestBed.tick();
+    expect(width()).toBe('280px');
+
+    TestBed.resetTestingModule();
+    fakes = createFakes();
+    page = await render();
+    expect(width()).toBe('280px');
+    localStorage.clear();
   });
 
   it('bloqueia F5 e Ctrl+R, que recarregariam a página e perderiam o que não foi salvo', async () => {

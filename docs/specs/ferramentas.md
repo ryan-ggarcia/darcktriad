@@ -44,9 +44,9 @@ Origem = a página do próprio projeto que manda baixar dali.
 **clangd + lldb-dap** (Apache-2.0 com exceção LLVM)
 - **Plataformas:** Windows x64.
 - **Onde o projeto manda baixar:** [releases do LLVM](https://github.com/llvm/llvm-project/releases). O README do lldb-dap indica esses pacotes.
-- **Arquivo:** `https://github.com/llvm/llvm-project/releases/download/llvmorg-<v>/clang+llvm-<v>-x86_64-pc-windows-msvc.tar.zst`, de 277 MB. Só os arquivos listados no manifesto são extraídos.
+- **Arquivo:** `https://github.com/llvm/llvm-project/releases/download/llvmorg-<v>/LLVM-<v>-win64.msi`, de 611 MB, extraído sem instalar (`msiexec /a`). É o único pacote Windows x64 com o `lldb-dap`: o `clang+llvm-<v>-x86_64-pc-windows-msvc.tar.zst`, de 264 MB, tem o clang e o clangd, mas nenhum LLDB (conferido na 23.1.4). Só os arquivos listados no manifesto são extraídos.
 - **Integridade publicada pelo projeto:** `.jsonl` com atestação Sigstore de proveniência SLSA, gerada pelo workflow `release-tasks.yml` (conferida pela API). Há também `.sig` GPG das chaves dos gerentes de release em [releases.llvm.org/release-keys.asc](https://releases.llvm.org/release-keys.asc). O próprio release explica como verificar ([llvmorg-23.1.3](https://github.com/llvm/llvm-project/releases/tag/llvmorg-23.1.3)).
-- **Assinatura do binário:** Authenticode a confirmar pelo QA.
+- **Assinatura do binário:** nenhuma. O MSI, o `clang.exe`, o `clangd.exe` e o `lldb-dap.exe` vêm sem Authenticode (conferido na 23.1.4).
 
 **CMake** (BSD-3-Clause)
 - **Plataformas:** Windows x64, macOS universal, Linux x86_64/aarch64.
@@ -83,6 +83,7 @@ Origem = a página do próprio projeto que manda baixar dali.
 - **Assinatura:**
   - assinatura de **autor** "Microsoft Corporation" e **referenda do repositório** "NuGet.org Repository by Microsoft", conferidas com `dotnet nuget verify --all`;
   - binários com Authenticode válido de "Microsoft Corporation (.NET)" (conferido).
+- **Instalado com `dotnet tool install -g`:** no Windows, isso só cria um `.cmd` em `~/.dotnet/tools`. A busca aceita o `.cmd` quando não há `.exe` na mesma pasta.
 
 **Runtime .NET 10** (MIT)
 - **Para quê:** só para rodar o servidor Roslyn, e só se não houver .NET ≥ 10.

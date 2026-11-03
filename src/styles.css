@@ -1,45 +1,149 @@
 /*
- * Tema único: gradiente estático de preto para roxo em volta de cartões arredondados.
- * O editor e o terminal são cartões de cor sólida (--bg), para o código ficar legível e rápido.
- * Regras de velocidade: sem backdrop-filter, blur nem sombra animada; animações só com transform e
- * opacity, e nunca em algo que muda a cada tecla.
+ * Dois temas (escuro e claro, html[data-theme]) e dois materiais (vidro e sólido, html[data-material]).
+ * Atrás de tudo há um gradiente (body::before), do canto inferior esquerdo até a cor da janela.
+ * Sólido: gradiente bem suave e painéis opacos. Vidro: o gradiente fica translúcido sobre o efeito do
+ * sistema (Acrylic no Windows 11 22H2 ou mais novo, vibrancy no macOS; no Linux só a transparência,
+ * mais opaca) e os painéis somam uma camada por cima; o contraste foi conferido com área de trabalho
+ * branca e preta atrás. O explorador é sólido nos dois.
+ * Regras de velocidade: backdrop-filter só nas superfícies flutuantes (menus, paleta, diálogos,
+ * avisos), nunca nos painéis grandes; animações de 150 a 250 ms só com transform e opacity, e nunca
+ * em algo que muda a cada tecla. Nenhum painel tem gradiente próprio.
  */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
-  --bg-window: linear-gradient(135deg, #000000 0%, #12072a 45%, #3a1a78 100%);
-  /* Igual ao fundo do tema do Monaco (monaco-theme.ts) e do xterm (terminal-screen.ts). */
-  --bg: #0c0915;
-  --bg-side: #150d26;
-  --bg-card: linear-gradient(180deg, #1b1032 0%, #110a1f 100%);
-  --bg-input: #221739;
-  --bg-hover: #2a1c47;
-  --bg-selected: #43227f;
-  --bg-status: #241146;
+  --bg-window: #080612;
+  --gradient-from: 36 14 75;
+  --gradient-to: 8 6 18;
+  --gradient-alpha: 100%;
+  /* Os painéis (editor, terminal, explorador): iguais ao fundo do Monaco (monaco-theme.ts). */
+  --bg: #0d0919;
+  /* O explorador: sólido também no vidro. */
+  --bg-side: #0d0919;
+  /* O que flutua: menus, paleta, diálogos, avisos. */
+  --bg-raised: #140e25;
+  --bg-input: #1a1230;
+  --bg-hover: #1e1535;
+  --bg-selected: #2a1652;
   --bg-banner: #4d3b05;
-  --bg-banner-info: #2f1a5e;
-  --fg: #e2dcef;
-  --fg-muted: #a99dc2;
+  --bg-banner-info: #2a1652;
+  --bg-error: #5a1d1d;
+  --fg: #f5f3ff;
+  --fg-muted: #b9add8;
   --fg-strong: #ffffff;
-  --border: #2f2249;
-  --border-strong: #4b3673;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --accent-soft: #c4b5fd;
-  --focus: #a78bfa;
-  --error: #f14c4c;
-  --warning: #cca700;
-  --info: #3794ff;
+  --border: #22173a;
+  --border-strong: #3b2862;
+  --accent: #7825f5;
+  --accent-hover: #6a1fe0;
+  /* O destaque como texto e ícone (5:1 sobre o painel). */
+  --accent-soft: #c49bff;
+  --focus: #a855ff;
+  --glow: 0 0 0 1px rgb(168 85 255 / 45%), 0 0 14px rgb(120 37 245 / 35%);
+  --shadow-float: 0 10px 32px rgb(0 0 0 / 55%);
+  --error: #ff6b81;
+  --warning: #f2c14e;
+  --info: #6cb6ff;
+  --ok: #7ee2a8;
   /* Depuração: o laranja do VS Code, escurecido para o texto branco passar de 4,5:1. */
   --bg-debugging: #b5512a;
   --breakpoint: #e51400;
   --breakpoint-unbound: #848484;
   --current-line: rgb(255 255 0 / 25%);
   --current-arrow: #ffcc00;
+  --close-hover: #e81123;
+  --title-height: 40px;
   --row: 22px;
   --gap: 6px;
   --radius: 6px;
-  --radius-card: 8px;
+  --radius-card: 10px;
   --motion: 200ms;
+  --code-font: 'JetBrains Mono', Consolas, 'Cascadia Mono', Menlo, 'DejaVu Sans Mono', monospace;
   color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --bg-window: #f3f0fa;
+  --gradient-from: 228 216 249;
+  --gradient-to: 243 240 250;
+  --bg: #ffffff;
+  --bg-side: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-input: #f4f1fb;
+  --bg-hover: #eee8fb;
+  --bg-selected: #eadcff;
+  --bg-banner: #fff3d1;
+  --bg-banner-info: #f1e9ff;
+  --bg-error: #fde8ec;
+  --fg: #1b1433;
+  --fg-muted: #5a4e78;
+  --fg-strong: #0e0920;
+  --border: #e2d9f5;
+  --border-strong: #cdbfea;
+  --accent-hover: #6a1fe0;
+  --accent-soft: #6a1fe0;
+  --focus: #7825f5;
+  --glow: 0 0 0 1px rgb(120 37 245 / 35%), 0 0 12px rgb(120 37 245 / 18%);
+  --shadow-float: 0 10px 32px rgb(42 29 69 / 18%);
+  --error: #c4213b;
+  --warning: #8a5a00;
+  --info: #1f5fcf;
+  --ok: #18794e;
+  --breakpoint-unbound: #6f6491;
+  --current-line: rgb(255 200 0 / 30%);
+  --current-arrow: #b38600;
+  color-scheme: light;
+}
+
+/*
+ * Vidro: como no Rubaxe, o destaque a 60% com preto (no claro, a 40% com branco) até a cor da janela.
+ * A opacidade de cada sistema: a menor que mantém 4,5:1 com área de trabalho branca ou preta atrás.
+ */
+[data-material='glass'] {
+  --bg-window: transparent;
+  --gradient-from: 72 22 147;
+  --gradient-alpha: 85%;
+  --bg: rgb(13 9 25 / 75%);
+  --bg-raised: rgb(20 14 37 / 88%);
+}
+
+[data-material='glass'][data-theme='light'] {
+  --gradient-from: 201 168 251;
+  --gradient-to: 255 255 255;
+  --gradient-alpha: 94%;
+  --bg: rgb(255 255 255 / 75%);
+  --bg-raised: rgb(255 255 255 / 94%);
+}
+
+/* Medidas no Windows 11: o pior texto fica em 4,5:1 com branco (escuro) e preto (claro) atrás. */
+[data-material='glass'][data-platform='windows'] {
+  --gradient-alpha: 65%;
+}
+
+[data-material='glass'][data-platform='windows'][data-theme='light'] {
+  --gradient-alpha: 70%;
+}
+
+/* Sem desfoque no Linux: atrás fica a área de trabalho nítida, então quase opaco. */
+[data-material='glass'][data-platform='linux'] {
+  --gradient-alpha: 94%;
+  --bg-raised: rgb(20 14 37 / 96%);
+}
+
+[data-material='glass'][data-platform='linux'][data-theme='light'] {
+  --gradient-alpha: 96%;
+  --bg-raised: rgb(255 255 255 / 97%);
 }
 
 * {
@@ -66,6 +170,30 @@ body {
 
 html {
   background: var(--bg-window);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to top right,
+    rgb(var(--gradient-from) / var(--gradient-alpha)),
+    rgb(var(--gradient-to) / var(--gradient-alpha)) 70%
+  );
+}
+
+/* Só para leitores de tela: a região de aviso que precisa existir antes do texto. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 ::-webkit-scrollbar {
@@ -106,7 +234,7 @@ button:hover {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--fg-strong);
+  color: #ffffff;
 }
 
 button.primary:hover {
@@ -116,7 +244,6 @@ button.primary:hover {
 /* Pressionar dá retorno; as linhas de listas ficam de fora, para a rolagem seguir leve. */
 button.primary,
 .dialog-buttons button,
-.welcome-actions button,
 .icon-button,
 .activity-button {
   transition: transform 150ms ease-out;
@@ -124,7 +251,6 @@ button.primary,
 
 button.primary:active,
 .dialog-buttons button:active,
-.welcome-actions button:active,
 .icon-button:active:not(:disabled),
 .activity-button:active {
   transform: scale(0.95);
@@ -212,6 +338,39 @@ kbd {
   color: #6fd3e0;
 }
 
+/* No claro, as mesmas cores mais escuras, para o ícone não sumir no branco. */
+[data-theme='light'] .icon-file-c {
+  color: #1f6fd1;
+}
+
+[data-theme='light'] .icon-file-cpp {
+  color: #7a3fe0;
+}
+
+[data-theme='light'] .icon-file-header {
+  color: #4a5fd8;
+}
+
+[data-theme='light'] .icon-file-cs {
+  color: #1c8a55;
+}
+
+[data-theme='light'] .icon-file-cmake {
+  color: #c46a12;
+}
+
+[data-theme='light'] .icon-file-project {
+  color: #c2378f;
+}
+
+[data-theme='light'] .icon-file-json {
+  color: #9a7400;
+}
+
+[data-theme='light'] .icon-file-markdown {
+  color: #0e7e91;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -250,10 +409,25 @@ kbd {
   border-left-color: var(--focus);
 }
 
-/* Abaixo do editor: não empurra as abas, de que a barra flutuante de depuração depende. */
+/* Flutua no canto do editor: não empurra as abas nem o código. */
 .update-notice {
-  flex: none;
-  margin: 0 var(--gap) var(--gap);
+  position: absolute;
+  z-index: 15;
+  right: 16px;
+  bottom: 16px;
+  width: min(440px, calc(100% - 32px));
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+  animation: pop-in var(--motion) ease-out;
+}
+
+.update-notice.banner-info {
+  border-left-color: var(--focus);
 }
 
 .update-message {
@@ -333,18 +507,18 @@ kbd {
   }
 }
 
-@keyframes dialog-in {
+/* Menus, paleta, diálogos e avisos: aparecem e somem com um deslize curto. */
+@keyframes pop-in {
   from {
     opacity: 0;
-    transform: translateY(-8px) scale(0.97);
+    transform: translateY(-6px) scale(0.98);
   }
 }
 
-/* Para o que já se centraliza com translateX(-50%). */
-@keyframes float-in {
-  from {
+@keyframes pop-out {
+  to {
     opacity: 0;
-    transform: translate(-50%, -6px);
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -354,20 +528,219 @@ kbd {
   }
 }
 
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes tab-out {
+  to {
+    opacity: 0;
+    transform: scaleX(0.9);
+  }
+}
+
 /*
- * Layout fixo: barra de atividades | barra lateral | editores, e a barra de status embaixo.
- * Os vãos são margens, não `gap`: o painel e a barra lateral podem estar ocultos. minmax(0, 1fr):
- * sem ele, a barra de status empurra os editores para fora de uma janela estreita.
+ * Layout: barra superior em cima; barra de atividades | barra lateral | editores e painel; barra de
+ * status embaixo. Os vãos são margens, não `gap`: o painel e a barra lateral podem estar ocultos.
+ * minmax(0, 1fr): sem ele, a barra de status empurra os editores para fora de uma janela estreita.
  */
 app-root {
   display: grid;
   grid-template:
+    'title title title' var(--title-height)
     'activity side main' minmax(0, 1fr)
     'activity side panel' auto
-    'status status status' calc(22px + var(--gap))
+    'status status status' calc(24px + var(--gap))
     / 48px auto minmax(0, 1fr);
   height: 100vh;
-  padding: var(--gap) var(--gap) var(--gap) 0;
+}
+
+/* Barra superior: logo, menus, busca, tema, configurações e os botões da janela. */
+.title-bar {
+  grid-area: title;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 14px;
+  user-select: none;
+}
+
+/* macOS: as bolinhas do sistema ficam por cima, à esquerda. */
+.title-bar.mac {
+  padding-left: 78px;
+  padding-right: 8px;
+}
+
+.title-logo {
+  color: var(--focus);
+  filter: drop-shadow(0 0 6px rgb(168 85 255 / 50%));
+}
+
+.title-logo svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.title-name {
+  margin: 0 10px 0 6px;
+  font-weight: 600;
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.menu-bar {
+  display: flex;
+  min-width: 0;
+}
+
+.menu-bar-item {
+  position: relative;
+}
+
+.menu-bar-button {
+  height: 28px;
+  padding: 0 9px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  white-space: nowrap;
+}
+
+.menu-bar-button:hover,
+.menu-bar-button.open {
+  color: var(--fg-strong);
+  background: var(--bg-hover);
+}
+
+.title-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.title-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(440px, 100%);
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--fg-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 150ms ease-out;
+}
+
+.title-search:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.title-search-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-search kbd {
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+/* Janela estreita: a busca encolhe até o ícone; o atalho continua na dica. */
+@media (max-width: 860px) {
+  .title-search-text {
+    display: none;
+  }
+
+  .title-search {
+    justify-content: center;
+    width: auto;
+    min-width: 30px;
+    padding: 0 6px;
+  }
+}
+
+@media (max-width: 760px) {
+  .title-search kbd {
+    display: none;
+  }
+}
+
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+}
+
+.title-action {
+  width: 30px;
+  height: 30px;
+  color: var(--fg-muted);
+}
+
+.title-action:hover,
+.title-action[aria-expanded='true'] {
+  color: var(--fg-strong);
+  background: var(--bg-hover);
+}
+
+/* Do tamanho dos botões do Windows 11; o ✕ fica vermelho no hover. */
+.window-controls {
+  display: flex;
+  align-self: stretch;
+}
+
+.window-button {
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  transition: background-color 150ms ease-out;
+}
+
+.window-button:hover {
+  background: var(--bg-hover);
+}
+
+.window-close:hover {
+  color: #ffffff;
+  background: var(--close-hover);
+}
+
+.window-close:active {
+  background: #c50f1f;
+}
+
+.window-button .icon svg {
+  stroke-width: 1;
 }
 
 .activity-bar {
@@ -376,6 +749,7 @@ app-root {
   flex-direction: column;
   gap: 4px;
   align-items: center;
+  padding-bottom: 6px;
 }
 
 .activity-button {
@@ -394,6 +768,7 @@ app-root {
 
 .activity-button:hover {
   color: var(--fg-strong);
+  background: var(--bg-hover);
 }
 
 .activity-button::before {
@@ -419,23 +794,53 @@ app-root {
 
 .activity-button .icon,
 .activity-button .icon svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .activity-button.active {
-  color: var(--fg-strong);
+  color: var(--accent-soft);
   background: var(--bg-selected);
+  box-shadow: var(--glow);
+}
+
+/* Configurações no pé da barra, como no VS Code. */
+.activity-settings {
+  margin-top: auto;
+}
+
+.menu-button {
+  position: relative;
+  display: inline-flex;
 }
 
 .sidebar {
   grid-area: side;
-  width: min(260px, 40vw);
+  position: relative;
+  max-width: 50vw;
   min-height: 0;
   margin-right: var(--gap);
-  background: var(--bg-card);
+  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+}
+
+/* Ocupa o vão entre a barra lateral e os editores. */
+.sidebar-sash {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  right: calc(-1px - var(--gap));
+  width: var(--gap);
+  border-radius: 3px;
+  cursor: ew-resize;
+  transition: background-color 150ms ease-out;
+}
+
+.sidebar-sash:hover,
+.sidebar-sash:focus-visible {
+  background: var(--focus);
 }
 
 /*
@@ -447,6 +852,7 @@ app-root {
   position: relative;
   min-width: 0;
   min-height: 0;
+  margin-right: var(--gap);
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -457,24 +863,40 @@ app-root {
 .main:focus-within,
 .sidebar:focus-within,
 .panel:focus-within {
-  border-color: var(--accent);
+  border-color: var(--border-strong);
 }
 
-/* Cor sólida: a posição do cursor muda aqui a cada tecla. Rola quando a janela é estreita. */
+/* Painel maximizado: ocupa o lugar dos editores, que continuam abertos por baixo. */
+app-root.panel-maximized .main {
+  display: none;
+}
+
+app-root.panel-maximized .panel {
+  grid-row: 2 / 4;
+  height: auto !important;
+  max-height: none;
+  margin-top: 0;
+}
+
+app-root.panel-maximized .panel-sash {
+  display: none;
+}
+
+/* Sem fundo próprio: fica sobre a janela. A posição do cursor muda aqui a cada tecla. */
 .status-bar {
   grid-area: status;
+  margin-top: var(--gap);
+  /* Erros e avisos em cor ficariam abaixo de 4,5:1 direto sobre o vidro da janela. */
+  background: var(--bg);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  margin: var(--gap) 0 0 var(--gap);
-  padding: 0 12px;
+  padding: 0 10px;
   overflow-x: auto;
   scrollbar-width: none;
   white-space: nowrap;
-  background: var(--bg-status);
-  border-radius: var(--radius);
-  color: var(--fg);
+  color: var(--fg-muted);
   font-size: 12px;
   line-height: 22px;
 }
@@ -519,7 +941,34 @@ app-root {
 }
 
 .explorer-empty {
-  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 20px 20px;
+  text-align: center;
+}
+
+.empty-icon,
+.empty-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.empty-icon svg {
+  stroke-width: 0.8;
+}
+
+.empty-title {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.empty-text {
+  margin: 0 0 8px;
+  color: var(--fg-muted);
 }
 
 .tree {
@@ -556,8 +1005,7 @@ app-root {
 
 .tree:focus .tree-row.selected {
   background: var(--bg-selected);
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
+  box-shadow: var(--glow);
 }
 
 .tree-name {
@@ -610,42 +1058,126 @@ app-root {
   right: 0;
   padding: 4px 6px;
   white-space: normal;
-  background: #5a1d1d;
+  background: var(--bg-error);
   border: 1px solid var(--error);
   border-radius: 4px;
   color: var(--fg-strong);
   animation: message-in var(--motion) ease-out;
 }
 
+/* Menus: barra superior, configurações, recentes e o menu de contexto do explorador. */
 .menu {
   position: fixed;
-  z-index: 10;
+  z-index: 20;
   min-width: 220px;
-  padding: 4px;
+  /* Caminhos longos (Pastas recentes) cortam com reticências; o caminho inteiro fica na dica. */
+  max-width: min(440px, calc(100vw - 16px));
+  padding: 5px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-side);
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: 0 4px 16px #000a;
-  animation: message-in 150ms ease-out;
+  box-shadow: var(--shadow-float);
+  animation: pop-in 150ms ease-out;
+}
+
+.menu-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+}
+
+.menu-popup[data-placement='below-end'] {
+  left: auto;
+  right: 0;
+}
+
+.menu-popup[data-placement='right-end'] {
+  top: auto;
+  bottom: 0;
+  left: calc(100% + 8px);
+}
+
+.menu-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.submenu {
+  position: absolute;
+  top: -6px;
+  left: calc(100% + 2px);
 }
 
 .menu-item {
   display: flex;
-  justify-content: space-between;
-  padding: 4px 12px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
   text-align: left;
+  white-space: nowrap;
+  color: var(--fg);
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 
 .menu-item:hover,
 .menu-item:focus {
   background: var(--accent);
-  color: var(--fg-strong);
+  color: #ffffff;
   outline: none;
+}
+
+.menu-item[aria-disabled='true'] {
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+.menu-item[aria-disabled='true']:hover,
+.menu-item[aria-disabled='true']:focus {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+}
+
+/* O foco pelo teclado continua visível mesmo no item apagado. */
+.menu-item[aria-disabled='true']:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.menu-check {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+
+.menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-shortcut {
+  margin-left: 24px;
+}
+
+.menu-item:hover:not([aria-disabled='true']) .menu-shortcut,
+.menu-item:focus:not([aria-disabled='true']) .menu-shortcut {
+  color: inherit;
+}
+
+.menu-arrow {
+  margin-right: -4px;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-strong);
 }
 
 /* Editores */
@@ -666,7 +1198,6 @@ app-root {
   height: 36px;
   padding: 3px 3px 0;
   overflow: auto hidden;
-  background: var(--bg-side);
   border-bottom: 1px solid var(--border);
   border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
 }
@@ -692,6 +1223,10 @@ app-root {
   color: var(--fg-muted);
   border-radius: var(--radius);
   cursor: pointer;
+  animation: tab-in 180ms ease-out;
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
 .tab:hover {
@@ -716,8 +1251,9 @@ app-root {
 }
 
 .tab.active {
-  background: var(--bg-input);
+  background: var(--bg-selected);
   color: var(--fg-strong);
+  box-shadow: var(--glow);
 }
 
 .tab.active::after {
@@ -771,15 +1307,17 @@ app-root {
 
 .switcher {
   position: fixed;
-  z-index: 10;
-  top: 48px;
-  left: 50%;
+  z-index: 20;
+  top: calc(var(--title-height) + 8px);
+  left: 0;
+  right: 0;
   width: min(480px, calc(100vw - 32px));
-  transform: translateX(-50%);
-  background: var(--bg-side);
+  margin: 0 auto;
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: 0 4px 16px #000a;
+  box-shadow: var(--shadow-float);
+  animation: pop-in 150ms ease-out;
 }
 
 .switcher ul {
@@ -813,108 +1351,220 @@ app-root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 10vh 24px 24px;
+  padding: 8vh 24px 24px;
   overflow: auto;
-  background:
-    radial-gradient(70% 80% at 85% 100%, #3a1a78 0%, transparent 70%),
-    linear-gradient(160deg, #0c0915 0%, #150d26 100%);
-  border-radius: calc(var(--radius-card) - 1px);
+  animation: fade-in var(--motion) ease-out;
+}
+
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .welcome-logo {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   color: var(--focus);
+  filter: drop-shadow(0 0 18px rgb(168 85 255 / 55%));
 }
 
 .welcome-logo svg {
-  width: 64px;
-  height: 64px;
-  stroke-width: 0.8;
+  width: 72px;
+  height: 72px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .welcome-title {
-  margin: 12px 0 4px;
-  font-size: 36px;
-  font-weight: 300;
-  letter-spacing: 0.02em;
+  margin: 16px 0 4px;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--fg-strong);
 }
 
 .welcome-tagline {
-  margin: 0 0 24px;
+  margin: 0;
+  font-size: 15px;
+  color: var(--fg);
+}
+
+.welcome-motto {
+  margin: 6px 0 28px;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+
+.welcome-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  width: min(680px, 100%);
+}
+
+.welcome-card {
+  display: grid;
+  grid-template:
+    'icon title' auto
+    'icon text' 1fr
+    'icon key' auto
+    / auto 1fr;
+  gap: 2px 12px;
+  padding: 14px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition:
+    transform 150ms ease-out,
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+.welcome-card:hover:not([aria-disabled='true']) {
+  background: var(--bg-input);
+  border-color: var(--focus);
+  box-shadow: var(--glow);
+  transform: translateY(-2px);
+}
+
+.welcome-card:active:not([aria-disabled='true']) {
+  transform: scale(0.98);
+}
+
+.welcome-card[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.welcome-card[aria-disabled='true'] .card-icon {
   color: var(--fg-muted);
 }
 
-.welcome-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+.card-icon {
+  grid-area: icon;
+  color: var(--accent-soft);
 }
 
-.welcome-actions button {
-  padding: 8px 16px;
+.card-icon,
+.card-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
-.welcome-actions kbd {
-  color: inherit;
-  opacity: 0.8;
+.card-title {
+  grid-area: title;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.card-text {
+  grid-area: text;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.welcome-card kbd {
+  grid-area: key;
+  justify-self: start;
+  margin: 6px 0 0;
+}
+
+.welcome-recents {
+  width: min(680px, 100%);
 }
 
 .welcome-subtitle {
-  align-self: stretch;
-  width: min(640px, 100%);
-  margin: 32px auto 8px;
+  margin: 32px 0 8px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-muted);
 }
 
 .recents {
-  width: min(640px, 100%);
   margin: 0;
   padding: 4px;
   list-style: none;
-  background: var(--bg-side);
   border: 1px solid var(--border);
-  border-radius: var(--radius-card);
+  border-radius: 12px;
 }
 
 .recent {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 5px 8px;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  color: var(--accent-soft);
+  gap: 4px;
+  border-radius: var(--radius);
+  transition: background-color 150ms ease-out;
 }
 
-.recent:hover {
+.recent:hover,
+.recent:focus-within {
   background: var(--bg-hover);
 }
 
-.recent.missing,
-.recent.missing .recent-name {
-  color: var(--fg-muted);
-  text-decoration: line-through;
+.recent-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.recent-open:hover {
+  background: transparent;
+}
+
+.recent-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .recent-name {
-  flex-shrink: 0;
+  color: var(--fg-strong);
   white-space: nowrap;
 }
 
 .recent-path {
   overflow: hidden;
   color: var(--fg-muted);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recent-date {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.recent.missing .recent-name,
+.recent.missing .recent-path {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+
+.recent-more {
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  color: var(--fg-muted);
+}
+
+.recent-more:hover,
+.recent-more[aria-expanded='true'] {
+  color: var(--fg-strong);
+  background: var(--bg-selected);
 }
 
 /* Perguntas modais */
@@ -923,22 +1573,48 @@ app-root {
   max-width: min(520px, calc(100vw - 32px));
   padding: 20px;
   color: var(--fg);
-  background: var(--bg-side);
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px #000c;
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  /* Some animado: display e overlay discretos seguram o diálogo na tela até o fim da transição. */
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  transition:
+    opacity var(--motion) ease-out,
+    transform var(--motion) ease-out,
+    overlay var(--motion) allow-discrete,
+    display var(--motion) allow-discrete;
 }
 
 .dialog[open] {
-  animation: dialog-in var(--motion) ease-out;
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .dialog[open] {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
 }
 
 .dialog::backdrop {
-  background: rgb(5 2 12 / 60%);
+  background: rgb(5 2 12 / 0%);
+  transition:
+    background-color var(--motion) ease-out,
+    overlay var(--motion) allow-discrete,
+    display var(--motion) allow-discrete;
 }
 
 .dialog[open]::backdrop {
-  animation: fade-in var(--motion) ease-out;
+  background: rgb(5 2 12 / 55%);
+}
+
+@starting-style {
+  .dialog[open]::backdrop {
+    background: rgb(5 2 12 / 0%);
+  }
 }
 
 .dialog-message {
@@ -967,7 +1643,9 @@ app-root {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  margin-top: var(--gap);
+  /* A altura lembrada pode ser de uma janela maior: os editores nunca somem (150px: terminal-panel.ts). */
+  max-height: max(100px, calc(100vh - var(--title-height) - 174px - var(--gap)));
+  margin: var(--gap) var(--gap) 0 0;
   padding-bottom: var(--radius-card);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1036,12 +1714,17 @@ app-root {
   border-bottom-color: var(--focus);
 }
 
+/* Trocar de aba: o conteúdo entra com um esmaecer curto. */
+.panel-body > :not([hidden]) {
+  animation: fade-in 150ms ease-out;
+}
+
 .panel-badge {
   min-width: 18px;
   padding: 0 5px;
   border-radius: 9px;
   background: var(--accent);
-  color: var(--fg-strong);
+  color: #ffffff;
   text-align: center;
 }
 
@@ -1124,6 +1807,11 @@ app-root {
   color: var(--fg-muted);
 }
 
+/* Sem nenhum erro ou aviso, o contador fica apagado. */
+.status-problems .zero {
+  color: var(--fg-muted);
+}
+
 /* Gravidade: a cor acompanha o ícone e o texto, nunca sozinha. */
 .severity-error {
   color: var(--error);
@@ -1152,12 +1840,7 @@ app-root {
   margin: 0;
   padding: 4px 20px;
   overflow: auto;
-  font:
-    12px/1.4 Consolas,
-    'Cascadia Mono',
-    Menlo,
-    'DejaVu Sans Mono',
-    monospace;
+  font: 12px/1.4 var(--code-font);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1219,6 +1902,11 @@ app-root {
   height: 100%;
 }
 
+/* O fundo do terminal é o do painel (terminal-screen.ts); o xterm.css pinta a rolagem de preto. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}
+
 .terminal-error {
   margin: 0;
   padding: 8px 0;
@@ -1266,19 +1954,21 @@ app-root {
 }
 
 /* Paleta de comandos, Abrir rápido e Ir para linha */
+/* Logo abaixo da busca da barra superior, de onde ela abre. */
 .quick-open {
   position: fixed;
-  z-index: 10;
-  top: 8px;
-  left: 50%;
+  z-index: 20;
+  top: calc(var(--title-height) - 4px);
+  left: 0;
+  right: 0;
   width: min(600px, calc(100vw - 32px));
-  transform: translateX(-50%);
+  margin: 0 auto;
   padding: 6px;
-  background: var(--bg-side);
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  box-shadow: 0 8px 32px #000c;
-  animation: float-in 150ms ease-out;
+  box-shadow: var(--shadow-float);
+  animation: pop-in 150ms ease-out;
 }
 
 .quick-input {
@@ -1473,7 +2163,7 @@ button.status-item:hover {
 .tool-mark {
   flex: none;
   width: 14px;
-  color: #89d185;
+  color: var(--ok);
 }
 
 .tool-bad .tool-mark {
@@ -1503,7 +2193,7 @@ button.status-item:hover {
 /* Depuração: barra de status, barra flutuante, faixa de pausa e margem do editor */
 .status-bar.debugging {
   background: var(--bg-debugging);
-  color: var(--fg-strong);
+  color: #ffffff;
 }
 
 .status-bar.debugging button.status-item:hover {
@@ -1512,7 +2202,7 @@ button.status-item:hover {
 
 /* Sobre o laranja, o roxo e as cores de gravidade somem: o ⊗ e o ⚠ se distinguem pela forma. */
 .status-bar.debugging :focus-visible {
-  outline-color: var(--fg-strong);
+  outline-color: #ffffff;
 }
 
 .status-bar.debugging .severity-error,
@@ -1532,11 +2222,11 @@ button.status-item:hover {
   gap: 2px;
   max-width: calc(100% - 16px);
   padding: 2px 4px;
-  background: var(--bg-input);
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 50%);
-  animation: message-in var(--motion) ease-out;
+  box-shadow: var(--shadow-float);
+  animation: pop-in var(--motion) ease-out;
 }
 
 .debug-toolbar .icon-button {
@@ -1728,6 +2418,29 @@ button.status-item:hover {
 .debug-breakpoint-item .debug-dot {
   flex: none;
   margin: 0;
+}
+
+/* Saídas: o elemento só sai da página no fim da animação (animate.leave do Angular). */
+.menu-leave {
+  animation: pop-out 150ms ease-in forwards;
+}
+
+.float-leave {
+  animation: pop-out var(--motion) ease-in forwards;
+}
+
+.tab-leave {
+  animation: tab-out 150ms ease-in forwards;
+}
+
+.recent-leave {
+  animation: fade-out 150ms ease-in forwards;
+}
+
+/* Vidro: só o que flutua desfoca o que está atrás; os painéis grandes nunca (custo de GPU). */
+[data-material='glass']
+  :is(.menu, .quick-open, .switcher, .dialog, .debug-toolbar, .update-notice) {
+  backdrop-filter: blur(20px) saturate(140%);
 }
 
 /* Com a preferência ligada, nada se mexe: o estado final aparece direto. */

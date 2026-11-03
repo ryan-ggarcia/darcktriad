@@ -37,6 +37,7 @@ import { Dialogs } from '../app/shared/dialogs';
 import { TerminalScreen, TerminalScreens } from '../app/terminal/terminal-screen';
 import { TerminalService } from '../app/terminal.service';
 import { UpdateService } from '../app/update.service';
+import { WindowService } from '../app/window.service';
 import { WorkspaceService } from '../app/workspace.service';
 
 function fail(kind: AppError['kind'], message: string): Promise<never> {
@@ -99,6 +100,10 @@ export class FakeBuffer implements TextBuffer {
 
   versionId(): number {
     return this.version;
+  }
+
+  indentation(): string {
+    return this.text.split('\n').some((line) => line.startsWith('\t')) ? 'Tab' : 'Espaços: 4';
   }
 
   dispose(): void {
@@ -299,7 +304,11 @@ export class FakeWorkspaceService implements Partial<WorkspaceService> {
   async openFolder(path: Path): Promise<OpenedFolder> {
     await this.holds.get(path);
     if (this.openError) return Promise.reject(this.openError);
-    this.recents = [{ path, exists: true }, ...this.recents.filter((item) => item.path !== path)];
+    // Como o núcleo: a pasta aberta vai para o topo, com a hora da abertura.
+    this.recents = [
+      { path, exists: true, lastOpened: Date.now() },
+      ...this.recents.filter((item) => item.path !== path),
+    ];
     const session = this.sessions.get(path) ?? { openFiles: [], activeFile: null };
     this.openPath = path;
     const breakpoints = this.breakpoints.get(path) ?? [];
@@ -738,6 +747,45 @@ export class FakeUpdateService implements Partial<UpdateService> {
   }
 }
 
+/** A janela do Tauri: guarda as chamadas e, no vidro, o material da página no momento da chamada. */
+export class FakeWindowService implements WindowService {
+  calls: string[] = [];
+  maximized = false;
+  private resized: (() => void) | null = null;
+
+  async minimize(): Promise<void> {
+    this.calls.push('minimize');
+  }
+
+  async toggleMaximize(): Promise<void> {
+    this.calls.push('toggleMaximize');
+    this.maximized = !this.maximized;
+    this.resized?.();
+  }
+
+  async isMaximized(): Promise<boolean> {
+    return this.maximized;
+  }
+
+  async onResized(handler: () => void): Promise<() => void> {
+    this.resized = handler;
+    return () => (this.resized = null);
+  }
+
+  async close(): Promise<void> {
+    this.calls.push('close');
+  }
+
+  async setTheme(theme: 'dark' | 'light'): Promise<void> {
+    this.calls.push(`setTheme ${theme}`);
+  }
+
+  async setGlass(on: boolean): Promise<void> {
+    const page = document.documentElement.dataset['material'] ?? 'nenhum';
+    this.calls.push(`setGlass ${on} (página: ${page})`);
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
@@ -749,6 +797,7 @@ export interface Fakes {
   languages: FakeLanguageService;
   debug: FakeDebugService;
   update: FakeUpdateService;
+  window: FakeWindowService;
   providers: Provider[];
 }
 
@@ -763,6 +812,7 @@ export function createFakes(): Fakes {
   const languages = new FakeLanguageService();
   const debug = new FakeDebugService();
   const update = new FakeUpdateService();
+  const window = new FakeWindowService();
   return {
     files,
     dialogs,
@@ -774,6 +824,7 @@ export function createFakes(): Fakes {
     languages,
     debug,
     update,
+    window,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
@@ -786,6 +837,7 @@ export function createFakes(): Fakes {
       { provide: LanguageService, useValue: languages },
       { provide: DebugService, useValue: debug },
       { provide: UpdateService, useValue: update },
+      { provide: WindowService, useValue: window },
     ],
   };
 }

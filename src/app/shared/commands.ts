@@ -19,7 +19,9 @@ export type Condition =
   /** Há uma sessão de depuração. */
   | 'debugging'
   | 'debugPaused'
-  | 'debugRunning';
+  | 'debugRunning'
+  /** A janela tem o efeito de vidro (Windows 11, macOS, Linux). */
+  | 'glass';
 
 export interface CommandSpec {
   /** Nome em pt-BR no formato `Categoria: Ação`. */
@@ -103,7 +105,9 @@ export type CommandId =
   | 'removeAllBreakpoints'
   | 'showDebug'
   | 'keyboardShortcuts'
-  | 'checkUpdates';
+  | 'checkUpdates'
+  | 'toggleTheme'
+  | 'toggleMaterial';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
@@ -299,6 +303,8 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   showDebug: { title: 'Ver: Executar e Depurar', keys: ['Mod+Shift+D'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
   checkUpdates: { title: 'Ajuda: Verificar atualizações' },
+  toggleTheme: { title: 'Preferências: Alternar tema (escuro/claro)' },
+  toggleMaterial: { title: 'Preferências: Alternar material (vidro/sólido)', when: 'glass' },
 };
 
 /**

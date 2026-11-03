@@ -202,8 +202,12 @@ async fn project_files(app: AppHandle) -> Result<ProjectFiles, Error> {
     blocking(move || Ok(app.state::<AppIndex>().snapshot())).await
 }
 
+/// Só o macOS tem menu nativo. No Windows e no Linux o menu é HTML, na barra de título da interface.
 #[tauri::command]
 async fn set_menu(app: AppHandle, items: Vec<MenuEntry>) -> Result<(), Error> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
     blocking(move || {
         let menu = menu::build(&app, &items).map_err(menu_error)?;
         app.set_menu(menu).map_err(menu_error)?;

@@ -388,7 +388,7 @@ describe('atualização do app', () => {
 
     function show(page: HTMLElement): void {
       TestBed.tick();
-      expect(page.classList).toContain('banner');
+      expect(page.querySelector('.banner')).not.toBeNull();
     }
 
     const labels = (page: HTMLElement) =>
@@ -397,7 +397,7 @@ describe('atualização do app', () => {
     it('sem aviso, não ocupa lugar, mas a região lida pelo leitor de tela já existe', () => {
       const page = render();
 
-      expect(page.classList).not.toContain('banner');
+      expect(page.querySelector('.banner')).toBeNull();
       expect(page.querySelector('[role=status]')?.textContent).toBe('');
     });
 
@@ -497,7 +497,7 @@ describe('atualização do app', () => {
       show(page);
       expect(page.querySelector('[role=status]')?.textContent).toBe('Veja https://x/y');
       expect(labels(page)).toEqual(['Tentar de novo', 'Fechar']);
-      expect(page.classList).not.toContain('banner-info');
+      expect(page.querySelector('.banner-info')).toBeNull();
     });
 
     it('fechar o aviso devolve o foco ao editor', async () => {
@@ -512,7 +512,7 @@ describe('atualização do app', () => {
       TestBed.tick();
 
       expect(focus).toHaveBeenCalled();
-      expect(page.classList).not.toContain('banner');
+      expect(page.querySelector('.banner')).toBeNull();
     });
   });
 });

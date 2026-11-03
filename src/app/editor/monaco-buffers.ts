@@ -70,6 +70,11 @@ export class MonacoBuffer implements TextBuffer {
     return this.model.getAlternativeVersionId();
   }
 
+  indentation(): string {
+    const { insertSpaces, indentSize } = this.model.getOptions();
+    return insertSpaces ? `Espaços: ${indentSize}` : 'Tab';
+  }
+
   onEdit(listener: (changes: TextChange[]) => void): () => void {
     const subscription = this.model.onDidChangeContent(({ changes }) =>
       listener(

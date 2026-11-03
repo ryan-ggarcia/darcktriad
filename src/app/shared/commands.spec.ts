@@ -17,6 +17,7 @@ const CATEGORIES = [
   'Executar',
   'Compilar',
   'Depuração',
+  'Preferências',
   'Ajuda',
 ];
 
@@ -78,6 +79,7 @@ describe('Commands', () => {
       debugging: () => false,
       debugPaused: () => false,
       debugRunning: () => false,
+      glass: () => true,
     });
   });
 
@@ -114,6 +116,7 @@ describe('Commands', () => {
       debugging: () => paused,
       debugPaused: () => paused,
       debugRunning: () => false,
+      glass: () => true,
     });
 
     expect(commands.available()).not.toContain('debugStepOver');

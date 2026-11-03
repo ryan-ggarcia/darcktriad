@@ -100,7 +100,9 @@
   </div>
 } @else {
   <div class="explorer-empty">
-    <p>Nenhuma pasta aberta.</p>
+    <app-icon class="empty-icon folder-icon" name="folder-open" />
+    <h2 class="empty-title">Nenhuma pasta aberta</h2>
+    <p class="empty-text">Abra a pasta do projeto para ver os arquivos aqui.</p>
     <button
       type="button"
       class="primary"
@@ -145,15 +147,16 @@
     class="menu"
     role="menu"
     aria-label="Ações do item"
+    animate.leave="menu-leave"
     [style.left.px]="position.x"
     [style.top.px]="position.y"
     (keydown)="onMenuKeydown($event)"
   >
     @for (item of menuItems(); track item.label) {
       <button type="button" role="menuitem" class="menu-item" (click)="runMenuItem(item)">
-        <span>{{ item.label }}</span>
+        <span class="menu-label">{{ item.label }}</span>
         @if (item.shortcut) {
-          <kbd>{{ item.shortcut }}</kbd>
+          <kbd class="menu-shortcut">{{ item.shortcut }}</kbd>
         }
       </button>
     }

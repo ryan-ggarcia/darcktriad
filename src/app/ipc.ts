@@ -52,6 +52,8 @@ export interface Breakpoint {
 export interface RecentFolder {
   path: Path;
   exists: boolean;
+  /** Última abertura, em ms desde 1970 (UTC); null nas gravadas até a v0.8.1 e não reabertas. */
+  lastOpened: number | null;
 }
 
 export interface ChangeBatch {

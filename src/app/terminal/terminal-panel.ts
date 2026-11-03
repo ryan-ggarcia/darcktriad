@@ -20,9 +20,11 @@ import { Problems } from '../project/problems';
 import { Commands } from '../shared/commands';
 import { Icon } from '../shared/icon';
 import { Panel } from '../shared/panel';
+import { readSize, writeSetting } from '../shared/settings';
 import { Terminals, TerminalSession } from './terminals';
 
 const MIN_HEIGHT = 100;
+const HEIGHT_KEY = 'panelHeight';
 /** Espaço que sobra para os editores quando o painel cresce. */
 const EDITOR_MIN_HEIGHT = 150;
 
@@ -52,7 +54,8 @@ export class TerminalPanel {
   protected readonly problemCount = computed(() => this.problems.items().length);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
-  protected readonly height = signal(280);
+  /** Lembrada entre aberturas. */
+  protected readonly height = signal(readSize(HEIGHT_KEY, 280, MIN_HEIGHT, 2000));
   private readonly area = viewChild.required<ElementRef<HTMLElement>>('area');
   private readonly hosts = viewChildren<ElementRef<HTMLElement>>('screen');
 
@@ -77,13 +80,26 @@ export class TerminalPanel {
     sash.setPointerCapture(event.pointerId);
     const move = (moved: PointerEvent) => this.resizeTo(startHeight + startY - moved.clientY);
     sash.addEventListener('pointermove', move);
-    const stop = () => sash.removeEventListener('pointermove', move);
+    const stop = () => {
+      sash.removeEventListener('pointermove', move);
+      this.saveHeight();
+    };
     sash.addEventListener('lostpointercapture', stop, { once: true });
   }
 
   protected resizeTo(height: number): void {
     const max = window.innerHeight - EDITOR_MIN_HEIGHT;
     this.height.set(Math.round(Math.max(MIN_HEIGHT, Math.min(height, max))));
+  }
+
+  /** Pelas setas: muda e já lembra. */
+  protected nudge(offset: number): void {
+    this.resizeTo(this.height() + offset);
+    this.saveHeight();
+  }
+
+  private saveHeight(): void {
+    writeSetting(HEIGHT_KEY, String(this.height()));
   }
 
   private show(session: TerminalSession): void {

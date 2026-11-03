@@ -27,11 +27,15 @@ import { Project } from './project/project';
 import { ProjectStatus } from './project/project-status';
 import { ToolsView } from './project/tools-view';
 import { QuickOpen } from './quick-open/quick-open';
-import { Commands } from './shared/commands';
+import { Appearance } from './shared/appearance';
+import { CommandId, Commands } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
 import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
 import { Panel } from './shared/panel';
+import { readSize, writeSetting } from './shared/settings';
+import { SettingsMenu } from './shell/settings-menu';
+import { TitleBar } from './shell/title-bar';
 import { learnKeyLabel, loadKeyboardLayout, PLATFORM } from './shared/keybindings';
 import { CurrentFolder } from './workspace/current-folder';
 import { TerminalPanel } from './terminal/terminal-panel';
@@ -41,7 +45,16 @@ import { Updates } from './update/updates';
 import { WelcomeView } from './workspace/welcome-view';
 import { Workspace } from './workspace/workspace';
 
-/** A janela: barra de atividades, explorador, editores, painel inferior e barra de status (docs/specs/README.md). */
+type Activity = 'explorer' | 'debug' | 'tools';
+
+const SIDEBAR_KEY = 'sidebarWidth';
+const SIDEBAR_MIN = 170;
+const SIDEBAR_MAX = 640;
+
+/**
+ * A janela: barra superior, barra de atividades, barra lateral, editores, painel inferior e barra
+ * de status (docs/specs/README.md).
+ */
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,7 +68,9 @@ import { Workspace } from './workspace/workspace';
     LanguageStatus,
     ProjectStatus,
     QuickOpen,
+    SettingsMenu,
     TerminalPanel,
+    TitleBar,
     ToolsView,
     UpdateNotice,
     WelcomeView,
@@ -64,6 +79,7 @@ import { Workspace } from './workspace/workspace';
     '(window:keydown)': 'onKeydown($event)',
     '(window:keyup)': 'onKeyup($event)',
     '(window:blur)': 'tabs.cancelSwitcher()',
+    '[class.panel-maximized]': 'panel.visible() && panel.maximized()',
   },
   templateUrl: './app.html',
 })
@@ -79,7 +95,8 @@ export class App {
   protected readonly debug = inject(Debugger);
   private readonly breakpoints = inject(Breakpoints);
   protected readonly problems = inject(Problems);
-  private readonly panel = inject(Panel);
+  protected readonly panel = inject(Panel);
+  private readonly appearance = inject(Appearance);
   private readonly dialogs = inject(Dialogs);
   private readonly updates = inject(Updates);
   private readonly injector = inject(Injector);
@@ -90,18 +107,39 @@ export class App {
   protected readonly sidebarVisible = signal(true);
   /** O que a barra lateral mostra: o Explorador ou Executar e Depurar. */
   protected readonly sidebarView = signal<'explorer' | 'debug'>('explorer');
+  /** Lembrada entre aberturas. */
+  protected readonly sidebarWidth = signal(readSize(SIDEBAR_KEY, 260, SIDEBAR_MIN, SIDEBAR_MAX));
+  protected readonly activities: {
+    id: Activity;
+    label: string;
+    icon: string;
+    command: CommandId;
+  }[] = [
+    { id: 'explorer', label: 'Explorador', icon: 'files', command: 'showExplorer' },
+    { id: 'debug', label: 'Executar e Depurar', icon: 'run-debug', command: 'showDebug' },
+    {
+      id: 'tools',
+      label: 'Ferramentas: verificar e instalar',
+      icon: 'tools',
+      command: 'checkTools',
+    },
+  ];
   protected readonly status = computed(() => {
     const tab = this.tabs.active();
     if (tab?.view.kind !== 'text') return null;
     const cursor = this.tabs.cursor();
     return {
       position: cursor ? `Ln ${cursor.line}, Col ${cursor.column}` : '',
+      // shortcut: lida junto com o cursor e a aba; o editor só a detecta de novo ao abrir ou recarregar.
+      indentation: tab.view.buffer.indentation(),
+      encoding: tab.bom ? 'UTF-8 com BOM' : 'UTF-8',
       language: LANGUAGE_NAMES[tab.language()],
       eol: tab.eol() === 'crlf' ? 'CRLF' : 'LF',
     };
   });
 
   constructor() {
+    this.appearance.start();
     this.registerCommands();
     void loadKeyboardLayout();
     inject(MainMenu).start();
@@ -149,6 +187,41 @@ export class App {
     else this.showDebug();
   }
 
+  protected isActive(activity: Activity): boolean {
+    if (activity === 'tools') return false;
+    return this.sidebarVisible() && this.sidebarView() === activity;
+  }
+
+  protected activate(activity: Activity): void {
+    if (activity === 'explorer' || activity === 'debug') this.toggleView(activity);
+    else this.commands.run('checkTools');
+  }
+
+  protected startSidebarResize(event: PointerEvent): void {
+    const sash = event.currentTarget as HTMLElement;
+    const startX = event.clientX;
+    const startWidth = this.sidebarWidth();
+    sash.setPointerCapture(event.pointerId);
+    const move = (moved: PointerEvent) => this.resizeSidebar(startWidth + moved.clientX - startX);
+    sash.addEventListener('pointermove', move);
+    const stop = () => {
+      sash.removeEventListener('pointermove', move);
+      writeSetting(SIDEBAR_KEY, String(this.sidebarWidth()));
+    };
+    sash.addEventListener('lostpointercapture', stop, { once: true });
+  }
+
+  /** Pelas setas: muda e já lembra. */
+  protected nudgeSidebar(offset: number): void {
+    this.resizeSidebar(this.sidebarWidth() + offset);
+    writeSetting(SIDEBAR_KEY, String(this.sidebarWidth()));
+  }
+
+  private resizeSidebar(width: number): void {
+    const max = Math.min(SIDEBAR_MAX, window.innerWidth / 2);
+    this.sidebarWidth.set(Math.round(Math.max(SIDEBAR_MIN, Math.min(width, max))));
+  }
+
   protected showDebug(): void {
     this.sidebarView.set('debug');
     this.sidebarVisible.set(true);
@@ -175,6 +248,7 @@ export class App {
       debugPaused: () => this.debug.state() === 'paused',
       // Também no início: o F6 fica guardado até o programa rodar.
       debugRunning: () => this.debug.state() === 'running' || this.debug.state() === 'starting',
+      glass: () => this.appearance.glassSupported(),
     });
     this.commands.register({
       newFile: () => this.tabs.newUntitled(),
@@ -238,6 +312,8 @@ export class App {
       }),
       removeAllBreakpoints: () => this.breakpoints.removeAll(),
       showDebug: () => this.showDebug(),
+      toggleTheme: () => this.appearance.toggleTheme(),
+      toggleMaterial: () => this.appearance.toggleMaterial(),
     });
   }
 

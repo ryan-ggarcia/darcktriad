@@ -58,6 +58,7 @@ mod tests {
         let state = AppState {
             recent_folders: vec![RecentFolder {
                 path: root.join("hello-cpp"),
+                last_opened: Some(1_793_700_000_000),
                 session: Session {
                     open_files: vec![root.join("hello-cpp/app/main.cpp")],
                     active_file: Some(root.join("hello-cpp/app/main.cpp")),

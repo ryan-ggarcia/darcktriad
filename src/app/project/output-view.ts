@@ -70,6 +70,10 @@ function mentions(text: string, { file, line, message }: BuildProblem): boolean 
         [attr.aria-label]="'Saída: canal ' + output.current()"
         (scroll)="onScroll(log)"
       >@for (segment of segments(); track $index) {@if (segment.problem; as problem) {<button type="button" class="output-link" [title]="hint(problem)" (click)="open(problem)">{{ segment.text }}</button>} @else {<span>{{ segment.text }}</span>}}</pre>
+    } @else if (panel.tab() === 'debug') {
+      <p class="panel-empty">
+        Nada da depuração ainda. O log do depurador aparece aqui ao depurar (F5).
+      </p>
     } @else {
       <p class="panel-empty">
         Nada na Saída ainda. A saída aparece quando o projeto (CMake ou .NET) configura ou compila,
@@ -81,7 +85,7 @@ function mentions(text: string, { file, line, message }: BuildProblem): boolean 
 export class OutputView {
   protected readonly output = inject(OutputChannels);
   private readonly project = inject(Project);
-  private readonly panel = inject(Panel);
+  protected readonly panel = inject(Panel);
   private readonly tabs = inject(EditorTabs);
   private readonly log = viewChild<ElementRef<HTMLElement>>('log');
   protected readonly segments = computed(() => {
@@ -94,7 +98,8 @@ export class OutputView {
     afterRenderEffect(() => {
       this.segments();
       const log = this.log()?.nativeElement;
-      if (log && this.panel.visible() && this.panel.tab() === 'output' && this.following) {
+      const tab = this.panel.tab();
+      if (log && this.panel.visible() && (tab === 'output' || tab === 'debug') && this.following) {
         log.scrollTop = log.scrollHeight;
       }
     });

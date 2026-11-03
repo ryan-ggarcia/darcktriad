@@ -1,4 +1,5 @@
-//! Menu nativo, montado com a lista que a interface envia: o registro de comandos fica lá.
+//! Menu nativo do macOS, montado com a lista que a interface envia: o registro de comandos fica
+//! lá. No Windows e no Linux o menu é HTML, na barra de título da interface.
 
 use serde::Deserialize;
 use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -42,9 +43,7 @@ type Item = Box<dyn IsMenuItem<Wry>>;
 
 pub fn build(app: &AppHandle, entries: &[MenuEntry]) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
-    if cfg!(target_os = "macos") {
-        menu.append(&app_menu(app)?)?;
-    }
+    menu.append(&app_menu(app)?)?;
     for entry in entries {
         menu.append(item(app, entry)?.as_ref())?;
     }
@@ -82,27 +81,11 @@ fn command(
     accelerator: Option<&str>,
     role: Option<EditRole>,
 ) -> tauri::Result<Item> {
-    if cfg!(target_os = "macos") {
-        // A webview recebe a tecla antes do menu: o menu só age se a página não tratar o atalho.
-        return Ok(match role {
-            Some(role) => Box::new(native(app, role, label)?),
-            None => Box::new(MenuItem::with_id(app, id, label, true, accelerator)?),
-        });
-    }
-    // No Windows e no Linux o atalho aparece só como texto. Registrado, ele roubaria a tecla
-    // da webview no GTK (Ctrl+C deixaria de copiar) e o despachante da interface deixaria de ser
-    // o único a decidir o que cada tecla faz.
-    let label = match accelerator {
-        Some(accelerator) => format!("{label}\t{accelerator}"),
-        None => label.to_owned(),
-    };
-    Ok(Box::new(MenuItem::with_id(
-        app,
-        id,
-        label,
-        true,
-        None::<&str>,
-    )?))
+    // A webview recebe a tecla antes do menu: o menu só age se a página não tratar o atalho.
+    Ok(match role {
+        Some(role) => Box::new(native(app, role, label)?),
+        None => Box::new(MenuItem::with_id(app, id, label, true, accelerator)?),
+    })
 }
 
 fn native(app: &AppHandle, role: EditRole, label: &str) -> tauri::Result<PredefinedMenuItem<Wry>> {

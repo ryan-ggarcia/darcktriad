@@ -70,7 +70,14 @@ export class Workspace {
   /** Recente riscada (não existe mais) sai da lista; as outras abrem. */
   async openRecent(recent: RecentFolder): Promise<void> {
     if (recent.exists) return this.openFolder(recent.path);
-    await this.service.removeRecentFolder(recent.path).catch(() => undefined);
+    await this.removeRecent(recent);
+  }
+
+  /** "Remover da lista" na tela inicial: a pasta continua no disco. */
+  async removeRecent(recent: RecentFolder): Promise<void> {
+    await this.service
+      .removeRecentFolder(recent.path)
+      .catch((error) => console.warn('Falha ao tirar a pasta das recentes', error));
     await this.loadRecents();
   }
 

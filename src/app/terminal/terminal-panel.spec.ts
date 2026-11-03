@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { createFakes, Fakes, settle } from '../../testing/fakes';
+import { Panel } from '../shared/panel';
 import { TerminalPanel } from './terminal-panel';
 import { Terminals } from './terminals';
 
@@ -85,5 +86,42 @@ describe('painel do terminal', () => {
     expect(page.querySelector('[aria-label="Ocultar painel"]')?.getAttribute('title')).toBe(
       'Ocultar painel (Ctrl+`)',
     );
+  });
+
+  it('a altura mudada pelas setas fica gravada e vale na próxima abertura', async () => {
+    localStorage.clear();
+    const first = await render();
+    await first.terminals.create();
+    await first.stable();
+
+    first.page
+      .querySelector('.panel-sash')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    await first.stable();
+    expect(first.page.style.height).toBe('300px');
+    expect(localStorage.getItem('panelHeight')).toBe('300');
+
+    TestBed.resetTestingModule();
+    const again = await render();
+    await again.stable();
+    expect(again.page.style.height).toBe('300px');
+    localStorage.clear();
+  });
+
+  it('expandir ocupa o lugar dos editores e recolher volta', async () => {
+    const { page, terminals, stable } = await render();
+    await terminals.create();
+    await stable();
+    const toggle = () =>
+      page.querySelector<HTMLButtonElement>('[aria-label$="painel"][aria-pressed]')!;
+
+    expect(toggle().getAttribute('aria-label')).toBe('Expandir painel');
+    toggle().click();
+    await stable();
+    expect(TestBed.inject(Panel).maximized()).toBe(true);
+    expect(toggle().getAttribute('aria-label')).toBe('Recolher painel');
+    toggle().click();
+    await stable();
+    expect(TestBed.inject(Panel).maximized()).toBe(false);
   });
 });

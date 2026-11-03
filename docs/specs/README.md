@@ -39,7 +39,7 @@ A ordem segue as dependências: a linguagem precisa do `compile_commands.json` g
 | Revelar o arquivo ativo no explorador automaticamente | Depois | Útil, mas exige expandir a árvore sob demanda. |
 | Salvamento automático e "hot exit" (lembrar alterações não salvas ao fechar) | Depois | No MVP: salvar explícito com Ctrl+S, como o VS Code por padrão, e confirmação ao fechar. |
 | Arquivo de configurações e atalhos personalizados | Depois | O MVP usa padrões fixos; menos coisa para entender. |
-| Tema claro / seguir o sistema | Depois | O MVP usa só o tema escuro. |
+| Seguir o tema do sistema | Depois | A IDE tem tema escuro e claro, escolhidos à mão. |
 | Interface em inglês | Depois | O MVP é só em pt-BR. |
 | Breadcrumbs, modo zen, layouts de janela | Fora | Pouco valor para o público-alvo, e mais coisa na tela. |
 

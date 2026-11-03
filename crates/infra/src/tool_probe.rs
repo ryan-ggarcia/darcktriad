@@ -60,6 +60,12 @@ impl ToolProbe for SystemToolProbe {
             .chain(self.known_paths(program, &path_dirs))
             .chain([self.tools_dir.join(executable(program))])
         {
+            // No Windows, o `dotnet tool install` só cria um `.cmd`.
+            let candidate = if cfg!(windows) && !candidate.is_file() {
+                candidate.with_extension("cmd")
+            } else {
+                candidate
+            };
             if candidate.is_file() && !found.contains(&candidate) {
                 found.push(candidate);
             }
@@ -158,6 +164,41 @@ fn output_within(command: &mut Command, timeout: Duration) -> io::Result<String>
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     Ok(text)
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    #[test]
+    fn a_dotnet_tool_is_found_by_its_cmd_and_an_exe_comes_first() {
+        let root = TempDir::new("probe-cmd");
+        let dir = root.join("bin");
+        fs::create_dir_all(&dir).unwrap();
+        let probe = SystemToolProbe {
+            path: env::join_paths([&dir]).unwrap(),
+            home: None,
+            dotnet_root: None,
+            tools_dir: root.join("tools"),
+            timeout: VERSION_TIMEOUT,
+        };
+        assert!(probe.find("roslyn-language-server").is_empty());
+
+        fs::write(dir.join("roslyn-language-server.cmd"), "").unwrap();
+        assert_eq!(
+            probe.find("roslyn-language-server"),
+            [dir.join("roslyn-language-server.cmd")]
+        );
+
+        fs::write(dir.join("roslyn-language-server.exe"), "").unwrap();
+        assert_eq!(
+            probe.find("roslyn-language-server"),
+            [dir.join("roslyn-language-server.exe")]
+        );
+    }
 }
 
 #[cfg(all(test, unix))]

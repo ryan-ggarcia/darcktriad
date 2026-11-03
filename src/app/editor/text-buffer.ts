@@ -10,6 +10,8 @@ export interface TextBuffer {
   setLanguage(language: string): void;
   /** Muda a cada edição e volta ao valor anterior quando a edição é desfeita. */
   versionId(): number;
+  /** A indentação que o editor detectou no texto: "Espaços: 4" ou "Tab". */
+  indentation(): string;
   /** Cada edição, com os trechos no formato do LSP (base 0, no texto de antes). */
   onEdit(listener: (changes: TextChange[]) => void): () => void;
   dispose(): void;

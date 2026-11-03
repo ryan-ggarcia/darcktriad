@@ -15,7 +15,7 @@ import { CodeEditor } from './code-editor';
 import { EditorTabs } from './editor-tabs';
 import { Tab } from './tab';
 
-/** Faixa de abas, avisos da aba ativa e o editor. */
+/** Faixa de abas, avisos da aba ativa e o editor; no lugar dele, a tela inicial (botão Início). */
 @Component({
   selector: 'app-editor-area',
   changeDetection: ChangeDetectionStrategy.OnPush,

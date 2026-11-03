@@ -118,6 +118,7 @@ describe('projeto', () => {
         debugging: () => false,
         debugPaused: () => false,
         debugRunning: () => false,
+        glass: () => true,
       });
       const { page, stable } = render(ProjectStatus);
       fakes.project.emitState({ ...CMAKE, status: { kind: 'ready' }, target: 'app' });

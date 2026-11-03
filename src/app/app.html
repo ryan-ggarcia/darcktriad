@@ -1,38 +1,51 @@
+<app-title-bar />
+
 <nav class="activity-bar" aria-label="Barra de atividades">
-  <button
-    type="button"
-    class="activity-button"
-    [class.active]="sidebarVisible() && sidebarView() === 'explorer'"
-    [attr.aria-pressed]="sidebarVisible() && sidebarView() === 'explorer'"
-    aria-label="Explorador"
-    [title]="commands.hint('Explorador', 'showExplorer')"
-    (click)="toggleView('explorer')"
-  >
-    <app-icon name="files" />
-  </button>
-  <button
-    type="button"
-    class="activity-button"
-    [class.active]="sidebarVisible() && sidebarView() === 'debug'"
-    [attr.aria-pressed]="sidebarVisible() && sidebarView() === 'debug'"
-    aria-label="Executar e Depurar"
-    [title]="commands.hint('Executar e Depurar', 'showDebug')"
-    (click)="toggleView('debug')"
-  >
-    <app-icon name="run-debug" />
-  </button>
+  @for (item of activities; track item.id) {
+    @let active = isActive(item.id);
+    <button
+      type="button"
+      class="activity-button"
+      [class.active]="active"
+      [attr.aria-pressed]="active"
+      [attr.aria-label]="item.label"
+      [title]="commands.hint(item.label, item.command)"
+      (click)="activate(item.id)"
+    >
+      <app-icon [name]="item.icon" />
+    </button>
+  }
+  <app-settings-menu
+    class="activity-settings"
+    buttonClass="activity-button"
+    placement="right-end"
+  />
 </nav>
 
 @if (sidebarVisible()) {
-  @if (sidebarView() === 'explorer') {
-    <aside class="sidebar" aria-label="Explorador">
+  <aside
+    class="sidebar"
+    [style.width.px]="sidebarWidth()"
+    [attr.aria-label]="sidebarView() === 'explorer' ? 'Explorador' : 'Executar e Depurar'"
+  >
+    @if (sidebarView() === 'explorer') {
       <app-explorer-view />
-    </aside>
-  } @else {
-    <aside class="sidebar" aria-label="Executar e Depurar">
+    } @else {
       <app-debug-view />
-    </aside>
-  }
+    }
+    <div
+      class="sidebar-sash"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Largura da barra lateral"
+      title="Arraste para mudar a largura da barra lateral (ou use as setas)"
+      tabindex="0"
+      [attr.aria-valuenow]="sidebarWidth()"
+      (pointerdown)="startSidebarResize($event)"
+      (keydown.arrowright)="nudgeSidebar(20)"
+      (keydown.arrowleft)="nudgeSidebar(-20)"
+    ></div>
+  </aside>
 }
 
 <main class="main">
@@ -60,8 +73,9 @@
     [title]="commands.hint('Problemas', 'showProblems')"
     (click)="commands.run('showProblems')"
   >
-    <span class="severity-error" aria-hidden="true">⊗</span> {{ errors }}
-    <span class="severity-warning" aria-hidden="true">⚠</span> {{ warnings }}
+    <span class="severity-error" [class.zero]="!errors" aria-hidden="true">⊗</span> {{ errors }}
+    <span class="severity-warning" [class.zero]="!warnings" aria-hidden="true">⚠</span>
+    {{ warnings }}
   </button>
   <span class="status-message" role="status">
     <!-- O @for recria o span a cada texto novo: é o que reinicia a animação de entrada. -->
@@ -71,15 +85,23 @@
   </span>
   <app-language-status />
   @if (status(); as status) {
-    <span>{{ status.position }}</span>
-    <span>{{ status.language }}</span>
-    <span>UTF-8</span>
-    <span>{{ status.eol }}</span>
+    <span class="status-item" title="Linha e coluna do cursor">{{ status.position }}</span>
+    <span class="status-item" title="Indentação deste arquivo, como o editor detectou">{{
+      status.indentation
+    }}</span>
+    <span class="status-item" title="Codificação do arquivo">{{ status.encoding }}</span>
+    <span class="status-item" title="Fim de linha do arquivo">{{ status.eol }}</span>
+    <span class="status-item" title="Linguagem do arquivo">{{ status.language }}</span>
   }
 </footer>
 
 @if (tabs.switcher(); as switcher) {
-  <div class="switcher" role="dialog" aria-label="Alternar entre editores">
+  <div
+    class="switcher"
+    role="dialog"
+    aria-label="Alternar entre editores"
+    animate.leave="float-leave"
+  >
     <ul
       role="listbox"
       aria-label="Editores por uso recente"

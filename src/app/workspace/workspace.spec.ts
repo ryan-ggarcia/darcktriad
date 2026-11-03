@@ -31,7 +31,7 @@ describe('Workspace', () => {
   }
 
   it('ao iniciar, reabre a última pasta e as abas, com a mesma ativa', async () => {
-    fakes.workspace.recents = [{ path: ROOT, exists: true }];
+    fakes.workspace.recents = [{ path: ROOT, exists: true, lastOpened: null }];
     fakes.workspace.sessions.set(ROOT, {
       openFiles: [MAIN, 'C:\\proj\\sumiu.cpp', UTIL],
       activeFile: UTIL,
@@ -55,8 +55,8 @@ describe('Workspace', () => {
     beforeEach(() => {
       fakes.files.write(OTHER_MAIN, 'int main() { return 2; }');
       fakes.workspace.recents = [
-        { path: ROOT, exists: true },
-        { path: OTHER, exists: true },
+        { path: ROOT, exists: true, lastOpened: null },
+        { path: OTHER, exists: true, lastOpened: null },
       ];
       fakes.workspace.sessions.set(ROOT, { openFiles: [MAIN], activeFile: MAIN });
       fakes.workspace.sessions.set(OTHER, { openFiles: [OTHER_MAIN], activeFile: OTHER_MAIN });
@@ -66,7 +66,7 @@ describe('Workspace', () => {
     it('fica só com as abas da pasta clicada, e só elas vão para a sessão', async () => {
       const starting = workspace.start();
       await settle();
-      const clicked = workspace.openRecent({ path: OTHER, exists: true });
+      const clicked = workspace.openRecent({ path: OTHER, exists: true, lastOpened: null });
       release();
       await Promise.all([starting, clicked]);
       await flush();
@@ -81,7 +81,7 @@ describe('Workspace', () => {
     it('clicar na própria pasta que reabre não duplica a aba', async () => {
       const starting = workspace.start();
       await settle();
-      const clicked = workspace.openRecent({ path: ROOT, exists: true });
+      const clicked = workspace.openRecent({ path: ROOT, exists: true, lastOpened: null });
       release();
       await Promise.all([starting, clicked]);
       await flush();
@@ -91,18 +91,18 @@ describe('Workspace', () => {
   });
 
   it('se a última pasta não existe mais, fica na tela inicial', async () => {
-    fakes.workspace.recents = [{ path: ROOT, exists: false }];
+    fakes.workspace.recents = [{ path: ROOT, exists: false, lastOpened: null }];
 
     await workspace.start();
 
     expect(folder.path()).toBeNull();
-    expect(workspace.recents()).toEqual([{ path: ROOT, exists: false }]);
+    expect(workspace.recents()).toEqual([{ path: ROOT, exists: false, lastOpened: null }]);
   });
 
   it('uma recente riscada sai da lista ao ser clicada', async () => {
-    fakes.workspace.recents = [{ path: 'C:\\velha', exists: false }];
+    fakes.workspace.recents = [{ path: 'C:\\velha', exists: false, lastOpened: null }];
 
-    await workspace.openRecent({ path: 'C:\\velha', exists: false });
+    await workspace.openRecent({ path: 'C:\\velha', exists: false, lastOpened: null });
 
     expect(fakes.workspace.removedRecents).toEqual(['C:\\velha']);
     expect(workspace.recents()).toEqual([]);
@@ -130,7 +130,11 @@ describe('Workspace', () => {
     expect(folder.path()).toBeNull();
     expect(tabs.tabs()).toEqual([]);
     expect(fakes.workspace.savedSessions.at(-1)).toEqual({ openFiles: [MAIN], activeFile: MAIN });
-    expect(workspace.recents()[0]).toEqual({ path: ROOT, exists: true });
+    expect(workspace.recents()[0]).toEqual({
+      path: ROOT,
+      exists: true,
+      lastOpened: expect.any(Number),
+    });
   });
 
   it('fechar a janela com abas modificadas: uma pergunta; Cancelar mantém a janela', async () => {
