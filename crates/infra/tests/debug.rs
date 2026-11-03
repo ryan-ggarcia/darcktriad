@@ -173,8 +173,19 @@ fn debug_until_exit(
 }
 
 fn sessions() -> (Arc<Sessions>, Arc<Terminals<PortablePty>>) {
+    sessions_with(StdServerSpawner::default())
+}
+
+fn sessions_with(
+    app_temp_spawner: StdServerSpawner,
+) -> (Arc<Sessions>, Arc<Terminals<PortablePty>>) {
     let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
-    let sessions = DebugSessions::new(StdServerSpawner::default(), probe(), Arc::clone(&terminals));
+    let sessions = DebugSessions::new(
+        StdServerSpawner::default(),
+        app_temp_spawner,
+        probe(),
+        Arc::clone(&terminals),
+    );
     (Arc::new(sessions), terminals)
 }
 
@@ -248,6 +259,58 @@ fn lldb_dap_stops_at_a_breakpoint_in_hello_cpp_and_runs_to_the_end() {
     assert!(printed.contains("2 + 3 = 5"), "{printed:?}");
 }
 
+/// Morto no meio do início, o lldb-dap deixava o `lldb-dap-run-in-terminal-comm-*` em `/tmp`. Ele
+/// vai para a pasta temporária do app, sem mudar o ambiente do programa depurado.
+#[test]
+fn lldb_dap_keeps_its_comm_file_in_the_app_temp_folder_and_not_in_the_program_env() {
+    if probe().find("lldb-dap").is_empty() {
+        eprintln!("PULADO: `lldb-dap` não foi encontrado.");
+        return;
+    }
+    let root = TempDir(std::env::temp_dir().join(format!("darktriad-comm-{}", std::process::id())));
+    let app_temp = root.0.join("servers");
+    let (sessions, _) = sessions_with(StdServerSpawner::with_temp_dir(app_temp.clone()).unwrap());
+    let target = CMakeTarget {
+        name: "env".into(),
+        path: "/usr/bin/env".into(),
+        project: None,
+        framework: None,
+    };
+    let (sender, events) = mpsc::channel();
+    let launch = sessions
+        .start(&target, &root.0, move |event| {
+            let _ = sender.send(event);
+        })
+        .unwrap();
+    let mut dap = Dap::new(sessions, events);
+    let seq = dap.request(
+        "initialize",
+        json!({"adapterID": launch.adapter, "supportsRunInTerminalRequest": true}),
+    );
+    dap.reply(seq);
+    let launched = dap.request("launch", launch.launch.clone());
+
+    let request = dap.wait_for(|m| m["command"] == "runInTerminal");
+    let args = request["arguments"]["args"].as_array().unwrap();
+    let comm = args.iter().position(|arg| arg == "--comm-file").unwrap() + 1;
+    let comm_file = Path::new(args[comm].as_str().unwrap());
+    assert_eq!(comm_file.parent(), Some(app_temp.as_path()), "{request}");
+
+    dap.event("initialized");
+    let seq = dap.request("configurationDone", json!({}));
+    dap.reply(seq);
+    dap.reply(launched);
+    dap.event("exited");
+    let (_, output) = dap.terminal.take().unwrap();
+    let mut printed = String::new();
+    while let TerminalEvent::Output { data } = output.recv_timeout(TIMEOUT).unwrap() {
+        printed.push_str(&data);
+    }
+    assert!(printed.contains("PATH="), "{printed:?}");
+    assert!(!printed.contains(app_temp.to_str().unwrap()), "{printed:?}");
+    dap.sessions.stop();
+}
+
 #[test]
 fn netcoredbg_stops_at_a_breakpoint_in_hello_cs_and_runs_to_the_end() {
     // O netcoredbg não atende o `runInTerminal`: o programa não teria de onde ler a entrada.
@@ -318,6 +381,7 @@ fn start_fake(
     .unwrap();
     let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
     let sessions = Arc::new(DebugSessions::new(
+        StdServerSpawner::default(),
         StdServerSpawner::default(),
         FakeAdapter(adapter),
         terminals,

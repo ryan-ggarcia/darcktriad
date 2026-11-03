@@ -60,7 +60,8 @@ export class Problems {
 
   /**
    * F8 / Shift+F8: o vizinho na ordem do painel, passando de arquivo em arquivo. Fora de um
-   * problema, vai para o primeiro (ou o último) do arquivo atual, ou da lista.
+   * problema, vai para o próximo (ou o anterior) do cursor no arquivo atual, dando a volta nele;
+   * sem problemas no arquivo, para o primeiro (ou o último) da lista.
    */
   next(
     from: { file: Path; line: number; column: number } | null,
@@ -76,8 +77,14 @@ export class Problems {
     );
     if (at >= 0) return items[(at + offset + items.length) % items.length];
     const inFile = items.filter((item) => item.file === from?.file);
-    const pool = inFile.length ? inFile : items;
-    return offset > 0 ? pool[0] : pool[pool.length - 1];
+    if (!from || !inFile.length) return offset > 0 ? items[0] : items[items.length - 1];
+    // Na ordem do texto (invertida no Shift+F8): o primeiro depois do cursor, senão dá a volta.
+    const ordered = inFile.sort(
+      (a, b) => offset * (a.startLineNumber - b.startLineNumber || a.startColumn - b.startColumn),
+    );
+    const ahead = (item: ProblemItem) =>
+      offset * (item.startLineNumber - from.line || item.startColumn - from.column) > 0;
+    return ordered.find(ahead) ?? ordered[0];
   }
 
   private count(severity: number): number {

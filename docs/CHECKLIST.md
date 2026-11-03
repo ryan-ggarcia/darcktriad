@@ -65,7 +65,7 @@ Bugs e limites, do mais importante para o menos importante.
 - [x] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
 - [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
 - [ ] Erros da compilação sublinhados no editor (Compilar e executar)
-- [ ] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido e passou na janela (QA, 03b186a); falta o do lldb-dap
+- [x] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido e passou na janela (QA, 03b186a); o do lldb-dap foi para a pasta `servers` do app (teste automático com o lldb-dap real; sem teste na janela)
 - [ ] Programas que saem da sessão (`setsid`, `nohup … &`) continuam depois de Parar ou de fechar o terminal (Terminal; Compilar e executar)
 - [ ] Terminal sem controle de fluxo: muita saída pode travar a interface por ~0,3 s (Terminal)
 - [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto; passou na janela (QA, 03b186a)
@@ -75,10 +75,10 @@ Bugs e limites, do mais importante para o menos importante.
 - [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração) → passou na janela (QA, 03b186a)
 - [ ] Depuração: bolinha clara ao passar o mouse na margem (Depuração)
 - [ ] Linguagem: Ctrl+clique sublinha o nome; "Ir para definição" no menu de contexto (Linguagem)
-- [ ] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem)
-- [ ] Linguagem: traduzir "View Problem" e "No quick fixes available" do Monaco (Linguagem)
+- [x] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem): fora de um problema, o próximo depois do cursor (Shift+F8, o anterior), dando a volta no arquivo; teste automático, sem teste na janela
+- [x] Linguagem: traduzir "View Problem" e "No quick fixes available" do Monaco (Linguagem): pela tabela de mensagens do Monaco, por índice; um teste avisa se os índices mudarem ao atualizar o Monaco; sem teste na janela
 - [ ] Linguagem: contador da barra com os itens informativos (Linguagem)
-- [ ] Abas: a aba ativa pode ficar fora da faixa visível quando há muitas abas (ex.: o depurador pausa e abre um arquivo, e a aba dele não aparece). Rolar a faixa até ela. Visto nas capturas do tema novo; o código das abas não tem rolagem até a ativa, então não é efeito do tema.
+- [x] Abas: a aba ativa pode ficar fora da faixa visível quando há muitas abas (ex.: o depurador pausa e abre um arquivo, e a aba dele não aparece). Rolar a faixa até ela. Visto nas capturas do tema novo; o código das abas não tem rolagem até a ativa, então não é efeito do tema. → a faixa rola até a aba ativa a cada troca, por qualquer caminho, sem animação; teste de componente, sem teste na janela
 
 ## 6. Decisões pendentes (do usuário)
 

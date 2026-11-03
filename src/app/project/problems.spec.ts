@@ -82,6 +82,11 @@ describe('repositório de problemas', () => {
 
     // Fora de um problema: o primeiro do arquivo atual.
     expect(at(problems.next({ file: main, line: 1, column: 1 }, 1))).toBe(`${main}:5`);
+    // Fora de um problema: o próximo depois do cursor (ou o anterior), dando a volta no arquivo.
+    expect(at(problems.next({ file: core, line: 5, column: 1 }, 1))).toBe(`${core}:8`);
+    expect(at(problems.next({ file: core, line: 5, column: 1 }, -1))).toBe(`${core}:2`);
+    expect(at(problems.next({ file: core, line: 9, column: 1 }, 1))).toBe(`${core}:2`);
+    expect(at(problems.next({ file: core, line: 1, column: 1 }, -1))).toBe(`${core}:8`);
     expect(at(problems.next({ file: main, line: 5, column: 1 }, 1))).toBe(`${core}:2`);
     expect(at(problems.next({ file: core, line: 8, column: 1 }, 1))).toBe(`${main}:5`);
     expect(at(problems.next({ file: core, line: 2, column: 1 }, -1))).toBe(`${main}:5`);

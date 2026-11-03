@@ -593,15 +593,18 @@ fn main() {
             let tools_dir = app.path().app_data_dir()?.join("tools");
             let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
             app.manage::<AppTerminals>(Arc::clone(&terminals));
+            // Sem a pasta no cache, os temporários vão para a do sistema, como antes.
+            let servers_temp = app.path().app_cache_dir()?.join("servers");
+            let app_temp_spawner =
+                || StdServerSpawner::with_temp_dir(servers_temp.clone()).unwrap_or_default();
             app.manage::<AppDebug>(Arc::new(DebugSessions::new(
                 StdServerSpawner::default(),
+                app_temp_spawner(),
                 SystemToolProbe::new(tools_dir.clone()),
                 terminals,
             )));
-            // Sem a pasta no cache, os temporários vão para a do sistema, como antes.
-            let servers_temp = app.path().app_cache_dir()?.join("servers");
             app.manage::<AppLanguages>(Arc::new(LanguageServers::new(
-                StdServerSpawner::with_temp_dir(servers_temp).unwrap_or_default(),
+                app_temp_spawner(),
                 SystemToolProbe::new(tools_dir.clone()),
             )));
             let handle = app.handle().clone();

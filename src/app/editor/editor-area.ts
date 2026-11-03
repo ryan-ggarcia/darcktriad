@@ -1,5 +1,6 @@
 import {
   afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -33,6 +34,17 @@ export class EditorArea {
     const tab = this.tabs.active();
     return tab?.view.kind === 'text' ? tab : null;
   });
+
+  constructor() {
+    // Por qualquer caminho (clique, Ctrl+Tab, F12, o depurador pausando), a aba ativa aparece na
+    // faixa. Sem `behavior`, a rolagem é instantânea: nada se mexe com ou sem reduced-motion.
+    afterRenderEffect(() => {
+      if (!this.tabs.active()) return;
+      this.host
+        .querySelector('[role=tab][aria-selected=true]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
 
   protected select(tab: Tab): void {
     this.tabs.activate(tab);

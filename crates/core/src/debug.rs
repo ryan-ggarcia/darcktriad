@@ -45,6 +45,11 @@ impl Debugger {
         }
     }
 
+    /// O netcoredbg inicia o programa; o do lldb-dap roda no terminal `🐞`, com o ambiente da IDE.
+    pub fn program_inherits_env(self) -> bool {
+        self == Self::Netcoredbg
+    }
+
     pub fn args(self) -> Vec<OsString> {
         match self {
             Self::LldbDap => Vec::new(),
@@ -112,6 +117,8 @@ struct Inner {
 /// Caso de uso: uma sessão de depuração por vez.
 pub struct DebugSessions<S, T, P> {
     spawner: S,
+    /// Inicia com os temporários na pasta do app o depurador cujo programa não herda o ambiente dele.
+    app_temp_spawner: S,
     tools: T,
     terminals: Arc<Terminals<P>>,
     inner: Mutex<Inner>,
@@ -123,9 +130,10 @@ where
     T: ToolProbe + 'static,
     P: PtySpawner + 'static,
 {
-    pub fn new(spawner: S, tools: T, terminals: Arc<Terminals<P>>) -> Self {
+    pub fn new(spawner: S, app_temp_spawner: S, tools: T, terminals: Arc<Terminals<P>>) -> Self {
         Self {
             spawner,
+            app_temp_spawner,
             tools,
             terminals,
             inner: Mutex::default(),
@@ -151,7 +159,12 @@ where
         on_event(DebugEvent::Log {
             line: format!("> {}", command_line(&program, &args)),
         });
-        let spawned = self.spawner.spawn(&program, &args, root).map_err(|error| {
+        let spawner = if debugger.program_inherits_env() {
+            &self.spawner
+        } else {
+            &self.app_temp_spawner
+        };
+        let spawned = spawner.spawn(&program, &args, root).map_err(|error| {
             Error::new(
                 ErrorKind::Other,
                 format!("Não foi possível iniciar o {adapter}: {error}"),
