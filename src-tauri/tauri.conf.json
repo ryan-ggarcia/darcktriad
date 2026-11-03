@@ -22,6 +22,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -30,5 +31,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzRDE5RTM4QzIxMkJFRDIKUldUU3ZoTENPSjdSOHhsaXN2OWdaM3dMNDZBdGZDK1FMSkpyUHZkaklyNXp1ZVdsN1R1djRUcWYK",
+      "endpoints": [
+        "https://github.com/ryan-ggarcia/darcktriad/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

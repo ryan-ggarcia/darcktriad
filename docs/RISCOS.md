@@ -91,6 +91,20 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Abrir uma recente enquanto a última pasta reabre** (abas misturadas, corrigido na v0.6.1): passou na janela, no Linux (QA, 2026-11-02, 9463414). A tela inicial fica clicável por 0,6 a 1,5 s depois de o app abrir; 12 cliques nesse intervalo, de 0 a 600 ms depois de a lista aparecer: 7 na outra pasta (só a aba dela, e a sessão gravada dela sem as abas da primeira) e 5 na própria pasta (um único `main.cpp`).
 - **Instaladores:** os do Windows e do macOS nunca foram abertos. O AppImage da v0.3.0 só foi aberto, sem uso; os da v0.4.0 à v0.7.0 foram publicados sem abrir nenhum. O CI do Windows e do macOS só compila e roda os testes automáticos que funcionam lá: nenhum fluxo foi usado de verdade nesses sistemas.
 
+## Atualização automática
+
+- **Quem está na v0.7.0 ou antes** precisa instalar à mão uma vez: essas versões não têm o updater.
+- **Os secrets precisam existir no GitHub:** sem `TAURI_SIGNING_PRIVATE_KEY`, o release falha logo no início, sem publicar nada. Se a chave privada se perder, quem já instalou não recebe mais atualizações e precisa baixar a versão nova à mão.
+- **O release ficou mais lento:** os 4 builds rodam um de cada vez, cerca de 30 min em vez de 11. Em paralelo, um build poderia apagar a parte de outro no `latest.json`.
+- **Release publicado sem um dos sistemas:** se um build falhar e o rascunho for publicado mesmo assim, quem usa aquele sistema vê um erro ao verificar. Não publique um release com o run vermelho.
+- **Notas da versão:** o `notes` do `latest.json` é o texto do `releaseBody` do workflow, hoje fixo. Editar o texto do release no GitHub não muda o que o app recebe.
+- **Enquanto o último release não tiver `latest.json`** (hoje, a v0.7.0), o `update_check` responde com erro, não com `null`.
+- **`.deb` e `.rpm`:** se o usuário cancelar a senha do `pkexec`, o plugin ainda tenta `zenity`/`kdialog` e por fim `sudo`. Com o app aberto por um terminal, o `sudo` pode ficar esperando a senha nesse terminal, e o `update_install` só responde depois.
+- **Memória:** o download fica inteiro na memória até instalar (o AppImage tem o tamanho do arquivo do release).
+- **Windows:** se o instalador não abrir, o `update_restart` rejeita, mas os terminais e servidores de linguagem já foram encerrados.
+- **O que já foi testado (2026-11-02, só no Linux, sem release real):** um AppImage de teste, com par de chaves temporário e servidor local, instalou a versão nova, mostrou o progresso e reiniciou na versão nova, encerrando o terminal aberto. Assinatura trocada, arquivo adulterado e versão anunciada diferente da assinada foram recusados, com o arquivo intacto. O app com a configuração real falou com o GitHub por HTTPS.
+- **Nunca testado:** instalar por `.deb` e `.rpm`, tudo no Windows e no macOS, a chave real e o `latest.json` gerado pelo `tauri-action`. Antes de publicar o primeiro release com o updater, confira no rascunho se o `latest.json` tem `linux-x86_64-appimage`, `linux-x86_64-deb`, `linux-x86_64-rpm`, `windows-x86_64-nsis`, `windows-x86_64-msi`, `darwin-aarch64-app` e `darwin-x86_64-app`.
+
 ## Adiado de propósito
 
 - **Instalação automática de ferramentas** ([ferramentas.md](specs/ferramentas.md)): a IDE só detecta e explica como instalar.

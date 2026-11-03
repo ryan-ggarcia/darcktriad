@@ -5,6 +5,7 @@
 //! O contrato com a interface está em docs/ipc.md.
 
 mod menu;
+mod update;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -568,14 +569,25 @@ fn on_menu_command(app: &AppHandle, id: &str) {
     let _ = app.emit(MENU_COMMAND, id);
 }
 
+/// Nenhum shell (nem o que roda nele), programa, compilação ou servidor de linguagem sobrevive à
+/// IDE.
+fn stop_children(app: &AppHandle) {
+    app.state::<AppDebug>().stop();
+    app.state::<AppTerminals>().close_all();
+    app.state::<AppProject>().close();
+    app.state::<AppLanguages>().stop_all();
+}
+
 fn main() {
     // Antes de tudo: o resto do app (processos, terminal, busca de ferramentas) herda este PATH.
     #[cfg(target_os = "macos")]
     darktriad_infra::use_login_shell_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Explorer::new(LocalFileSystem))
         .manage(Editor::new(LocalFileSystem))
+        .manage(update::UpdateState::default())
         .on_menu_event(|app, event| on_menu_command(app, event.id().as_ref()))
         .setup(|app| {
             let tools_dir = app.path().app_data_dir()?.join("tools");
@@ -676,17 +688,15 @@ fn main() {
             pick_folder,
             pick_file,
             pick_save_path,
+            update::update_check,
+            update::update_install,
+            update::update_restart,
         ])
         .build(tauri::generate_context!())
         .expect("falha ao iniciar o Dark Triad")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                // Nenhum shell (nem o que roda nele), programa, compilação ou servidor de linguagem
-                // sobrevive à IDE.
-                app.state::<AppDebug>().stop();
-                app.state::<AppTerminals>().close_all();
-                app.state::<AppProject>().close();
-                app.state::<AppLanguages>().stop_all();
+                stop_children(app);
             }
         });
 }

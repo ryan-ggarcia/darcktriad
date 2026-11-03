@@ -188,6 +188,18 @@ type DebugEvent =
   | { kind: 'message'; message: string }        // uma mensagem do DAP: o JSON, sem o cabeçalho Content-Length
   | { kind: 'log'; line: string }               // uma linha do canal Depuração da Saída
   | { kind: 'ended'; reason: string | null };   // o adaptador saiu e a sessão acabou; não nulo = caiu, já pronto para mostrar
+
+/** A resposta do `update_check`. */
+interface AvailableUpdate {
+  version: string;       // ex.: '0.8.0'
+  notes: string | null;  // o texto gravado no latest.json quando o release foi gerado
+}
+
+/** Progresso do `update_install`. */
+interface UpdateProgress {
+  downloaded: number;     // bytes baixados até agora
+  total: number | null;   // tamanho do arquivo; null se o servidor não informar
+}
 ```
 
 Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com uma **string**, não com `AppError`. Trate os dois casos no tratador de erros.
@@ -464,6 +476,24 @@ Se um parâmetro vier com o tipo errado (ex.: `eol: 'cr'`), o Tauri rejeita com 
 - O diálogo de salvar já pergunta se o usuário quer substituir um arquivo existente. Depois dele, chame `save_file` com `expectedVersion: null`.
 - **Ctrl+N → Ctrl+S:** chame `pick_save_path({ directory: raiz, fileName: 'Sem título-1' })`, depois `save_file` com `eol: await invoke('default_eol')` e `bom: false`. A aba passa a usar o caminho escolhido.
 - **Salvar como:** `pick_save_path({ directory: pasta do arquivo, fileName: nome atual })`.
+
+### Atualização do app
+
+| Comando | Parâmetros | Retorno | Erros |
+|---|---|---|---|
+| `update_check` | — | `AvailableUpdate \| null` | `other` |
+| `update_install` | `{ onEvent: Channel<UpdateProgress> }` | — | `notFound`, `other` |
+| `update_restart` | — | — | `other` |
+
+- **Nada acontece sozinho:** o núcleo não verifica nem instala sem um destes pedidos, e não abre pop-up. Sem rede, o `update_check` rejeita com `other`, e a mensagem já vem pronta para mostrar.
+- **`update_check`:** `null` significa que não há versão mais nova. Rascunhos não contam: a versão só aparece depois de publicada à mão.
+- **`update_install`:** baixa o que o último `update_check` achou. A assinatura é conferida antes de qualquer instalação; se não bater, rejeita e nada é instalado.
+  - **Linux e macOS:** responde com a instalação pronta. O app continua rodando a versão antiga até o `update_restart`.
+  - **Windows:** responde com o pacote baixado e conferido, ainda sem instalar. O instalador roda no `update_restart`, porque ele encerra o app ao começar.
+  - **`.deb` e `.rpm`:** o sistema pede a senha de administrador. O comando só responde depois que o usuário digitar ou cancelar.
+  - **Cópia sem instalador oficial** (compilada à mão, AppImage extraído, `tauri dev`): rejeita com `other` e o link da página de download, antes de baixar.
+  - **Depois de uma rejeição:** chame `update_check` de novo antes de tentar outra vez. Sem isso, o erro é `notFound`.
+- **`update_restart`:** reinicia o app na hora, sem passar pelo `onCloseRequested`. Antes de chamar, a interface precisa garantir que não há arquivo sem salvar, compilação nem depuração em andamento. Terminais e servidores de linguagem são encerrados pelo núcleo. A promessa normalmente não chega a responder, porque o app já saiu; só uma falha ao abrir o instalador do Windows rejeita, e nesse caso os terminais e os servidores de linguagem já foram encerrados.
 
 ## Eventos
 

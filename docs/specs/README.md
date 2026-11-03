@@ -97,7 +97,7 @@ A ordem segue as dependências: a linguagem precisa do `compile_commands.json` g
 | Funcionalidade | Status | Por quê |
 |---|---|---|
 | Git (status, diff, commit) | Depois | Muito usado, mas fora do fluxo mínimo; o terminal resolve no MVP. |
-| Atualização automática do app | Depois | O release já existe via GitHub; o updater vem depois. |
+| Atualização automática do app | MVP (núcleo feito, tela a fazer) | Pedido do usuário: updater oficial do Tauri, lendo o `latest.json` do último release publicado. |
 | Extensões/plugins | Fora | Aumenta a complexidade e a superfície de falhas; contraria "simples e claro". |
 | Assistente de IA | Fora | Não pedido. |
 | Sincronização de configurações | Fora | Não há configurações no MVP. |
