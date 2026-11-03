@@ -20,6 +20,12 @@ function key(code: string, modifiers: KeyboardEventInit = {}): KeyboardEvent {
 
 const command = (id: string) => ({ kind: 'command', id });
 
+it('um dígito no atalho é a tecla da fileira de números', () => {
+  const chord = parseChord('Mod+0', 'windows');
+  expect(chord[0].code).toBe('Digit0');
+  expect(formatChord(chord, 'windows')).toBe('Ctrl+0');
+});
+
 describe('atalhos', () => {
   it('reconhece atalhos simples e acordes do VS Code no Windows', () => {
     const keys = dispatcher('windows');

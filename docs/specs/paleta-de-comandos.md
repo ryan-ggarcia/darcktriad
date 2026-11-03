@@ -86,11 +86,14 @@ No IntelliJ/CLion é difícil saber o que cada coisa faz e onde fica. Quero digi
 
 1. É gerado a partir do registro de comandos, com o atalho de cada item: menu nativo no macOS, menu da própria interface no Windows e no Linux. Os menus são:
    - **Arquivo:** Novo arquivo, Abrir arquivo, Abrir pasta, Pastas recentes, Salvar, Salvar como, Salvar tudo, Fechar editor, Fechar pasta, Sair.
-   - **Editar:** Desfazer, Refazer, Recortar, Copiar, Colar, Localizar, Substituir, Comentar linha.
-   - **Ver:** Paleta de comandos, Abrir rápido, Explorador, Executar e Depurar, Problemas, Saída, Terminal, Mostrar/ocultar barra lateral.
+   - **Editar:** Desfazer, Refazer, Recortar, Copiar, Colar, Localizar, Substituir, Comentar linha, Formatar documento, Formatar seleção.
+   - **Ver:** Paleta de comandos, Abrir rápido, Explorador, Executar e Depurar, Problemas, Saída, Terminal, Mostrar/ocultar painel, Mostrar/ocultar barra lateral.
    - **Executar:** Compilar, Executar sem depurar, Iniciar depuração, Parar, Alternar ponto de parada.
    - **Ajuda:** Atalhos de teclado (abre a paleta listando todos os comandos com atalho), Verificar e instalar ferramentas ([ferramentas.md](ferramentas.md)), Sobre.
 2. No macOS, o menu do app tem Sobre e Sair (⌘Q), e ⌘W é "Fechar editor", não "fechar janela".
+3. **Alt+letra, no Windows e no Linux:** Alt+A (Arquivo), Alt+E (Editar), Alt+V (Ver), Alt+I (Ir), Alt+X (Executar) e Alt+J (Ajuda). A letra fica sublinhada com o Alt apertado. Com a barra em foco, a letra sozinha abre o menu. Com um menu aberto, inclusive o da engrenagem e os submenus, cada item tem uma letra sublinhada só dele: a primeira livre entre as iniciais das palavras e, depois, entre as outras letras. Apertar a letra escolhe o item; se o item estiver apagado, nada acontece e o menu continua aberto.
+4. **Andar entre as áreas:** F6 e Shift+F6 percorrem as áreas à mostra (barra lateral, editores, painel). Ctrl+0 vai para a barra lateral, Ctrl+1 para o editor, e Ctrl+J mostra ou esconde o painel na última aba. Ctrl+\`, Ctrl+Shift+M e Ctrl+Shift+U levam o foco à aba deles e, com o foco já lá, fecham o painel. Com o programa rodando na depuração, o F6 é Pausar.
+5. **O foco não se perde:** ao esconder o painel com o foco nele, o foco volta ao editor.
 
 **Teclado global**
 
@@ -110,6 +113,11 @@ Fonte: [Default keyboard shortcuts](https://code.visualstudio.com/docs/reference
 | Ver: Paleta de comandos | Ctrl+Shift+P ou F1 | Ctrl+Shift+P ou F1 | ⇧⌘P ou F1 | `workbench.action.showCommands` |
 | Ver: Abrir rápido (ir para arquivo) | Ctrl+P | Ctrl+P | ⌘P | `workbench.action.quickOpen` |
 | Ir: Ir para linha | Ctrl+G | Ctrl+G | ⌃G | `workbench.action.gotoLine` |
+| Ver: Mostrar/ocultar painel | Ctrl+J | Ctrl+J | ⌘J | `workbench.action.togglePanel` |
+| Ver: Ir para a barra lateral | Ctrl+0 | Ctrl+0 | ⌘0 | `workbench.action.focusSideBar` |
+| Ver: Ir para o editor | Ctrl+1 | Ctrl+1 | ⌘1 | `workbench.action.focusFirstEditorGroup` |
+| Ver: Ir para a próxima área | F6 | F6 | F6 | `workbench.action.focusNextPart` |
+| Ver: Ir para a área anterior | Shift+F6 | Shift+F6 | ⇧F6 | `workbench.action.focusPreviousPart` |
 | Arquivo: Sair | sem atalho (Alt+F4 do sistema fecha a janela) | Ctrl+Q | ⌘Q | `workbench.action.quit` ([desktop.contribution.ts](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/electron-browser/desktop.contribution.ts), MIT: atalho só em macOS e Linux) |
 
 ## Critérios de aceite

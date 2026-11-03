@@ -44,6 +44,8 @@ const MENUS: [string, Item[]][] = [
       'replace',
       '-',
       'commentLine',
+      'formatDocument',
+      'formatSelection',
     ],
   ],
   [
@@ -57,6 +59,7 @@ const MENUS: [string, Item[]][] = [
       'showProblems',
       'toggleOutput',
       'toggleTerminal',
+      'togglePanel',
       'toggleSidebar',
     ],
   ],
@@ -71,6 +74,11 @@ const MENUS: [string, Item[]][] = [
       '-',
       'nextProblem',
       'previousProblem',
+      '-',
+      'focusSidebar',
+      'focusEditor',
+      'focusNextPart',
+      'focusPreviousPart',
     ],
   ],
   [

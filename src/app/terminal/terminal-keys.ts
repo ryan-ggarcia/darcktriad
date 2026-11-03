@@ -21,6 +21,17 @@ const IDE_KEYS = [
   'F11',
   'Shift+F11',
   'Mod+B',
+  'Mod+J',
+  'Mod+0',
+  'Mod+1',
+  'Shift+F6',
+  'Mod+PageDown',
+  'Mod+PageUp',
+  'Ctrl+Tab',
+  'Ctrl+Shift+Tab',
+  'Mod+Shift+E',
+  'Mod+Shift+D',
+  'Mod+Shift+M',
   'Mod+Shift+U',
   'Mod+K',
 ];
@@ -42,13 +53,19 @@ export interface TerminalKeyState {
   chordWaiting: boolean;
 }
 
+/** Alt+1 a Alt+9 (⌃1 a ⌃9 no macOS, onde ⌥ com número escreve um caractere). */
+function isTabNumber(is: (text: string) => boolean, platform: Platform): boolean {
+  const modifier = platform === 'mac' ? 'Ctrl' : 'Alt';
+  return [1, 2, 3, 4, 5, 6, 7, 8, 9].some((number) => is(`${modifier}+${number}`));
+}
+
 export function terminalKey(
   event: KeyboardEvent,
   platform: Platform,
   state: TerminalKeyState,
 ): TerminalKey {
   const is = (text: string) => matches(event, parseStroke(text, platform));
-  if (state.chordWaiting || IDE_KEYS.some(is)) return 'page';
+  if (state.chordWaiting || IDE_KEYS.some(is) || isTabNumber(is, platform)) return 'page';
   if (platform === 'windows') {
     if (is('Ctrl+C') && state.hasSelection) return 'copy';
     if (is('Ctrl+V')) return 'page';

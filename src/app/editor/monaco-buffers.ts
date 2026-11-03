@@ -75,6 +75,29 @@ export class MonacoBuffer implements TextBuffer {
     return insertSpaces ? `Espaços: ${indentSize}` : 'Tab';
   }
 
+  formatOptions(): { tabSize: number; insertSpaces: boolean } {
+    const { tabSize, insertSpaces } = this.model.getOptions();
+    return { tabSize, insertSpaces };
+  }
+
+  applyEdits(changes: Required<TextChange>[]): void {
+    this.model.pushStackElement();
+    this.model.pushEditOperations(
+      [],
+      changes.map(({ range: { start, end }, text }) => ({
+        range: new this.monaco.Range(
+          start.line + 1,
+          start.character + 1,
+          end.line + 1,
+          end.character + 1,
+        ),
+        text,
+      })),
+      () => null,
+    );
+    this.model.pushStackElement();
+  }
+
   onEdit(listener: (changes: TextChange[]) => void): () => void {
     const subscription = this.model.onDidChangeContent(({ changes }) =>
       listener(

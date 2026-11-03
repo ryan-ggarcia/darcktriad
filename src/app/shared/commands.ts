@@ -40,7 +40,12 @@ export interface CommandSpec {
   role?: EditRole;
 }
 
+/** Alt+1 a Alt+9 (⌃1 a ⌃9 no macOS): a aba pela posição. */
+export const TAB_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+type OpenTabCommand = `openTab${(typeof TAB_NUMBERS)[number]}`;
+
 export type CommandId =
+  | OpenTabCommand
   | 'newFile'
   | 'openFile'
   | 'openFolder'
@@ -107,7 +112,15 @@ export type CommandId =
   | 'keyboardShortcuts'
   | 'checkUpdates'
   | 'toggleTheme'
-  | 'toggleMaterial';
+  | 'toggleMaterial'
+  | 'formatDocument'
+  | 'formatSelection'
+  | 'togglePanel'
+  | 'focusSidebar'
+  | 'focusEditor'
+  | 'focusNextPart'
+  | 'focusPreviousPart'
+  | 'toggleFormatOnSave';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
@@ -147,6 +160,17 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
     mac: ['Mod+Alt+Left', 'Mod+Shift+['],
     when: 'editorOpen',
   },
+  ...(Object.fromEntries(
+    TAB_NUMBERS.map((number) => [
+      `openTab${number}`,
+      {
+        title: `Ver: Abrir a aba ${number}`,
+        keys: [`Alt+${number}`],
+        mac: [`Ctrl+${number}`],
+        when: 'editorOpen',
+      },
+    ]),
+  ) as Record<OpenTabCommand, CommandSpec>),
   recentEditors: {
     title: 'Ver: Alternar entre editores recentes',
     keys: ['Ctrl+Tab'],
@@ -203,11 +227,19 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   find: { title: 'Editar: Localizar', keys: ['Mod+F'], when: 'textEditor' },
   replace: { title: 'Editar: Substituir', keys: ['Mod+H'], mac: ['Mod+Alt+F'], when: 'textEditor' },
   commentLine: { title: 'Editar: Comentar linha', keys: ['Mod+/'], when: 'textEditor' },
+  formatDocument: {
+    title: 'Editar: Formatar documento',
+    keys: ['Shift+Alt+F'],
+    linux: ['Ctrl+Shift+I', 'Shift+Alt+F'],
+    when: 'textEditor',
+  },
+  formatSelection: { title: 'Editar: Formatar seleção', keys: ['Mod+K Mod+F'], when: 'textEditor' },
   showCommands: { title: 'Ver: Paleta de comandos', keys: ['Mod+Shift+P', 'F1'] },
   quickOpen: { title: 'Ver: Abrir rápido (ir para arquivo)', keys: ['Mod+P'] },
   goToLine: { title: 'Ir: Ir para linha', keys: ['Ctrl+G'], when: 'textEditor' },
   showExplorer: { title: 'Ver: Mostrar Explorador', keys: ['Mod+Shift+E'] },
   toggleSidebar: { title: 'Ver: Mostrar/ocultar barra lateral', keys: ['Mod+B'] },
+  togglePanel: { title: 'Ver: Mostrar/ocultar painel', keys: ['Mod+J'] },
   explorerNewFile: { title: 'Explorador: Novo arquivo', when: 'folderOpen' },
   explorerNewFolder: { title: 'Explorador: Nova pasta', when: 'folderOpen' },
   explorerRefresh: { title: 'Explorador: Atualizar', when: 'folderOpen' },
@@ -301,10 +333,16 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   },
   removeAllBreakpoints: { title: 'Depuração: Remover todos os pontos de parada' },
   showDebug: { title: 'Ver: Executar e Depurar', keys: ['Mod+Shift+D'] },
+  focusSidebar: { title: 'Ver: Ir para a barra lateral', keys: ['Mod+0'] },
+  focusEditor: { title: 'Ver: Ir para o editor', keys: ['Mod+1'] },
+  // Depois do debugPause: vale o primeiro disponível, e com o programa rodando o F6 é Pausar.
+  focusNextPart: { title: 'Ver: Ir para a próxima área', keys: ['F6'] },
+  focusPreviousPart: { title: 'Ver: Ir para a área anterior', keys: ['Shift+F6'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
   checkUpdates: { title: 'Ajuda: Verificar atualizações' },
   toggleTheme: { title: 'Preferências: Alternar tema (escuro/claro)' },
   toggleMaterial: { title: 'Preferências: Alternar material (vidro/sólido)', when: 'glass' },
+  toggleFormatOnSave: { title: 'Preferências: Formatar ao salvar (ligar/desligar)' },
 };
 
 /**
@@ -387,6 +425,18 @@ export class Commands {
     if (!this.isAvailable(id)) return false;
     this.handlers[id]!();
     return true;
+  }
+
+  /** Roda pelo atalho: a mesma tecla pode ser de mais de um comando, um por condição (F6). */
+  runBinding({ chord }: Binding<CommandId>): void {
+    const text = formatChord(chord, PLATFORM);
+    const first = this.bindings.find(
+      (other) =>
+        !COMMANDS[other.id].native &&
+        formatChord(other.chord, PLATFORM) === text &&
+        this.isAvailable(other.id),
+    );
+    if (first) this.run(first.id);
   }
 
   /** Trata uma tecla vinda de fora do editor; `true` se ela foi consumida. */

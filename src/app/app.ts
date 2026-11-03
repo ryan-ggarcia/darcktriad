@@ -3,9 +3,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   Injector,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { Breakpoints } from './debug/breakpoints';
@@ -28,7 +30,7 @@ import { ProjectStatus } from './project/project-status';
 import { ToolsView } from './project/tools-view';
 import { QuickOpen } from './quick-open/quick-open';
 import { Appearance } from './shared/appearance';
-import { CommandId, Commands } from './shared/commands';
+import { CommandId, Commands, TAB_NUMBERS } from './shared/commands';
 import { DialogHost } from './shared/dialog-host';
 import { Dialogs } from './shared/dialogs';
 import { Icon } from './shared/icon';
@@ -141,6 +143,13 @@ export class App {
   constructor() {
     this.appearance.start();
     this.registerCommands();
+    // Roda antes de o painel sumir da tela: se o foco estava nele, volta para o editor.
+    effect(() => {
+      const focusedPanel = document.querySelector('.panel')?.contains(document.activeElement);
+      if (!this.panel.visible() && focusedPanel && untracked(this.tabs.active)) {
+        this.tabs.focusPending.set(true);
+      }
+    });
     void loadKeyboardLayout();
     inject(MainMenu).start();
     void this.project.start();
@@ -172,6 +181,52 @@ export class App {
   /** Ctrl+Tab: soltar o Ctrl abre a aba escolhida na lista. */
   protected onKeyup(event: KeyboardEvent): void {
     if (event.key === 'Control' && this.tabs.switcher()) this.tabs.commitSwitcher();
+  }
+
+  /** Ctrl+J: esconde o painel; escondido, mostra a última aba. */
+  private togglePanel(): void {
+    const tab = this.panel.tab();
+    if (this.panel.visible()) this.panel.visible.set(false);
+    else if (tab === 'terminal') this.terminals.toggle();
+    else this.panel.toggle(tab);
+  }
+
+  private focusSidebar(): void {
+    this.sidebarVisible.set(true);
+    afterNextRender(
+      () => {
+        this.explorer()?.focus();
+        focusInside('.sidebar');
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private focusEditor(): void {
+    this.panel.maximized.set(false);
+    if (this.tabs.active()) this.tabs.focusPending.set(true);
+    else afterNextRender(() => focusInside('.main'), { injector: this.injector });
+  }
+
+  /** F6 / Shift+F6: a próxima área à mostra (barra lateral, editores, painel). */
+  private focusPart(offset: 1 | -1): void {
+    const parts = [
+      { selector: '.sidebar', shown: this.sidebarVisible(), focus: () => this.focusSidebar() },
+      {
+        selector: '.main',
+        shown: !this.panel.visible() || !this.panel.maximized(),
+        focus: () => this.focusEditor(),
+      },
+      {
+        selector: '.panel',
+        shown: this.panel.visible(),
+        focus: () => this.panel.requestFocus(),
+      },
+    ].filter((part) => part.shown);
+    const current = parts.findIndex((part) =>
+      document.querySelector(part.selector)?.contains(document.activeElement),
+    );
+    parts[current < 0 ? 0 : (current + offset + parts.length) % parts.length].focus();
   }
 
   protected showExplorer(): void {
@@ -263,6 +318,9 @@ export class App {
       closeAllEditors: () => this.tabs.closeAll(),
       nextEditor: () => this.tabs.activateNext(1),
       previousEditor: () => this.tabs.activateNext(-1),
+      ...Object.fromEntries(
+        TAB_NUMBERS.map((number) => [`openTab${number}`, () => this.tabs.activateAt(number - 1)]),
+      ),
       recentEditors: () => this.tabs.cycleRecent(1),
       recentEditorsBack: () => this.tabs.cycleRecent(-1),
       showCommands: () => this.quickOpen().show('>'),
@@ -271,6 +329,11 @@ export class App {
       keyboardShortcuts: () => this.quickOpen().show('>', true),
       showExplorer: () => this.showExplorer(),
       toggleSidebar: () => this.sidebarVisible.update((visible) => !visible),
+      togglePanel: () => this.togglePanel(),
+      focusSidebar: () => this.focusSidebar(),
+      focusEditor: () => this.focusEditor(),
+      focusNextPart: () => this.focusPart(1),
+      focusPreviousPart: () => this.focusPart(-1),
       explorerNewFile: inExplorer(() => this.tree.startCreate('file')),
       explorerNewFolder: inExplorer(() => this.tree.startCreate('dir')),
       explorerRefresh: () => this.tree.refresh(),
@@ -285,7 +348,7 @@ export class App {
       goToDefinition: () => this.languages.goToDefinition((pick) => this.quickOpen().pick(pick)),
       navigateBack: () => this.tabs.back(),
       navigateForward: () => this.tabs.forward(),
-      showProblems: () => this.panel.show('problems'),
+      showProblems: () => this.panel.toggle('problems'),
       nextProblem: () => this.goToProblem(1),
       previousProblem: () => this.goToProblem(-1),
       restartCpp: () => this.languages.restart('cpp'),
@@ -314,6 +377,7 @@ export class App {
       showDebug: () => this.showDebug(),
       toggleTheme: () => this.appearance.toggleTheme(),
       toggleMaterial: () => this.appearance.toggleMaterial(),
+      toggleFormatOnSave: () => this.languages.toggleFormatOnSave(),
     });
   }
 
@@ -357,4 +421,11 @@ export class App {
       accept: (choice) => this.project.selectTarget(choice),
     });
   }
+}
+
+/** Leva o foco ao primeiro controle da área, se ele ainda não estiver nela. */
+function focusInside(selector: string): void {
+  const area = document.querySelector(selector);
+  if (area?.contains(document.activeElement)) return;
+  area?.querySelector<HTMLElement>('button:not(:disabled), [tabindex="0"], input')?.focus();
 }

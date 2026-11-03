@@ -61,7 +61,9 @@ Quero rodar comandos (git, scripts, `dotnet new`) sem sair da IDE. Meu programa 
 1. **Teclas que vão para a IDE** mesmo com o foco no terminal:
    - Ctrl+Shift+P, Ctrl+P, Ctrl+\`, Ctrl+Shift+\`, F1;
    - Ctrl+Shift+B, F5, Ctrl+F5, Shift+F5, F9, F10, F11, Shift+F11;
-   - Ctrl+B e todos os acordes Ctrl+K.
+   - Ctrl+B, Ctrl+J, Ctrl+0, Ctrl+1, F6, Shift+F6;
+   - Ctrl+PageDown, Ctrl+PageUp, Ctrl+Tab, Ctrl+Shift+Tab, Alt+1 a Alt+9 (⌃1 a ⌃9 no macOS);
+   - Ctrl+Shift+E, Ctrl+Shift+D, Ctrl+Shift+M, Ctrl+Shift+U e todos os acordes Ctrl+K.
 
    No macOS, os equivalentes com ⌘ e ⌃ da tabela abaixo. Todo o resto vai para o processo, inclusive Ctrl+C (interromper), Ctrl+D e as setas.
 2. **Copiar e colar:**
@@ -69,6 +71,8 @@ Quero rodar comandos (git, scripts, `dotnet new`) sem sair da IDE. Meu programa 
    - **Linux:** Ctrl+Shift+C / Ctrl+Shift+V.
    - **macOS:** ⌘C / ⌘V.
 3. **Rolagem:** Shift+PageUp/PageDown no Windows e no Linux; PageUp/PageDown no macOS.
+4. **Ctrl+\`:** com o foco fora do terminal, leva o foco até ele, abrindo o painel se preciso. Com o foco nele, fecha o painel e o foco volta ao editor, como no VS Code.
+5. **Alt+letra** vai para o shell (Alt+F, Alt+B), não para os menus, como no padrão do VS Code. **Alt+1 a Alt+9** ficam com a IDE: o argumento numérico do readline (Alt+número) não chega ao shell.
 
 **Ciclo de vida**
 

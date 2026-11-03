@@ -59,6 +59,7 @@ export class EditorTabs {
   private recent: Tab[] = [];
   private readonly history = new JumpHistory();
   private readonly savedListeners = new Set<(tab: Tab) => void>();
+  private beforeSave: (tab: Tab) => Promise<void> = () => Promise.resolve();
   private readonly opening = new Map<Path, Promise<Tab | null>>();
   private defaultEol?: Promise<Eol>;
   /** Muda a cada `clear`: o que ainda estava sendo lido antes dele não vira aba. */
@@ -100,6 +101,11 @@ export class EditorTabs {
   }
 
   /** Avisa a cada gravação bem-sucedida (o servidor de linguagem recebe `didSave`). */
+  /** O que roda antes de gravar. Uma falha aqui nunca impede a gravação. */
+  onBeforeSave(hook: (tab: Tab) => Promise<void>): void {
+    this.beforeSave = (tab) => hook(tab).catch(() => undefined);
+  }
+
   onSaved(listener: (tab: Tab) => void): () => void {
     this.savedListeners.add(listener);
     return () => this.savedListeners.delete(listener);
@@ -148,6 +154,15 @@ export class EditorTabs {
     const tabs = this.tabs();
     const active = this.active();
     if (active) this.activate(tabs[(tabs.indexOf(active) + offset + tabs.length) % tabs.length]);
+    this.requestFocus();
+  }
+
+  /** Alt+1 a Alt+9: a aba nessa posição; sem aba lá, nada acontece. */
+  activateAt(index: number): void {
+    const tab = this.tabs()[index];
+    if (!tab) return;
+    this.activate(tab);
+    this.requestFocus();
   }
 
   /** Ctrl+Tab: abre a lista por uso recente, ou avança nela se já estiver aberta. */
@@ -227,6 +242,8 @@ export class EditorTabs {
     const path = tab.path();
     if (tab.view.kind !== 'text') return true;
     if (!path) return this.saveAs(tab);
+    // Antes do teste: o Ctrl+S num arquivo sem alterações também formata.
+    await this.beforeSave(tab);
     if (!tab.dirty() && !tab.deleted()) return true;
     return this.write(tab, path, false);
   }
@@ -239,7 +256,9 @@ export class EditorTabs {
       tab.name(),
     );
     // shortcut: salvar por cima de um arquivo aberto em outra aba deixa as duas no mesmo caminho; fechar a outra fica para depois.
-    return target !== null && this.write(tab, target, true);
+    if (target === null) return false;
+    await this.beforeSave(tab);
+    return this.write(tab, target, true);
   }
 
   saveAll(): Promise<boolean> {

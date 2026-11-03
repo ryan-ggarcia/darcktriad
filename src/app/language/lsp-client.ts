@@ -22,6 +22,8 @@ export interface ServerCapabilities {
   signatureHelpProvider?: { triggerCharacters?: string[]; retriggerCharacters?: string[] };
   hoverProvider?: boolean | object;
   definitionProvider?: boolean | object;
+  documentFormattingProvider?: boolean | object;
+  documentRangeFormattingProvider?: boolean | object;
   diagnosticProvider?: { identifier?: string };
 }
 
@@ -68,6 +70,8 @@ const CLIENT_CAPABILITIES = {
       },
     },
     definition: { linkSupport: true },
+    formatting: {},
+    rangeFormatting: {},
   },
 };
 

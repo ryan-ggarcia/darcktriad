@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { createFakes, Fakes, settle } from '../../testing/fakes';
 import { Commands } from '../shared/commands';
+import { Panel } from '../shared/panel';
 import { exitMessage, Terminals } from './terminals';
 
 describe('terminais', () => {
@@ -17,6 +18,22 @@ describe('terminais', () => {
     await terminals.create();
     return { session: terminals.active()!, screen: fakes.screens.screens.at(-1)! };
   }
+
+  it('Ctrl+`: com o foco em outro lugar, leva o foco ao terminal em vez de esconder', async () => {
+    await create();
+    const panel = TestBed.inject(Panel);
+    const requests = panel.focusRequest();
+    const editor = document.body.appendChild(document.createElement('textarea'));
+    editor.focus();
+
+    terminals.toggle();
+    expect(terminals.visible()).toBe(true);
+    expect(panel.focusRequest()).toBe(requests + 1);
+
+    editor.remove();
+    terminals.toggle();
+    expect(terminals.visible()).toBe(false);
+  });
 
   it('Ctrl+`: sem terminais cria um; de novo esconde; de novo mostra o mesmo', async () => {
     terminals.toggle();

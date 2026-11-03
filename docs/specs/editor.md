@@ -89,6 +89,7 @@ Quero abrir arquivos de código, editar com conforto e salvar sem medo de perder
 
 1. Ctrl+PageDown/PageUp troca de aba pela posição.
 2. Ctrl+Tab abre uma lista das abas por uso recente. Com Ctrl segurado, cada Tab avança na lista; soltar o Ctrl abre a aba escolhida.
+3. Alt+1 a Alt+9 (⌃1 a ⌃9 no macOS) abrem a aba pela posição, com o foco no editor, inclusive a partir do terminal. Sem aba nessa posição, nada acontece.
 
 **Restaurar**
 
@@ -109,6 +110,7 @@ Fonte: [Default keyboard shortcuts](https://code.visualstudio.com/docs/reference
 | Ver: Fechar todos os editores | Ctrl+K Ctrl+W | Ctrl+K Ctrl+W | ⌘K ⌘W | `workbench.action.closeAllEditors` |
 | Ver: Próximo editor | Ctrl+PageDown | Ctrl+PageDown | ⌥⌘→ ou ⇧⌘] | `workbench.action.nextEditor` ([editorActions.ts](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorActions.ts), MIT) |
 | Ver: Editor anterior | Ctrl+PageUp | Ctrl+PageUp | ⌥⌘← ou ⇧⌘[ | `workbench.action.previousEditor` (idem) |
+| Ver: Abrir a aba 1 a 9 | Alt+1 a Alt+9 | Alt+1 a Alt+9 | ⌃1 a ⌃9 | `workbench.action.openEditorAtIndex1` a `9` |
 | Ver: Alternar entre editores recentes | Ctrl+Tab | Ctrl+Tab | ⌃Tab | `workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup` |
 | Editar: Localizar | Ctrl+F | Ctrl+F | ⌘F | `actions.find` |
 | Editar: Substituir | Ctrl+H | Ctrl+H | ⌥⌘F | `editor.action.startFindReplaceAction` |

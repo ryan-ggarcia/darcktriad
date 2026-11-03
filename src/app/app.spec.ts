@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { createFakes, Fakes, settle } from '../testing/fakes';
 import { App } from './app';
 import { Commands } from './shared/commands';
+import { Panel } from './shared/panel';
 
 describe('App', () => {
   let fakes: Fakes;
@@ -196,6 +197,44 @@ describe('App', () => {
     page = await render();
     expect(width()).toBe('280px');
     localStorage.clear();
+  });
+
+  it('F6 anda pelas áreas à mostra e Ctrl+J esconde o painel e mostra a última aba', async () => {
+    const page = await render();
+    const commands = TestBed.inject(Commands);
+    const panel = TestBed.inject(Panel);
+    const run = async (id: Parameters<Commands['run']>[0]) => {
+      commands.run(id);
+      await settle();
+      TestBed.tick();
+      await settle();
+    };
+    const inside = (selector: string) =>
+      page.querySelector(selector)?.contains(document.activeElement);
+    panel.show('problems');
+    await settle();
+
+    await run('focusNextPart');
+    expect(inside('.sidebar')).toBe(true);
+    await run('focusNextPart');
+    expect(inside('.main')).toBe(true);
+    await run('focusNextPart');
+    expect(inside('.panel')).toBe(true);
+    await run('focusNextPart');
+    expect(inside('.sidebar')).toBe(true);
+    await run('focusPreviousPart');
+    expect(inside('.panel')).toBe(true);
+
+    await run('focusSidebar');
+    expect(inside('.sidebar')).toBe(true);
+    await run('focusEditor');
+    expect(inside('.main')).toBe(true);
+
+    await run('togglePanel');
+    expect(panel.visible()).toBe(false);
+    await run('togglePanel');
+    expect([panel.visible(), panel.tab()]).toEqual([true, 'problems']);
+    expect(inside('.panel')).toBe(true);
   });
 
   it('bloqueia F5 e Ctrl+R, que recarregariam a página e perderiam o que não foi salvo', async () => {

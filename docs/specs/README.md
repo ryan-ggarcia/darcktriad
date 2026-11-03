@@ -51,7 +51,7 @@ A ordem segue as dependências: a linguagem precisa do `compile_commands.json` g
 | Autocomplete, dicas de parâmetros, hover | **MVP** | Pedido explícito. |
 | Ir para definição (F12 / Ctrl+clique) e voltar | **MVP** | Navegação mínima em código C/C++/C#. |
 | Localizar referências (Shift+F12), renomear símbolo (F2) | Depois | O LSP já oferece; fica para logo após o MVP. |
-| Formatar documento (clang-format / Roslyn) | Depois | Útil, não bloqueia o fluxo. |
+| Formatar documento, seleção e ao salvar (clangd / Roslyn) | **Feito** | Pedido na Etapa 2 ([linguagem.md](linguagem.md)). |
 | Correções rápidas (Ctrl+.) | Depois | Exige UI de code actions. |
 | Símbolos do arquivo (Ctrl+Shift+O) e do projeto (Ctrl+T) | Depois | Ctrl+P e F12 cobrem o MVP. |
 | Realce semântico, inlay hints, CodeLens | Depois | Polimento visual. |

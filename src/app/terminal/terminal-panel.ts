@@ -54,6 +54,7 @@ export class TerminalPanel {
   protected readonly problemCount = computed(() => this.problems.items().length);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host: HTMLElement = inject(ElementRef).nativeElement;
   /** Lembrada entre aberturas. */
   protected readonly height = signal(readSize(HEIGHT_KEY, 280, MIN_HEIGHT, 2000));
   private readonly area = viewChild.required<ElementRef<HTMLElement>>('area');
@@ -65,6 +66,10 @@ export class TerminalPanel {
       const session = this.terminals.active();
       if (!this.panel.visible() || this.panel.tab() !== 'terminal' || !session) return;
       untracked(() => afterNextRender(() => this.show(session), { injector: this.injector }));
+    });
+    effect(() => {
+      if (!this.panel.focusRequest()) return;
+      untracked(() => afterNextRender(() => this.focusTab(), { injector: this.injector }));
     });
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.fitActive());
@@ -108,6 +113,13 @@ export class TerminalPanel {
     if (!host.firstChild) session.screen.open(host);
     this.fit(session, host);
     session.screen.focus();
+  }
+
+  /** O terminal, ou o botão da aba nas que não têm campo próprio. */
+  private focusTab(): void {
+    const session = this.terminals.active();
+    if (this.panel.tab() === 'terminal' && session) session.screen.focus();
+    else this.host.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.focus();
   }
 
   private fitActive(): void {

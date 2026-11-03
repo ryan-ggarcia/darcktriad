@@ -86,7 +86,7 @@ export function parseStroke(text: string, platform: Platform): KeyStroke {
     meta: mod && platform === 'mac',
     shift: parts.includes('Shift'),
     alt: parts.includes('Alt'),
-    code: CODES[key] ?? (key.length === 1 ? `Key${key}` : key),
+    code: CODES[key] ?? (/^\d$/.test(key) ? `Digit${key}` : key.length === 1 ? `Key${key}` : key),
   };
 }
 

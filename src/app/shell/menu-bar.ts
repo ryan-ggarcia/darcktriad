@@ -14,9 +14,20 @@ import { Commands, isCommandId } from '../shared/commands';
 import { Dialogs } from '../shared/dialogs';
 import { MenuDone, MenuItem, MenuList } from '../shared/menu-list';
 
+/** A letra do Alt+letra de cada menu; sublinhada enquanto o Alt está apertado. */
+const MNEMONICS: Record<string, string> = {
+  Arquivo: 'a',
+  Editar: 'e',
+  Ver: 'v',
+  Ir: 'i',
+  Executar: 'x',
+  Ajuda: 'j',
+};
+
 /**
  * Os menus Arquivo, Editar… na barra da janela, no Windows e no Linux (padrão ARIA `menubar`).
- * Alt sozinho ou F10 foca a barra; setas andam e abrem; Enter escolhe; Esc volta para onde estava.
+ * Alt sozinho ou F10 foca a barra; Alt+letra abre um menu; setas andam e abrem; Enter escolhe;
+ * Esc volta para onde estava.
  */
 @Component({
   selector: 'app-menu-bar',
@@ -28,7 +39,8 @@ import { MenuDone, MenuItem, MenuList } from '../shared/menu-list';
     'aria-label': 'Menu principal',
     '(keydown)': 'onKeydown($event)',
     '(document:mousedown)': 'closeOutside($event)',
-    '(window:blur)': 'open.set(null)',
+    '[class.mnemonics]': 'altHeld()',
+    '(window:blur)': 'open.set(null); altHeld.set(false)',
   },
   template: `
     @for (menu of menus(); track menu.label; let i = $index) {
@@ -41,12 +53,15 @@ import { MenuDone, MenuItem, MenuList } from '../shared/menu-list';
           [class.open]="open() === i"
           [attr.aria-expanded]="open() === i"
           [attr.tabindex]="i === current() ? 0 : -1"
-          [title]="'Menu ' + menu.label + ' (Alt ou F10 pelo teclado)'"
+          [attr.aria-keyshortcuts]="'Alt+' + menu.mnemonic.toUpperCase()"
+          [title]="'Menu ' + menu.label + ' (Alt+' + menu.mnemonic.toUpperCase() + ')'"
           (mousedown)="$event.preventDefault()"
           (click)="toggle(i)"
           (mouseenter)="hover(i)"
         >
-          {{ menu.label }}
+          @let at = menu.label.toLowerCase().indexOf(menu.mnemonic);
+          {{ menu.label.slice(0, at) }}<span class="mnemonic">{{ menu.label[at] }}</span
+          >{{ menu.label.slice(at + 1) }}
         </button>
         @if (open() === i) {
           <app-menu-list
@@ -71,13 +86,20 @@ export class MenuBar {
 
   /** Lê a disponibilidade dos comandos: itens que não valem agora aparecem apagados. */
   protected readonly menus = computed(() =>
-    this.mainMenu
-      .entries()
-      .flatMap((entry) =>
-        entry.kind === 'submenu' ? [{ label: entry.label, items: this.toItems(entry.items) }] : [],
-      ),
+    this.mainMenu.entries().flatMap((entry) =>
+      entry.kind === 'submenu'
+        ? [
+            {
+              label: entry.label,
+              mnemonic: MNEMONICS[entry.label],
+              items: this.toItems(entry.items),
+            },
+          ]
+        : [],
+    ),
   );
   protected readonly open = signal<number | null>(null);
+  protected readonly altHeld = signal(false);
   /** O menu que recebe o Tab dentro da barra (tabindex móvel). */
   protected readonly current = signal(0);
   protected focusOnOpen: 'first' | 'last' = 'first';
@@ -91,6 +113,19 @@ export class MenuBar {
       const down = (event: KeyboardEvent) => {
         altAlone = event.key === 'Alt' && !event.ctrlKey && !event.shiftKey && !event.metaKey;
         const plain = !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
+        // No terminal, Alt+letra é do shell (Alt+F, Alt+B), como no VS Code.
+        const mnemonic =
+          event.altKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.metaKey &&
+          !(document.activeElement as Element | null)?.closest('.xterm');
+        this.altHeld.set(mnemonic);
+        if (mnemonic && this.openByLetter(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         // Pausado na depuração, o F10 é "Passar por cima", como no VS Code.
         if (event.key === 'F10' && plain && !this.commands.isAvailable('debugStepOver')) {
           event.preventDefault();
@@ -99,6 +134,7 @@ export class MenuBar {
         }
       };
       const up = (event: KeyboardEvent) => {
+        if (event.key === 'Alt') this.altHeld.set(false);
         if (event.key === 'Alt' && altAlone) {
           event.preventDefault();
           this.toggleFocus();
@@ -173,7 +209,7 @@ export class MenuBar {
         this.leave();
         break;
       default:
-        return;
+        if (event.ctrlKey || event.metaKey || !this.openByLetter(event.key)) return;
     }
     event.preventDefault();
     event.stopPropagation();
@@ -203,6 +239,16 @@ export class MenuBar {
 
   protected closeOutside(event: MouseEvent): void {
     if (this.open() !== null && !this.host.contains(event.target as Node)) this.open.set(null);
+  }
+
+  /** Abre o menu da letra; `false` se nenhum usa essa letra ou há uma pergunta aberta. */
+  private openByLetter(key: string): boolean {
+    if (this.dialogs.current()) return false;
+    const index = this.menus().findIndex((menu) => menu.mnemonic === key.toLowerCase());
+    if (index < 0) return false;
+    this.remember();
+    this.show(index, 'first');
+    return true;
   }
 
   private show(index: number, focus: 'first' | 'last'): void {

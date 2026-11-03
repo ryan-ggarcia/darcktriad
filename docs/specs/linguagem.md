@@ -133,6 +133,8 @@ Fonte: [Default keyboard shortcuts](https://code.visualstudio.com/docs/reference
 | Editar: Mostrar dicas de parâmetros | Ctrl+Shift+Space | Ctrl+Shift+Space | ⇧⌘Space | `editor.action.triggerParameterHints` |
 | Editar: Mostrar hover | Ctrl+K Ctrl+I | Ctrl+K Ctrl+I | ⌘K ⌘I | `editor.action.showHover` |
 | Ir: Ir para definição | F12 / Ctrl+clique | F12 / Ctrl+clique | F12 / ⌘+clique | `editor.action.revealDefinition` ([Code Navigation](https://code.visualstudio.com/docs/editing/editingevolved)) |
+| Editar: Formatar documento | Shift+Alt+F | Ctrl+Shift+I ou Shift+Alt+F | ⇧⌥F | `editor.action.formatDocument` |
+| Editar: Formatar seleção | Ctrl+K Ctrl+F | Ctrl+K Ctrl+F | ⌘K ⌘F | `editor.action.formatSelection` |
 | Ir: Voltar | Alt+← | Ctrl+Alt+- | ⌃- | `workbench.action.navigateBack` |
 | Ir: Avançar | Alt+→ | Ctrl+Shift+- | ⌃⇧- | `workbench.action.navigateForward` |
 | Ver: Problemas | Ctrl+Shift+M | Ctrl+Shift+M | ⇧⌘M | `workbench.actions.view.problems` |
@@ -166,10 +168,20 @@ Fonte: [Default keyboard shortcuts](https://code.visualstudio.com/docs/reference
 14. **[manual]** Troque a configuração para Release. Esperado: o canal clangd da Saída mostra o reinício com `--compile-commands-dir` apontando para a pasta de Release.
 15. **[auto/perf]** No arquivo de 10.000 linhas do `grande`, com o clangd ativo, a digitação tem p95 < 50 ms (meta no README).
 
+## Formatar
+
+1. **Quem formata é o servidor da linguagem:** o clangd segue o `.clang-format` do projeto, e o Roslyn, o `.editorconfig`. A IDE só manda o arquivo e as opções de recuo do editor.
+2. **O resultado fica no buffer:** o arquivo aparece como não salvo, e um Ctrl+Z desfaz a formatação inteira.
+3. **Sem servidor pronto para o arquivo:** a barra de status avisa, em vez de o atalho parecer quebrado.
+4. **Formatar seleção sem nada selecionado** vale para a linha do cursor. O clang-format também corrige o recuo das linhas seguintes do mesmo bloco; o que vem antes não muda.
+
+5. **Formatar ao salvar:** opção na engrenagem e na paleta, desligada por padrão, porque reformatar muda linhas que a pessoa não tocou. Ligada, vale para qualquer salvamento, inclusive o Ctrl+S num arquivo sem alterações. Se nada mudar, o arquivo não é gravado.
+6. **Formatar nunca impede de salvar:** sem servidor pronto, com erro no servidor ou com texto digitado durante a espera, o arquivo é gravado como está. O servidor tem 3 segundos para responder; depois disso, a barra de status avisa que o arquivo foi salvo sem formatar.
+
 ## O que fica de fora
 
 - **Localizar referências (Shift+F12) e renomear símbolo (F2):** depois (README).
-- **Formatar documento ou seleção:** depois.
+- **Formatar ao digitar:** depois.
 - **Correções rápidas e code actions (Ctrl+.):** depois.
 - **Símbolos do arquivo (Ctrl+Shift+O) e do projeto (Ctrl+T), e "espiar" definição (Alt+F12):** depois.
 - **Realce semântico, inlay hints, CodeLens, hierarquia de chamadas e de tipos:** depois.

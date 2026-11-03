@@ -7,9 +7,10 @@ import { basename, isWithin, relativeTo } from '../paths';
 import { withLine } from '../project/project';
 import { Problems } from '../project/problems';
 import { Commands } from '../shared/commands';
+import { readSetting, writeSetting } from '../shared/settings';
 import { CurrentFolder } from '../workspace/current-folder';
 import { LspClient, LspDocument } from './lsp-client';
-import { Location, LocationLink, pathToUri, toLocations, toMarker, uriToPath } from './lsp';
+import { Location, LocationLink, pathToUri, Range, toLocations, toMarker, uriToPath } from './lsp';
 import type { Pick } from '../quick-open/quick-open';
 
 export const LANGUAGES: Language[] = ['cpp', 'csharp'];
@@ -38,6 +39,10 @@ export class Server {
   }
 }
 
+const FORMAT_ON_SAVE_KEY = 'formatOnSave';
+/** Quanto a gravação espera o formatador: um servidor lento ou travado não segura o Ctrl+S. */
+export const FORMAT_ON_SAVE_TIMEOUT_MS = 3000;
+
 interface OpenDocument extends LspDocument {
   language: Language;
   stopEdits(): void;
@@ -62,6 +67,8 @@ export class Languages {
       (language) => SERVER_NAMES[language].channel,
     ),
   );
+  /** Desligado por padrão, como no VS Code: reformatar muda linhas que a pessoa não tocou. */
+  readonly formatOnSave = signal(readSetting(FORMAT_ON_SAVE_KEY) === 'true');
   private readonly documents = new Map<Tab, OpenDocument>();
   private folderPath: Path | null = null;
 
@@ -73,10 +80,43 @@ export class Languages {
       for (const tab of tabs) tab.path();
       untracked(() => this.sync(folder, tabs));
     });
+    this.tabs.onBeforeSave((tab) => this.formatBeforeSave(tab));
     this.tabs.onSaved((tab) => {
       const document = this.documents.get(tab);
       if (document) this.client(document.language)?.save(document.uri);
     });
+  }
+
+  toggleFormatOnSave(): void {
+    this.formatOnSave.update((on) => !on);
+    writeSetting(FORMAT_ON_SAVE_KEY, String(this.formatOnSave()));
+  }
+
+  private async formatBeforeSave(tab: Tab): Promise<void> {
+    const view = tab.view;
+    if (!this.formatOnSave() || tab.outsideProject() || view.kind !== 'text' || view.readOnly) {
+      return;
+    }
+    const document = this.documents.get(tab);
+    const client = document && this.client(document.language);
+    if (!document || !client?.capabilities.documentFormattingProvider) return;
+    const { buffer } = view;
+    const version = buffer.versionId();
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      abort.abort();
+      this.commands.flash('O formatador demorou: arquivo salvo sem formatar');
+    }, FORMAT_ON_SAVE_TIMEOUT_MS);
+    const edits = await client.request<{ range: Range; newText: string }[]>(
+      'textDocument/formatting',
+      { textDocument: { uri: document.uri }, options: buffer.formatOptions() },
+      abort.signal,
+    );
+    clearTimeout(timer);
+    // O texto mudou ou a aba fechou durante a espera: as posições não valem mais.
+    if (edits?.length && buffer.versionId() === version && this.tabs.tabs().includes(tab)) {
+      buffer.applyEdits(edits.map(({ range, newText }) => ({ range, text: newText })));
+    }
   }
 
   /** O cliente pronto da linguagem, para os provedores do Monaco. */

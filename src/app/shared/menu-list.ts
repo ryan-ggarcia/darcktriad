@@ -9,6 +9,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { fold } from './fuzzy';
 import { Icon } from './icon';
 
 export interface MenuItem {
@@ -17,6 +18,8 @@ export interface MenuItem {
   shortcut?: string;
   /** Item de escolha (tema, material): a marca mostra o que vale. */
   checked?: boolean;
+  /** A marca liga e desliga sozinha, sem ser uma entre várias opções. */
+  toggle?: boolean;
   /** Fica no menu, apagado, e não faz nada (comando que não vale agora). */
   disabled?: boolean;
   /** Dica no lugar do rótulo com o atalho (ex.: por que está apagado). */
@@ -24,6 +27,23 @@ export interface MenuItem {
   run?: () => unknown;
   /** Submenu (ex.: Pastas recentes). */
   items?: (MenuItem | null)[];
+}
+
+/**
+ * A posição da letra de cada item: a primeira livre entre as iniciais das palavras e, depois,
+ * entre as outras letras; -1 sem letra livre.
+ */
+export function mnemonicPositions(labels: (string | null)[]): number[] {
+  const taken = new Set<string>();
+  return labels.map((label) => {
+    if (!label) return -1;
+    const letters = [...label.matchAll(/[\p{L}\d]/gu)].map((match) => match.index);
+    const initials = letters.filter((at) => at === 0 || !/[\p{L}\d]/u.test(label[at - 1]));
+    const at = [...initials, ...letters].find((position) => !taken.has(fold(label[position])));
+    if (at === undefined) return -1;
+    taken.add(fold(label[at]));
+    return at;
+  });
 }
 
 /** Como o menu fechou: o dono devolve o foco, roda o item escolhido ou abre o menu vizinho. */
@@ -48,7 +68,14 @@ export type MenuDone =
             class="menu-item"
             tabindex="-1"
             [attr.data-index]="i"
-            [attr.role]="item.checked === undefined ? 'menuitem' : 'menuitemradio'"
+            [attr.role]="
+              item.toggle
+                ? 'menuitemcheckbox'
+                : item.checked === undefined
+                  ? 'menuitem'
+                  : 'menuitemradio'
+            "
+            [attr.aria-keyshortcuts]="parts()[i][1].toUpperCase() || null"
             [attr.aria-checked]="item.checked ?? null"
             [attr.aria-disabled]="item.disabled || null"
             [attr.aria-haspopup]="item.items ? 'menu' : null"
@@ -62,7 +89,10 @@ export type MenuDone =
             @if (checks()) {
               <span class="menu-check" aria-hidden="true">{{ item.checked ? '✓' : '' }}</span>
             }
-            <span class="menu-label">{{ item.label }}</span>
+            <span class="menu-label"
+              >{{ parts()[i][0] }}<span class="mnemonic">{{ parts()[i][1] }}</span
+              >{{ parts()[i][2] }}</span
+            >
             @if (item.shortcut) {
               <kbd class="menu-shortcut">{{ item.shortcut }}</kbd>
             }
@@ -98,6 +128,17 @@ export class MenuList {
   protected readonly checks = computed(() =>
     this.items().some((item) => item?.checked !== undefined),
   );
+  /** Cada rótulo em três partes: antes da letra, a letra (vazia se não houver) e depois. */
+  protected readonly parts = computed(() => {
+    const labels = this.items().map((item) => item?.label ?? null);
+    const positions = mnemonicPositions(labels);
+    return labels.map((label, index) => {
+      const at = positions[index];
+      return at < 0
+        ? [label ?? '', '', '']
+        : [label!.slice(0, at), label![at], label!.slice(at + 1)];
+    });
+  });
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
 
   constructor() {
@@ -129,6 +170,14 @@ export class MenuList {
     } else {
       this.done.emit(done);
     }
+  }
+
+  private chooseByLetter(key: string): boolean {
+    const letter = fold(key);
+    const index = this.parts().findIndex((parts) => parts[1] && fold(parts[1]) === letter);
+    if (index < 0) return false;
+    this.choose(index);
+    return true;
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -166,7 +215,9 @@ export class MenuList {
         this.done.emit({ reason: 'tab' });
         break;
       default:
-        return;
+        // A letra do item o escolhe, como nos menus do sistema; item apagado não faz nada.
+        if (event.ctrlKey || event.altKey || event.metaKey) return;
+        if (!this.chooseByLetter(event.key)) return;
     }
     // Um submenu trata a tecla e ela não chega ao menu de fora nem aos atalhos da IDE.
     event.preventDefault();

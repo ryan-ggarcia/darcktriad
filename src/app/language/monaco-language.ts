@@ -110,14 +110,20 @@ export function connectMonaco(monaco: MonacoApi, injector: Injector): void {
 }
 
 /** Os provedores de um processo do servidor, com os caracteres de gatilho que ele anunciou. */
-function registerProviders(
+export function registerProviders(
   monaco: MonacoApi,
   client: LspClient,
   language: Language,
   uriOf: (model: Model) => string | null,
 ): Monaco.IDisposable[] {
   const ids = MONACO_IDS[language];
-  const { completionProvider, signatureHelpProvider, hoverProvider } = client.capabilities;
+  const {
+    completionProvider,
+    signatureHelpProvider,
+    hoverProvider,
+    documentFormattingProvider,
+    documentRangeFormattingProvider,
+  } = client.capabilities;
   const at = (model: Model, position: Monaco.Position) => {
     const uri = uriOf(model);
     return (
@@ -257,6 +263,47 @@ function registerProviders(
               }
             : null;
         },
+      }),
+    );
+  }
+  const format = async (
+    method: string,
+    model: Model,
+    { tabSize, insertSpaces }: Monaco.languages.FormattingOptions,
+    token: Monaco.CancellationToken,
+    extra?: { range: Range },
+  ) => {
+    const uri = uriOf(model);
+    if (!uri) return null;
+    const edits = await client.request<{ range: Range; newText: string }[]>(
+      method,
+      { textDocument: { uri }, options: { tabSize, insertSpaces }, ...extra },
+      abortOn(token),
+    );
+    return (
+      edits?.map(({ range, newText }) => ({ range: toRange(monaco, range), text: newText })) ?? null
+    );
+  };
+
+  if (documentFormattingProvider) {
+    disposables.push(
+      monaco.languages.registerDocumentFormattingEditProvider(ids, {
+        provideDocumentFormattingEdits: (model, options, token) =>
+          format('textDocument/formatting', model, options, token),
+      }),
+    );
+  }
+
+  if (documentRangeFormattingProvider) {
+    disposables.push(
+      monaco.languages.registerDocumentRangeFormattingEditProvider(ids, {
+        provideDocumentRangeFormattingEdits: (model, range, options, token) =>
+          format('textDocument/rangeFormatting', model, options, token, {
+            range: {
+              start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+              end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+            },
+          }),
       }),
     );
   }

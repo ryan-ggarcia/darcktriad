@@ -83,17 +83,27 @@ describe('QuickOpen', () => {
   describe('paleta de comandos', () => {
     it('lista os comandos disponíveis com o atalho à direita e filtra sem acento', async () => {
       await open('>');
+      await type('>explorador');
 
       expect(labels()).toContain('Ver: Mostrar Explorador');
       // Sem editor de texto, ir para linha não está disponível e não aparece.
+      await type('>ir para linha');
       expect(labels()).not.toContain('Ir: Ir para linha');
 
       await type('>salvar');
 
-      expect(labels()).toEqual(['Arquivo: Salvar tudo']);
+      expect(labels()).toEqual([
+        'Arquivo: Salvar tudo',
+        'Preferências: Formatar ao salvar (ligar/desligar)',
+      ]);
       textEditor = true;
       await type('>salvar ');
-      expect(labels()).toEqual(['Arquivo: Salvar', 'Arquivo: Salvar como', 'Arquivo: Salvar tudo']);
+      expect(labels()).toEqual([
+        'Arquivo: Salvar',
+        'Arquivo: Salvar como',
+        'Arquivo: Salvar tudo',
+        'Preferências: Formatar ao salvar (ligar/desligar)',
+      ]);
       expect(items()[0].querySelector('.quick-keys')?.textContent).toBe('Ctrl+S');
       expect(items()[0].querySelector('.quick-match')?.textContent).toBe('Salvar');
     });
@@ -166,7 +176,7 @@ describe('QuickOpen', () => {
       expect(message()).toBe('Nenhum programa executável neste projeto.');
 
       await open('>');
-      expect(labels()).toContain('Ver: Mostrar Explorador');
+      expect(labels()).toContain('Ajuda: Atalhos de teclado');
     });
   });
 

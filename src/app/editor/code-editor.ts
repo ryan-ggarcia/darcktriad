@@ -139,16 +139,21 @@ export class CodeEditor {
     });
     // Os atalhos da IDE também valem com o foco no texto, inclusive os acordes Ctrl+K. Os de
     // edição (Ctrl+C, Ctrl+Z…) ficam com o Monaco.
-    for (const { id, chord } of this.commands.bindings) {
-      if (COMMANDS[id].native) continue;
-      editor.addCommand(toMonacoKeybinding(monaco, chord), () => this.commands.run(id));
+    for (const binding of this.commands.bindings) {
+      if (COMMANDS[binding.id].native) continue;
+      editor.addCommand(toMonacoKeybinding(monaco, binding.chord), () =>
+        this.commands.runBinding(binding),
+      );
     }
     // O F1 e o item "Command Palette" do menu de contexto abrem a paleta da IDE, não a do Monaco.
     const palette = monaco.editor.addCommand({
       id: 'editor.action.quickCommand',
       run: () => this.commands.run('showCommands'),
     });
-    this.cleanup.push(() => palette.dispose(), this.commands.register(editorCommands(editor)));
+    this.cleanup.push(
+      () => palette.dispose(),
+      this.commands.register(editorCommands(editor, this.commands)),
+    );
     this.showChordsInStatusBar(editor);
     editor.onDidChangeCursorPosition(({ position }) =>
       this.tabs.cursor.set({ line: position.lineNumber, column: position.column }),
@@ -204,10 +209,21 @@ interface MonacoInternals {
 /** Comandos do menu Editar, executados pelas ações do próprio Monaco no editor. */
 function editorCommands(
   editor: Monaco.editor.IStandaloneCodeEditor,
+  commands: Commands,
 ): Partial<Record<CommandId, () => void>> {
   const action = (id: string) => () => {
     editor.focus();
     editor.trigger('menu', id, null);
+  };
+  // Sem provedor, a ação do Monaco não faz nada e o atalho pareceria quebrado.
+  const format = (id: string) => () => {
+    const item = editor.getAction(id);
+    if (!item?.isSupported()) {
+      commands.flash('Formatar não disponível: sem servidor de linguagem pronto para este arquivo');
+      return;
+    }
+    editor.focus();
+    void item.run();
   };
   return {
     undo: action('undo'),
@@ -219,6 +235,8 @@ function editorCommands(
     find: action('actions.find'),
     replace: action('editor.action.startFindReplaceAction'),
     commentLine: action('editor.action.commentLine'),
+    formatDocument: format('editor.action.formatDocument'),
+    formatSelection: format('editor.action.formatSelection'),
     triggerSuggest: action('editor.action.triggerSuggest'),
     triggerParameterHints: action('editor.action.triggerParameterHints'),
     showHover: action('editor.action.showHover'),

@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { createFakes, FakeBuffer, Fakes, settle } from '../../testing/fakes';
 import { EditorTabs } from '../editor/editor-tabs';
+import { Tab } from '../editor/tab';
 import { Problems } from '../project/problems';
 import type { Pick } from '../quick-open/quick-open';
 import { Commands } from '../shared/commands';
 import { CurrentFolder } from '../workspace/current-folder';
 import { LanguageStatus, serverItem } from './language-status';
-import { Languages } from './languages';
+import { FORMAT_ON_SAVE_TIMEOUT_MS, Languages } from './languages';
 
 const ROOT = '/home/ana/hello-cpp';
 const MAIN = `${ROOT}/app/main.cpp`;
@@ -126,6 +127,130 @@ describe('servidores de linguagem na interface', () => {
       'initialized',
       'textDocument/didOpen',
     ]);
+  });
+
+  describe('formatar ao salvar', () => {
+    const FORMATTING = 'textDocument/formatting';
+    const EDIT = [
+      {
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+        newText: 'INT',
+      },
+    ];
+    const formatted = 'INT main() {\n  return soma(1, 2);\n}\n';
+    const saved = () => fakes.files.saves.at(-1)?.content;
+
+    afterEach(() => {
+      localStorage.removeItem('formatOnSave');
+      vi.useRealTimers();
+    });
+
+    async function ready() {
+      const tab = await open(MAIN);
+      fakes.languages.run('cpp', { documentFormattingProvider: true });
+      await settle();
+      return { tab, buffer: tab.buffer as FakeBuffer };
+    }
+
+    async function saveAnswering(tab: Tab, answer: unknown) {
+      const saving = tabs.save(tab);
+      await settle();
+      fakes.languages.respond('cpp', FORMATTING, answer);
+      return saving;
+    }
+
+    it('desligado, que é o padrão, grava sem pedir nada ao servidor', async () => {
+      const { tab, buffer } = await ready();
+      buffer.type('int main() {}\n');
+
+      expect(await tabs.save(tab)).toBe(true);
+      expect(fakes.languages.methods('cpp')).not.toContain(FORMATTING);
+      expect(saved()).toBe('int main() {}\n');
+    });
+
+    it('ligado, grava o texto formatado antes de avisar o servidor do salvamento', async () => {
+      const { tab, buffer } = await ready();
+      languages.toggleFormatOnSave();
+      buffer.type('int main() {\n  return soma(1, 2);\n}\n');
+
+      expect(await saveAnswering(tab, EDIT)).toBe(true);
+
+      expect(saved()).toBe(formatted);
+      expect(tab.dirty()).toBe(false);
+      const request = fakes.languages.sent.cpp.find((item) => item.method === FORMATTING)!;
+      expect(request.params).toEqual({
+        textDocument: { uri: 'file:///home/ana/hello-cpp/app/main.cpp' },
+        options: { tabSize: 4, insertSpaces: true },
+      });
+      buffer.undo();
+      expect(buffer.getText()).toBe('int main() {\n  return soma(1, 2);\n}\n');
+    });
+
+    it('Ctrl+S sem alterações: formata e grava se mudou; sem nada a mudar, não grava', async () => {
+      const { tab } = await ready();
+      languages.toggleFormatOnSave();
+
+      await saveAnswering(tab, []);
+      expect(fakes.files.saves).toEqual([]);
+
+      await saveAnswering(tab, EDIT);
+      expect(saved()).toBe(formatted);
+    });
+
+    it('texto digitado durante a espera: descarta a formatação e grava o que está na tela', async () => {
+      const { tab, buffer } = await ready();
+      languages.toggleFormatOnSave();
+      const saving = tabs.save(tab);
+      await settle();
+      buffer.type('digitado\n');
+      fakes.languages.respond('cpp', FORMATTING, EDIT);
+
+      expect(await saving).toBe(true);
+      expect(saved()).toBe('digitado\n');
+    });
+
+    it('servidor com erro: grava como está', async () => {
+      const { tab, buffer } = await ready();
+      languages.toggleFormatOnSave();
+      buffer.type('int x;\n');
+      const saving = tabs.save(tab);
+      await settle();
+      const request = fakes.languages.sent.cpp.find((item) => item.method === FORMATTING)!;
+      fakes.languages.emit('cpp', {
+        kind: 'message',
+        message: JSON.stringify({ id: request.id, error: { code: -32603, message: 'falhou' } }),
+      });
+
+      expect(await saving).toBe(true);
+      expect(saved()).toBe('int x;\n');
+    });
+
+    it('servidor que não responde: desiste no prazo, grava como está e avisa', async () => {
+      const { tab, buffer } = await ready();
+      languages.toggleFormatOnSave();
+      buffer.type('int x;\n');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      const saving = tabs.save(tab);
+      await vi.advanceTimersByTimeAsync(FORMAT_ON_SAVE_TIMEOUT_MS);
+
+      expect(await saving).toBe(true);
+      expect(saved()).toBe('int x;\n');
+      expect(fakes.languages.methods('cpp')).toContain('$/cancelRequest');
+      expect(TestBed.inject(Commands).keyStatus()).toContain('salvo sem formatar');
+    });
+
+    it('sem formatador no servidor: grava sem pedir; a preferência fica guardada', async () => {
+      const tab = await open(MAIN);
+      fakes.languages.run('cpp', {});
+      await settle();
+      languages.toggleFormatOnSave();
+      (tab.buffer as FakeBuffer).type('int x;\n');
+
+      expect(await tabs.save(tab)).toBe(true);
+      expect(fakes.languages.methods('cpp')).not.toContain(FORMATTING);
+      expect(localStorage.getItem('formatOnSave')).toBe('true');
+    });
   });
 
   it('barra de status: iniciando, indexando, pronto, parado com Reiniciar e C# sem projeto', async () => {

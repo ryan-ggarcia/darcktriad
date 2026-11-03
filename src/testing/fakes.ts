@@ -72,6 +72,25 @@ export class FakeBuffer implements TextBuffer {
     }
   }
 
+  formatOptions(): { tabSize: number; insertSpaces: boolean } {
+    return { tabSize: 4, insertSpaces: true };
+  }
+
+  applyEdits(changes: Required<TextChange>[]): void {
+    const offset = ({ line, character }: { line: number; character: number }) =>
+      this.text
+        .split('\n')
+        .slice(0, line)
+        .reduce((sum, item) => sum + item.length + 1, character);
+    // De trás para a frente: as posições são do texto de antes.
+    const sorted = [...changes].sort((a, b) => offset(b.range.start) - offset(a.range.start));
+    let text = this.text;
+    for (const { range, text: replacement } of sorted) {
+      text = text.slice(0, offset(range.start)) + replacement + text.slice(offset(range.end));
+    }
+    this.type(text);
+  }
+
   onEdit(listener: (changes: TextChange[]) => void): () => void {
     this.editListeners.add(listener);
     return () => this.editListeners.delete(listener);

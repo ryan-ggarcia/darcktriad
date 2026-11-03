@@ -12,6 +12,12 @@ function route(platform: Platform, event: KeyboardEvent, state: Partial<Terminal
 }
 
 describe('teclas com o foco no terminal', () => {
+  it('as abas por número: Alt no Windows e no Linux, ⌃ no macOS; AltGr fica com o shell', () => {
+    expect(route('mac', key('Digit1', { ctrlKey: true }))).toBe('page');
+    expect(route('mac', key('Digit1', { altKey: true }))).toBe('shell');
+    expect(route('windows', key('Digit1', { ctrlKey: true, altKey: true }))).toBe('shell');
+  });
+
   it('manda à IDE só os atalhos da lista da spec, e o resto ao processo', () => {
     for (const platform of ['windows', 'linux'] as const) {
       expect(route(platform, key('KeyP', { ctrlKey: true }))).toBe('page');
@@ -22,10 +28,23 @@ describe('teclas com o foco no terminal', () => {
       expect(route(platform, key('KeyK', { ctrlKey: true }))).toBe('page');
       expect(route(platform, key('F5', { ctrlKey: true }))).toBe('page');
       expect(route(platform, key('F11', { shiftKey: true }))).toBe('page');
+      expect(route(platform, key('KeyJ', { ctrlKey: true }))).toBe('page');
+      expect(route(platform, key('Digit0', { ctrlKey: true }))).toBe('page');
+      expect(route(platform, key('Digit1', { ctrlKey: true }))).toBe('page');
+      expect(route(platform, key('F6'))).toBe('page');
+      expect(route(platform, key('F6', { shiftKey: true }))).toBe('page');
+      expect(route(platform, key('PageDown', { ctrlKey: true }))).toBe('page');
+      expect(route(platform, key('Tab', { ctrlKey: true }))).toBe('page');
+      expect(route(platform, key('KeyM', { ctrlKey: true, shiftKey: true }))).toBe('page');
 
       expect(route(platform, key('KeyC', { ctrlKey: true }))).toBe('shell');
       expect(route(platform, key('KeyD', { ctrlKey: true }))).toBe('shell');
       expect(route(platform, key('KeyS', { ctrlKey: true }))).toBe('shell');
+      expect(route(platform, key('KeyA', { altKey: true }))).toBe('shell');
+      expect(route(platform, key('KeyF', { altKey: true }))).toBe('shell');
+      expect(route(platform, key('Digit1', { altKey: true }))).toBe('page');
+      expect(route(platform, key('Digit9', { altKey: true }))).toBe('page');
+      expect(route(platform, key('Digit0', { altKey: true }))).toBe('shell');
       expect(route(platform, key('ArrowUp'))).toBe('shell');
       expect(route(platform, key('Tab'))).toBe('shell');
       expect(route(platform, key('F12'))).toBe('shell');

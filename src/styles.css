@@ -622,6 +622,14 @@ app-root {
   background: var(--bg-hover);
 }
 
+/* Na barra, só com o Alt apertado ou com o foco nela; num menu aberto, sempre. */
+.menu-bar.mnemonics .mnemonic,
+.menu-bar:focus-within .mnemonic,
+.menu-item .mnemonic {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .title-center {
   flex: 1;
   display: flex;

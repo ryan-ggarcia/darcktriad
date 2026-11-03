@@ -101,6 +101,88 @@ describe('MenuBar', () => {
     expect(text()).toBe('Arquivo');
   });
 
+  describe('Alt+letra', () => {
+    const alt = async (key: string) => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true }),
+      );
+      TestBed.tick();
+      await settle();
+      TestBed.tick();
+    };
+    const openMenu = () => page.querySelector('[role=menu]')?.getAttribute('aria-label');
+
+    it('cada menu tem uma letra só dele, presente no nome', () => {
+      const buttons = [...page.querySelectorAll<HTMLElement>('.menu-bar-button')];
+      const letters = buttons.map((button) =>
+        button.querySelector('.mnemonic')?.textContent?.toLowerCase(),
+      );
+      expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+        'Arquivo',
+        'Editar',
+        'Ver',
+        'Ir',
+        'Executar',
+        'Ajuda',
+      ]);
+      expect(letters).toEqual(['a', 'e', 'v', 'i', 'x', 'j']);
+      expect(buttons[4].getAttribute('aria-keyshortcuts')).toBe('Alt+X');
+    });
+
+    it('abre o menu da letra; Esc volta ao botão; outro Esc, ao editor', async () => {
+      await alt('x');
+      expect(openMenu()).toBe('Executar');
+      await alt('a');
+      expect(openMenu()).toBe('Arquivo');
+
+      await press('Escape');
+      expect(openMenu()).toBeUndefined();
+      await press('Escape');
+      expect(focused()).toBe(editor);
+    });
+
+    it('a letra fica sublinhada só enquanto o Alt está apertado', async () => {
+      await alt('Alt');
+      expect(page.classList).toContain('mnemonics');
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt' }));
+      TestBed.tick();
+      expect(page.classList).not.toContain('mnemonics');
+    });
+
+    it('no terminal, Alt+letra é do shell', async () => {
+      const xterm = document.body.appendChild(document.createElement('div'));
+      xterm.className = 'xterm';
+      const input = xterm.appendChild(document.createElement('textarea'));
+      input.focus();
+
+      await alt('a');
+      expect(openMenu()).toBeUndefined();
+      expect(page.classList).not.toContain('mnemonics');
+      xterm.remove();
+    });
+
+    it('com o foco na barra, a letra sozinha abre o menu; dentro dele, a letra do item o escolhe', async () => {
+      await press('F10', window);
+      await press('a');
+      expect(openMenu()).toBe('Arquivo');
+      const open = [...page.querySelectorAll<HTMLElement>('[role=menu] .menu-item')].find((item) =>
+        item.textContent?.includes('Abrir pasta'),
+      )!;
+      expect(open.querySelector('.mnemonic')?.textContent).toBe('p');
+
+      await press('p');
+      expect(opened).toEqual(['openFolder']);
+      expect(openMenu()).toBeUndefined();
+    });
+
+    it('a letra de um item que não vale agora não executa e o menu fica aberto', async () => {
+      await alt('a');
+      await press('s');
+      expect(opened).toEqual([]);
+      expect(openMenu()).toBe('Arquivo');
+    });
+  });
+
   it('item que não vale agora fica apagado e não executa', async () => {
     const run = vi.spyOn(TestBed.inject(Commands), 'run');
     await press('F10', window);

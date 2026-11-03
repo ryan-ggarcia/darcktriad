@@ -243,6 +243,29 @@ describe('EditorTabs', () => {
       expect(tabs.active()).toBe(opened[0]);
     });
 
+    it('Alt+1 a Alt+9: a aba pela posição, com o foco; sem aba lá, nada muda', async () => {
+      const opened = await openMany(3);
+      tabs.focusPending.set(false);
+
+      tabs.activateAt(1);
+      expect(tabs.active()).toBe(opened[1]);
+      expect(tabs.focusPending()).toBe(true);
+
+      tabs.focusPending.set(false);
+      tabs.activateAt(8);
+      expect(tabs.active()).toBe(opened[1]);
+      expect(tabs.focusPending()).toBe(false);
+    });
+
+    it('Ctrl+PageDown leva o foco ao editor, mesmo vindo do terminal', async () => {
+      await openMany(2);
+      tabs.focusPending.set(false);
+
+      tabs.activateNext(1);
+
+      expect(tabs.focusPending()).toBe(true);
+    });
+
     it('cada Ctrl+Tab com o Ctrl segurado avança na lista', async () => {
       const opened = await openMany(3);
       tabs.activate(opened[0]);

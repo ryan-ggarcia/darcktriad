@@ -12,6 +12,10 @@ export interface TextBuffer {
   versionId(): number;
   /** A indentação que o editor detectou no texto: "Espaços: 4" ou "Tab". */
   indentation(): string;
+  /** O recuo do arquivo, que o formatador do servidor precisa saber. */
+  formatOptions(): { tabSize: number; insertSpaces: boolean };
+  /** Aplica trechos no formato do LSP (base 0, no texto de antes), como um passo só do Ctrl+Z. */
+  applyEdits(changes: Required<TextChange>[]): void;
   /** Cada edição, com os trechos no formato do LSP (base 0, no texto de antes). */
   onEdit(listener: (changes: TextChange[]) => void): () => void;
   dispose(): void;

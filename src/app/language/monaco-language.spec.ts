@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor';
-import { toSuggestion } from './monaco-language';
+import type { LspClient } from './lsp-client';
+import { registerProviders, toSuggestion } from './monaco-language';
 
 class FakeRange {
   constructor(
@@ -14,6 +15,88 @@ const monaco = {
   Range: FakeRange,
   languages: { CompletionItemKind: {}, CompletionItemInsertTextRule: {} },
 } as unknown as typeof Monaco;
+
+describe('formatação', () => {
+  type Provider = (...args: unknown[]) => Promise<unknown>;
+  const token = { isCancellationRequested: false, onCancellationRequested: () => undefined };
+  const options = { tabSize: 2, insertSpaces: true };
+  const model = {} as Monaco.editor.ITextModel;
+
+  function setup(capabilities: LspClient['capabilities'], uri: string | null = 'file:///a.cpp') {
+    const calls: { method: string; params: unknown }[] = [];
+    const providers: Record<string, Provider> = {};
+    const fake = {
+      Range: FakeRange,
+      languages: {
+        registerDocumentFormattingEditProvider: (_: string[], item: Record<string, Provider>) => {
+          providers['document'] = item['provideDocumentFormattingEdits'];
+          return { dispose: () => undefined };
+        },
+        registerDocumentRangeFormattingEditProvider: (
+          _: string[],
+          item: Record<string, Provider>,
+        ) => {
+          providers['range'] = item['provideDocumentRangeFormattingEdits'];
+          return { dispose: () => undefined };
+        },
+      },
+    } as unknown as typeof Monaco;
+    const client = {
+      capabilities,
+      request: async (method: string, params: unknown) => {
+        calls.push({ method, params });
+        return [
+          {
+            range: { start: { line: 0, character: 1 }, end: { line: 2, character: 3 } },
+            newText: 'x',
+          },
+        ];
+      },
+    } as unknown as LspClient;
+    registerProviders(fake, client, 'cpp', () => uri);
+    return { calls, providers };
+  }
+
+  it('só registra o que o servidor anuncia', () => {
+    expect(Object.keys(setup({}).providers)).toEqual([]);
+    expect(Object.keys(setup({ documentFormattingProvider: true }).providers)).toEqual([
+      'document',
+    ]);
+  });
+
+  it('documento: manda o arquivo e as opções do editor e devolve as edições no formato do Monaco', async () => {
+    const { calls, providers } = setup({ documentFormattingProvider: true });
+
+    const edits = await providers['document'](model, options, token);
+
+    expect(calls).toEqual([
+      {
+        method: 'textDocument/formatting',
+        params: { textDocument: { uri: 'file:///a.cpp' }, options },
+      },
+    ]);
+    expect(edits).toEqual([{ range: new FakeRange(1, 2, 3, 4), text: 'x' }]);
+  });
+
+  it('seleção: o trecho vai contado do zero, como o LSP pede', async () => {
+    const { calls, providers } = setup({ documentRangeFormattingProvider: true });
+
+    await providers['range'](model, new FakeRange(2, 3, 4, 5), options, token);
+
+    expect(calls[0].method).toBe('textDocument/rangeFormatting');
+    expect((calls[0].params as { range: unknown }).range).toEqual({
+      start: { line: 1, character: 2 },
+      end: { line: 3, character: 4 },
+    });
+  });
+
+  it('arquivo fora do servidor: não pede nada', async () => {
+    const { calls, providers } = setup({ documentFormattingProvider: true }, null);
+
+    expect(await providers['document'](model, options, token)).toBeNull();
+    expect(calls).toEqual([]);
+  });
+});
 
 describe('toSuggestion', () => {
   // Linha `  std::str|`: "str" vai da coluna 8 até o cursor na 11.

@@ -30,6 +30,7 @@ O WebDriver não mede nem faz estes. **O usuário faz estes testes conforme usa 
 
 - [ ] Digitar no editor durante a compilação sem atraso perceptível (Compilar e executar › Tempo de digitação)
 - [ ] Colar no terminal pelo WebKitGTK (Terminal › Colar no Linux)
+- [ ] Alt+letra nos menus, letra dos itens, Alt+1 a Alt+9, Ctrl+Shift+I, Ctrl+J, Ctrl+0, Ctrl+1 e F6 (Paleta e menu)
 - [ ] Clicar nas abas com a janela estreita (800 px) (Sem teste na janela › Depuração) → pelo WebDriver, a 800 px, o clique em aba funcionou com o tema novo (causa provável do problema antigo: a barra de status empurrava os editores para fora da janela; não reproduzido na versão antiga); falta com o mouse real
 - [ ] Digitar com o clangd ativo: decidir se o atraso se percebe (a medida automática oscila em torno da meta de 50 ms) (Sem teste na janela › Linguagem)
 - [ ] Abrir o AppImage, o `.deb` e o `.rpm` e usar o app de verdade (Sem teste na janela › Instaladores)

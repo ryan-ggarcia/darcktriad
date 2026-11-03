@@ -127,6 +127,43 @@ describe('Commands', () => {
     expect(ran).toEqual(['debugStepOver']);
   });
 
+  it('o F6 pausa com o programa rodando; senão, vai para a próxima área, também no editor', () => {
+    let running = false;
+    commands.register({
+      debugPause: () => ran.push('debugPause'),
+      focusNextPart: () => ran.push('focusNextPart'),
+    });
+    commands.setConditions({
+      editorOpen: () => false,
+      textEditor: () => false,
+      folderOpen: () => true,
+      project: () => true,
+      debugging: () => running,
+      debugPaused: () => false,
+      debugRunning: () => running,
+      glass: () => true,
+    });
+    const f6 = commands.bindings.find((binding) => binding.id === 'focusNextPart')!;
+
+    commands.handleKey(key('F6'));
+    commands.runBinding(f6);
+    expect(ran).toEqual(['focusNextPart', 'focusNextPart']);
+
+    running = true;
+    ran.length = 0;
+    commands.handleKey(key('F6'));
+    commands.runBinding(f6);
+    expect(ran).toEqual(['debugPause', 'debugPause']);
+  });
+
+  it('Alt+1 a Alt+9 abrem a aba pela posição; no macOS, ⌃1 a ⌃9', () => {
+    const chord = (platform: Platform) =>
+      bindingsFor(platform).find((binding) => binding.id === 'openTab3')!.chord[0];
+    expect(chord('windows')).toMatchObject({ alt: true, ctrl: false, code: 'Digit3' });
+    expect(chord('linux')).toMatchObject({ alt: true, ctrl: false, code: 'Digit3' });
+    expect(chord('mac')).toMatchObject({ alt: false, ctrl: true, code: 'Digit3' });
+  });
+
   it('a dica junta o nome e o atalho', () => {
     expect(commands.hint('Abrir pasta', 'openFolder')).toBe('Abrir pasta (Ctrl+K Ctrl+O)');
     expect(commands.hint('Novo arquivo', 'explorerNewFile')).toBe('Novo arquivo');

@@ -64,12 +64,13 @@ export class Terminals {
   /** O primeiro terminal está sendo criado: o Ctrl+` não cria outro enquanto isso. */
   private creating = false;
 
-  /** Ctrl+`: mostra ou esconde o painel na aba Terminal; sem nenhum terminal, cria um. */
+  /** Ctrl+`: mostra e leva o foco ao terminal (sem nenhum, cria um); com o foco lá, esconde. */
   toggle(): void {
-    if (this.visible() && this.panel.tab() === 'terminal') {
+    if (this.panel.holdsFocus('terminal')) {
       this.visible.set(false);
     } else {
       this.show();
+      this.panel.requestFocus();
     }
   }
 

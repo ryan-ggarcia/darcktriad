@@ -24,7 +24,7 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Itens do menu sempre habilitados no macOS:** no menu nativo, clicar num comando que não vale agora (ex.: Salvar sem aba aberta) não faz nada. No Windows e no Linux, o menu da interface mostra esses itens desabilitados.
 - **Recortar, copiar e colar pelo menu** agem só no editor, no Windows e no Linux. No terminal e nos campos de texto, só o atalho funciona.
 - **Comandos recentes da paleta** ficam só na memória e somem ao reiniciar.
-- **Sem Alt+letra nos menus** no Windows e no Linux (ex.: Alt+A para Arquivo): fica para a Etapa 2.
+- **Alt+letra nos menus:** no Windows, testado com teclas reais, inclusive Alt+X seguido de Esc e a letra de um item (2026-11-03). Em duas rodadas seguidas, o app continuou em primeiro plano depois do Alt+X e do Esc. Uma rodada anterior tinha parado depois do Alt+X, com o Chrome na frente; isso não se repetiu e a causa não foi provada. Nunca foi testado no Linux. O som de aviso do Windows ao usar Alt+letra não foi avaliado.
 - **Ctrl+` no Windows:** numa execução com teclas reais, o terminal ficou fechado na 3ª tecla. Não se repetiu em 5 teclas reais nem em 20 pelo DevTools (2026-11-03), e a causa não foi encontrada.
 
 ## Terminal
@@ -64,6 +64,8 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Queda repetida do clangd:** passou na janela, no Linux (QA, 2026-11-02, a58777a): matando o clangd filho do app pelo PID, as 3 primeiras quedas reiniciam em ~0,1 s; a 4ª deixa "C++: parado" com o botão Reiniciar e a dica "O clangd parou várias vezes. Veja o canal clangd na Saída."; o Reiniciar volta a indexar.
 - **Contador da barra** mostra só erros e avisos; itens informativos (ex.: `IDE0059` do C#) aparecem só no painel Problemas.
 - **C# em projeto grande:** a cada alteração (300 ms depois de parar de digitar), o editor pede ao Roslyn os erros das 8 categorias. Medido na janela (QA, 2026-11-02, a58777a) num projeto gerado com 2.000 arquivos e 156.000 linhas, máquina de 2 núcleos e 3,7 GB: da última tecla até o sublinhado do `CS0029` aparecer (ou sumir), 0,41 a 0,72 s, já contando os 300 ms. Limite: a primeira vez logo depois de "C#: pronto" levou 6,6 s (13 s com a memória cheia), porque o Roslyn ainda está carregando o projeto, e a barra não mostra isso.
+
+- **Formatar:** testado no Windows nos projetos de exemplo, com o clangd (`.clang-format` respeitado) e o Roslyn. Formatar ao salvar é opção, desligada por padrão; foi testada nos dois servidores pelo DevTools e, no C++, com teclas reais. O servidor lento, com o limite de 3 segundos, só foi testado por teste automatizado. Não formata ao digitar. O `.editorconfig` no Roslyn não foi testado. O Roslyn só acerta espaços e recuo: uma linha com várias instruções continua sendo uma linha.
 
 ## Depuração (núcleo da v0.6)
 
