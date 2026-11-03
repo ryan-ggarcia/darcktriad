@@ -10,9 +10,6 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
-      # Cada build baixa o latest.json do release, junta a sua parte e o envia de novo: em paralelo,
-      # dois builds podem apagar a parte um do outro.
-      max-parallel: 1
       matrix:
         include:
           - platform: macos-latest
@@ -70,5 +67,19 @@ jobs:
           releaseName: Dark Triad ${{ github.ref_name }}
           releaseBody: Baixe o instalador do seu sistema nos arquivos abaixo.
           releaseDraft: true
-          includeUpdaterJson: true
+          # O latest.json sai do job abaixo, uma vez só: juntado aqui, os builds não poderiam rodar em paralelo.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  # Só roda com os 4 builds verdes: rascunho sem latest.json não está pronto para publicar.
+  latest-json:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: node .github/scripts/latest-json.mjs "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

@@ -192,7 +192,7 @@ type DebugEvent =
 /** A resposta do `update_check`. */
 interface AvailableUpdate {
   version: string;       // ex.: '0.8.0'
-  notes: string | null;  // o texto gravado no latest.json quando o release foi gerado
+  notes: string | null;  // o texto do release no GitHub (editar o release atualiza este texto)
 }
 
 /** Progresso do `update_install`. */

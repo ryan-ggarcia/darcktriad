@@ -51,3 +51,4 @@ jobs:
       - run: npx prettier --check src
       - run: npm run build
       - run: npx ng test --watch=false
+      - run: node --test .github/scripts/latest-json.test.mjs
