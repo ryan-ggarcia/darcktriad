@@ -16,6 +16,13 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **PATH (corrigido na v0.6.2, sem teste num Mac):** ao abrir, o app lê o `PATH` do shell de login (`$SHELL -l -i`, com o `~/.zprofile`) e o passa ao terminal, ao cmake e à busca de ferramentas. Só a leitura da saída tem teste (em qualquer sistema); o código que roda o shell só compila no CI do macOS (no Linux, rodou com o bash). A abertura do app espera o shell, até 3 s; um shell mais lento é deixado de lado.
 - **Reconfigurar ao salvar com a pasta atrás de um link simbólico** (`/tmp` → `/private/tmp`): corrigido na v0.6.2 comparando pelo caminho real, com teste automático; sem teste num Mac.
 
+## Paleta e menu
+
+- **Atalhos de navegador no Windows:** o núcleo os desliga no WebView2, mas F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J nunca foram apertados com teclas reais no app final (critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md)).
+- **Itens do menu sempre habilitados:** clicar num comando que não vale agora (ex.: Salvar sem aba aberta) não faz nada.
+- **Recortar, copiar e colar pelo menu** agem só no editor, no Windows e no Linux. No terminal e nos campos de texto, só o atalho funciona.
+- **Comandos recentes da paleta** ficam só na memória e somem ao reiniciar.
+
 ## Terminal
 
 - **`\r` a mais no macOS:** com a fila de saída do terminal cheia, o macOS às vezes manda `\r\r\n` no lugar de `\r\n` (o kernel repete o `\r` ao tentar de novo). Na tela não muda nada e nenhuma entrada se perde; só quem compara a saída byte a byte (testes) precisa ignorar os `\r`. Era a causa do teste instável `writes_reach_the_program_in_order`.

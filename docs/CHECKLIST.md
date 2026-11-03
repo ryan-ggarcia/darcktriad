@@ -13,6 +13,7 @@ Estado em 2026-11-03, na v0.8.1. Cada item tem a explicação em [RISCOS.md](RIS
 - [ ] Atualizar pela IDE com um release real, pelo `.exe` (NSIS) e pelo `.msi`: aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
 - [ ] Temporários do clangd na pasta `servers` do app e limpeza ao abrir (Linguagem › Servidores encerrados à força)
 - [ ] Testes de integração (cmake, dotnet, clangd, Roslyn reais) rodando no CI do Windows (Windows)
+- [ ] F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J com teclas reais não fazem nada de navegador: critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md) (Paleta e menu)
 
 ## 2. Validar no macOS (precisa de um Mac)
 
