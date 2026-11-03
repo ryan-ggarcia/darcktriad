@@ -21,6 +21,9 @@ const CANCEL_POLL: Duration = Duration::from_millis(50);
 /// Quanto o cancelamento espera os processos saírem sozinhos antes de matá-los.
 #[cfg(unix)]
 const TERM_GRACE: Duration = Duration::from_millis(500);
+/// Sem a janela de console que o Windows abriria para um app sem console (build de release).
+#[cfg(windows)]
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub(crate) const DOTNET_QUIET: [(&str, &str); 2] =
     [("DOTNET_CLI_TELEMETRY_OPTOUT", "1"), ("DOTNET_NOLOGO", "1")];
 
@@ -90,9 +93,26 @@ fn command(program: &Path, args: &[OsString], cwd: &Path) -> Command {
             Ok(())
         });
     }
-    // Sem a janela de console que o Windows abriria para um app sem console (build de release).
     #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    {
+        std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
+        // Num preset sem `generator`, o padrão seria o do Visual Studio, que não gera o
+        // `compile_commands.json` de que o clangd precisa. O CMake só olha isto sem `-G` e sem
+        // `generator` no preset.
+        if std::env::var_os("CMAKE_GENERATOR").is_none() {
+            command.env("CMAKE_GENERATOR", "Ninja");
+        }
+        // O link incremental põe um salto sem símbolo antes de cada função, e o F11 do lldb para
+        // nele em vez de entrar na função. O `link.exe` põe o `_LINK_` no fim da linha de comando.
+        if std::env::var_os("_LINK_").is_none() {
+            command.env("_LINK_", "/INCREMENTAL:NO");
+        }
+        command.envs(
+            crate::msvc::msvc_environment()
+                .iter()
+                .map(|(name, value)| (name, value)),
+        );
+    }
     command
 }
 
@@ -147,38 +167,63 @@ impl ServerSpawner for StdServerSpawner {
             stdout: Box::new(child.stdout.take().ok_or_else(missing)?),
             stderr: Box::new(child.stderr.take().ok_or_else(missing)?),
             stdin: Box::new(child.stdin.take().ok_or_else(missing)?),
-            process: Box::new(ServerChild(Mutex::new(child))),
+            process: Box::new(ServerChild::new(child)),
         })
     }
 }
 
 /// O `wait` consulta o processo aos poucos, soltando o lock entre uma consulta e outra, para o
 /// `kill` poder entrar no meio.
-struct ServerChild(Mutex<Child>);
+struct ServerChild(Mutex<Server>);
+
+struct Server {
+    child: Child,
+    #[cfg(windows)]
+    tree: Option<crate::process_tree::ProcessTree>,
+}
+
+impl ServerChild {
+    fn new(child: Child) -> Self {
+        Self(Mutex::new(Server {
+            // Sem o job, o `kill` ainda usa o `taskkill`.
+            #[cfg(windows)]
+            tree: crate::process_tree::ProcessTree::of(&child).ok(),
+            child,
+        }))
+    }
+}
 
 impl ServerProcess for ServerChild {
     fn kill(&self) -> io::Result<()> {
-        let mut child = lock(&self.0);
+        let mut server = lock(&self.0);
         // Depois de recolhido, o PID pode ser de outro processo.
-        if child.try_wait()?.is_some() {
+        if server.child.try_wait()?.is_some() {
             return Ok(());
         }
-        kill(&mut child);
+        #[cfg(windows)]
+        if server.tree.as_ref().is_some_and(|tree| tree.kill()) {
+            let _ = server.child.wait();
+            return Ok(());
+        }
+        kill(&mut server.child);
         Ok(())
     }
 
     fn wait(&self) -> io::Result<Option<i32>> {
         loop {
-            let mut child = lock(&self.0);
+            let mut server = lock(&self.0);
             // O que o servidor iniciou não sobrevive a ele (ex.: o programa sob o netcoredbg).
             #[cfg(unix)]
-            if exited_unreaped(&child) {
-                kill(&mut child);
+            if exited_unreaped(&server.child) {
+                kill(&mut server.child);
             }
-            if let Some(status) = child.try_wait()? {
+            if let Some(status) = server.child.try_wait()? {
+                // Fechar o job encerra o que sobrou.
+                #[cfg(windows)]
+                server.tree.take();
                 return Ok(status.code());
             }
-            drop(child);
+            drop(server);
             thread::sleep(CANCEL_POLL);
         }
     }
@@ -275,11 +320,171 @@ pub(crate) fn kill_tree(pid: u32) -> bool {
 
     Command::new("taskkill")
         .args(["/T", "/F", "/PID", &pid.to_string()])
-        .creation_flags(0x0800_0000)
+        .creation_flags(CREATE_NO_WINDOW)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    use super::*;
+
+    /// Inicia um `ping` longo pelo PowerShell, escreve o PID dele e espera uma linha no stdin.
+    const START_CHILD_AND_READ: &str = "$p = Start-Process ping -ArgumentList '-n','60','127.0.0.1' -WindowStyle Hidden -PassThru; \
+         [Console]::Out.WriteLine($p.Id); [Console]::Out.Flush(); [void][Console]::In.ReadLine()";
+
+    fn powershell_args(script: &str) -> Vec<OsString> {
+        ["-NoProfile", "-NonInteractive", "-Command", script]
+            .map(OsString::from)
+            .to_vec()
+    }
+
+    fn powershell() -> PathBuf {
+        PathBuf::from("powershell.exe")
+    }
+
+    fn is_alive(pid: u32) -> bool {
+        let output = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .creation_flags_no_window()
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
+    }
+
+    trait NoWindow {
+        fn creation_flags_no_window(&mut self) -> &mut Self;
+    }
+
+    impl NoWindow for Command {
+        fn creation_flags_no_window(&mut self) -> &mut Self {
+            std::os::windows::process::CommandExt::creation_flags(self, CREATE_NO_WINDOW)
+        }
+    }
+
+    fn wait_for_death(pid: u32) {
+        let start = Instant::now();
+        while is_alive(pid) {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "o processo {pid} continua vivo"
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    fn spawned_with_child() -> (SpawnedServer, u32) {
+        let mut spawned = StdServerSpawner::default()
+            .spawn(
+                &powershell(),
+                &powershell_args(START_CHILD_AND_READ),
+                &std::env::temp_dir(),
+            )
+            .unwrap();
+        let mut reader = BufReader::new(spawned.stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        spawned.stdout = Box::new(reader);
+        let pid = line.trim().parse().unwrap();
+        assert!(is_alive(pid));
+        (spawned, pid)
+    }
+
+    #[test]
+    fn killing_a_server_ends_it_and_what_it_started() {
+        let (spawned, grandchild) = spawned_with_child();
+        let process: Arc<dyn ServerProcess> = Arc::from(spawned.process);
+        let waiter = {
+            let process = Arc::clone(&process);
+            thread::spawn(move || process.wait())
+        };
+
+        process.kill().unwrap();
+
+        waiter.join().unwrap().unwrap();
+        wait_for_death(grandchild);
+        process.kill().unwrap();
+    }
+
+    /// O caso que o `taskkill /T` não cobre: o pai já saiu, e o sistema não encerra os filhos.
+    #[test]
+    fn a_server_that_exits_on_its_own_takes_what_it_started_along() {
+        let (spawned, grandchild) = spawned_with_child();
+        let mut stdin = spawned.stdin;
+        stdin.write_all(b"fim\r\n").unwrap();
+        stdin.flush().unwrap();
+
+        assert_eq!(spawned.process.wait().unwrap(), Some(0));
+
+        wait_for_death(grandchild);
+    }
+
+    #[test]
+    fn canceling_a_command_ends_it_and_what_it_started() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&cancel);
+        let (pids, received) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            StdProcessRunner.run(
+                &powershell(),
+                // O comando roda com o stdin fechado: quem o mantém vivo é o sleep.
+                &powershell_args(
+                    &START_CHILD_AND_READ
+                        .replace("[void][Console]::In.ReadLine()", "Start-Sleep 60"),
+                ),
+                &std::env::temp_dir(),
+                &flag,
+                &mut |line| {
+                    let _ = pids.send(line.trim().parse::<u32>().unwrap());
+                },
+            )
+        });
+        let grandchild = received.recv_timeout(Duration::from_secs(30)).unwrap();
+        assert!(is_alive(grandchild));
+
+        cancel.store(true, Ordering::Release);
+
+        let result = worker.join().unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+        wait_for_death(grandchild);
+    }
+
+    #[test]
+    fn servers_use_the_app_temp_folder_and_leftovers_go_when_no_other_app_uses_it() {
+        let root = crate::test_support::TempDir::new("servers-temp");
+        let dir = root.join("servers");
+        let leftover = dir.join("preamble-1.pch");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&leftover, "").unwrap();
+
+        let app = StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
+        assert!(!leftover.exists());
+        let spawned = app
+            .spawn(
+                Path::new("cmd.exe"),
+                &["/d", "/c", "echo %TEMP%"].map(OsString::from),
+                &root,
+            )
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(spawned.stdout).read_line(&mut line).unwrap();
+        assert_eq!(line.trim_end(), dir.to_str().unwrap());
+        spawned.process.wait().unwrap();
+
+        // Outra instância do app abrindo não apaga o que os servidores desta ainda usam.
+        fs::write(&leftover, "").unwrap();
+        let other = StdServerSpawner::with_temp_dir(dir.clone()).unwrap();
+        assert!(leftover.exists());
+        drop((app, other));
+        StdServerSpawner::with_temp_dir(dir).unwrap();
+        assert!(!leftover.exists());
+    }
 }
 
 #[cfg(all(test, unix))]

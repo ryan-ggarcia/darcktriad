@@ -12,7 +12,12 @@ import {
   untracked,
 } from '@angular/core';
 import type * as Monaco from 'monaco-editor';
-import { connectDebugDecorations, toggleOnGutterClick } from '../debug/debug-decorations';
+import {
+  connectDebugDecorations,
+  hintOnGutterHover,
+  toggleOnGutterClick,
+} from '../debug/debug-decorations';
+import { Languages } from '../language/languages';
 import { connectMonaco } from '../language/monaco-language';
 import { CommandId, COMMANDS, Commands } from '../shared/commands';
 import { KeyStroke, PLATFORM } from '../shared/keybindings';
@@ -36,6 +41,7 @@ export class CodeEditor {
 
   private readonly tabs = inject(EditorTabs);
   private readonly commands = inject(Commands);
+  private readonly languages = inject(Languages);
   private readonly appearance = inject(Appearance);
   private readonly host: HTMLElement = inject(ElementRef).nativeElement;
   /** O da janela: os provedores e marcadores seguem valendo sem nenhuma aba aberta. */
@@ -129,6 +135,15 @@ export class CodeEditor {
     connectMonaco(monaco, this.rootInjector);
     connectDebugDecorations(monaco, this.rootInjector);
     toggleOnGutterClick(monaco, editor, this.rootInjector);
+    hintOnGutterHover(monaco, editor, this.rootInjector);
+    this.underlineDefinitionLink(monaco, editor);
+    editor.addAction({
+      id: 'darktriad.goToDefinition',
+      label: 'Ir para definição',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1,
+      run: () => void this.commands.run('goToDefinition'),
+    });
     // Ctrl+clique (⌘+clique no macOS) faz o mesmo que F12.
     editor.onMouseDown(({ event, target }) => {
       const modifier = PLATFORM === 'mac' ? event.metaKey : event.ctrlKey;
@@ -168,6 +183,53 @@ export class CodeEditor {
    * notificações interno dele. Se uma versão nova mudar esses nomes, a barra deixa de mostrar
    * acordes digitados no editor (o resto segue funcionando); conferir ao atualizar o Monaco.
    */
+  /** Segurar o Ctrl (⌘ no macOS) sublinha o nome sob o mouse: é o que o Ctrl+clique abre. */
+  private underlineDefinitionLink(
+    monaco: typeof Monaco,
+    editor: Monaco.editor.IStandaloneCodeEditor,
+  ): void {
+    const link = editor.createDecorationsCollection();
+    let hovered: Monaco.Position | null = null;
+    const show = (held: boolean) => {
+      const tab = this.tabs.active();
+      const served = held && hovered && tab && this.languages.documentOf(tab);
+      const word = served ? editor.getModel()?.getWordAtPosition(hovered!) : null;
+      if (!word && !link.length) return;
+      link.set(
+        word
+          ? [
+              {
+                range: new monaco.Range(
+                  hovered!.lineNumber,
+                  word.startColumn,
+                  hovered!.lineNumber,
+                  word.endColumn,
+                ),
+                // A classe do próprio Monaco, com a cor de link do tema.
+                options: { inlineClassName: 'goto-definition-link' },
+              },
+            ]
+          : [],
+      );
+    };
+    editor.onMouseMove(({ event, target }) => {
+      const text = target.type === monaco.editor.MouseTargetType.CONTENT_TEXT;
+      hovered = text ? target.position : null;
+      show(PLATFORM === 'mac' ? event.metaKey : event.ctrlKey);
+    });
+    editor.onMouseLeave(() => {
+      hovered = null;
+      show(false);
+    });
+    const modifier = PLATFORM === 'mac' ? monaco.KeyCode.Meta : monaco.KeyCode.Ctrl;
+    editor.onKeyDown(({ keyCode }) => {
+      if (keyCode === modifier) show(true);
+    });
+    editor.onKeyUp(({ keyCode }) => {
+      if (keyCode === modifier) show(false);
+    });
+  }
+
   private showChordsInStatusBar(editor: Monaco.editor.IStandaloneCodeEditor): void {
     const notifications = (editor as unknown as MonacoInternals)._standaloneKeybindingService
       ?._notificationService;

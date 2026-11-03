@@ -2277,6 +2277,7 @@ button.status-item:hover {
 
 .debug-breakpoint::before,
 .debug-breakpoint-unbound::before,
+.debug-breakpoint-hint::before,
 .debug-dot {
   content: '';
   display: block;
@@ -2291,6 +2292,10 @@ button.status-item:hover {
 .debug-dot.unbound {
   background: transparent;
   border: 1.5px solid var(--breakpoint-unbound);
+}
+
+.debug-breakpoint-hint::before {
+  opacity: 0.4;
 }
 
 .debug-current-line {

@@ -66,16 +66,27 @@
   <app-project-status />
   @let errors = problems.errors();
   @let warnings = problems.warnings();
+  @let infos = problems.infos();
   <button
     type="button"
     class="status-item status-problems"
-    [attr.aria-label]="errors + ' erros, ' + warnings + ' avisos. Abrir Problemas'"
+    [attr.aria-label]="
+      errors +
+      ' erros, ' +
+      warnings +
+      ' avisos' +
+      (infos ? ', ' + infos + ' informativos' : '') +
+      '. Abrir Problemas'
+    "
     [title]="commands.hint('Problemas', 'showProblems')"
     (click)="commands.run('showProblems')"
   >
     <span class="severity-error" [class.zero]="!errors" aria-hidden="true">⊗</span> {{ errors }}
     <span class="severity-warning" [class.zero]="!warnings" aria-hidden="true">⚠</span>
     {{ warnings }}
+    @if (infos) {
+      <span class="severity-info" aria-hidden="true">ℹ</span> {{ infos }}
+    }
   </button>
   <span class="status-message" role="status">
     <!-- O @for recria o span a cada texto novo: é o que reinicia a animação de entrada. -->

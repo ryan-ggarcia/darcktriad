@@ -17,7 +17,8 @@ use crate::{
     ToolProbe, ToolStatus, build_problems, cmake_build_args, cmake_build_dir, cmake_configure_args,
     cmake_preset_args, detect_project, dotnet_build_args, dotnet_property_args, dotnet_run_args,
     is_hidden, parse_build_dir, parse_cmake_error, parse_dotnet_properties, parse_msbuild_error,
-    parse_preset_names, parse_solution_projects, project::has_extension,
+    parse_preset_names, parse_solution_projects,
+    project::{has_extension, located_problem},
 };
 
 /// Quanto esperar depois do último salvamento de um arquivo do projeto para reconfigurar.
@@ -78,8 +79,12 @@ pub enum ProjectEvent {
     Output { line: String },
     /// O estado mudou (inclusive um problema novo).
     State { state: ProjectState },
-    /// Uma linha do canal Build da Saída.
-    BuildOutput { line: String },
+    /// Uma linha do canal Build da Saída; `problem`, se ela citar um erro: a linha vira link.
+    BuildOutput {
+        line: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        problem: Option<BuildProblem>,
+    },
     /// A compilação terminou. `problems` substitui os itens de origem `build`.
     BuildFinished {
         status: BuildStatus,
@@ -336,6 +341,12 @@ where
     ) -> Result<BuildStatus> {
         let root = state.root.clone().unwrap_or_default();
         let (program, commands) = self.build_commands(state, &root, target)?;
+        let dirs: Vec<&Path> = state
+            .build_dir
+            .iter()
+            .map(PathBuf::as_path)
+            .chain([root.as_path()])
+            .collect();
         let start = Instant::now();
         let mut lines = Vec::new();
         let mut status = BuildStatus::Succeeded;
@@ -348,7 +359,10 @@ where
             let result = self
                 .runner
                 .run(&program, &args, &root, cancel, &mut |line| {
-                    self.build_output(line.to_owned());
+                    (self.on_event)(ProjectEvent::BuildOutput {
+                        line: line.to_owned(),
+                        problem: located_problem(line, &dirs, |path| self.fs.is_file(path)),
+                    });
                     lines.push(line.to_owned());
                 });
             status = match result {
@@ -364,12 +378,6 @@ where
             };
             break;
         }
-        let dirs: Vec<&Path> = state
-            .build_dir
-            .iter()
-            .map(PathBuf::as_path)
-            .chain([root.as_path()])
-            .collect();
         let problems = build_problems(&lines, status == BuildStatus::Failed, &dirs, |path| {
             self.fs.is_file(path)
         });
@@ -421,7 +429,10 @@ where
     }
 
     fn build_output(&self, line: String) {
-        (self.on_event)(ProjectEvent::BuildOutput { line });
+        (self.on_event)(ProjectEvent::BuildOutput {
+            line,
+            problem: None,
+        });
     }
 
     /// Troca a configuração ativa. Não configura: chame [`Self::configure`] em seguida.
@@ -597,7 +608,8 @@ where
         if !is_cmake(kind) {
             return self.configure_dotnet(generation, cancel, root, kind);
         }
-        let cmake = self.find_tool("cmake")?;
+        let explain = |message| self.explain(generation, message);
+        let cmake = self.find_tool("cmake").map_err(explain)?;
         let build_dir = if kind == ProjectKind::CMakePresets {
             let presets = self.list_presets(generation, cancel, &cmake, root)?;
             let preset = self
@@ -623,7 +635,7 @@ where
             let config = self.build_config();
             let has_ninja = matches!(tool("ninja").check(&self.tools), ToolStatus::Present { .. });
             let args = cmake_configure_args(root, config, has_ninja, self.platform)
-                .map_err(|error| error.message)?;
+                .map_err(|error| explain(error.message))?;
             let build_dir = cmake_build_dir(root, config);
             self.file_api.write_query(&build_dir).map_err(query_error)?;
             self.run_cmake(generation, cancel, &cmake, &args, root)?;
@@ -644,7 +656,8 @@ where
         root: &Path,
         kind: ProjectKind,
     ) -> Configured {
-        let dotnet = self.find_tool("dotnet")?;
+        let dotnet =
+            (self.find_tool("dotnet")).map_err(|message| self.explain(generation, message))?;
         let config = self.build_config();
         let files = self.files_of(root);
         let projects = if kind == ProjectKind::DotnetSolution {
@@ -903,6 +916,12 @@ where
                 message: message.into(),
             });
         });
+    }
+
+    /// Falhou antes de rodar qualquer coisa: a barra de status manda ver a Saída, e nada escreveu lá.
+    fn explain(&self, generation: u64, message: String) -> String {
+        self.output(generation, message.clone());
+        message
     }
 
     fn output(&self, generation: u64, line: String) {
@@ -1599,6 +1618,7 @@ mod tests {
         assert!(message.contains("cmake 3.21"), "{message}");
         assert!(message.contains("cmake.org"), "{message}");
         assert!(fixture.log().is_empty());
+        assert_eq!(fixture.output(), [message]);
     }
 
     #[test]
@@ -1987,7 +2007,7 @@ mod tests {
             lock(&self.events)
                 .iter()
                 .filter_map(|event| match event {
-                    ProjectEvent::BuildOutput { line } => Some(line.replace('\\', "/")),
+                    ProjectEvent::BuildOutput { line, .. } => Some(line.replace('\\', "/")),
                     _ => None,
                 })
                 .collect()
@@ -2279,6 +2299,23 @@ mod tests {
                 .last()
                 .unwrap()
                 .starts_with("Falhou em ")
+        );
+        // A linha já chega com o destino do link, antes do fim da compilação.
+        let links: Vec<_> = lock(&fixture.events)
+            .iter()
+            .filter_map(|event| match event {
+                ProjectEvent::BuildOutput { line, problem } => {
+                    Some((line.clone(), problem.as_ref()?.file.clone()?))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            links,
+            [(
+                "/proj/main.cpp:5:10: error: expected ';'".to_owned(),
+                PathBuf::from("/proj/main.cpp")
+            )]
         );
 
         let linker = Fixture::new(&["CMakeLists.txt"], cmake_build(&["ld: undefined"], false));

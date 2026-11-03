@@ -105,7 +105,8 @@ export class Project {
   /** As linhas do canal Build. */
   readonly buildOutput = signal<string[]>([]);
   /** Os problemas da última compilação, para os links do canal Build. */
-  readonly buildProblems = signal<BuildProblem[]>([]);
+  /** As linhas do canal Build que citam um erro e viram links, assim que chegam. */
+  readonly buildLinks = signal<ReadonlyMap<string, BuildProblem>>(new Map());
   /** Entre o pedido e a resposta de `project_build`/`project_run`: "Compilando…" com o ✕. */
   readonly building = signal(false);
   /** "Compilação concluída" ou "Compilação falhou: …", por 5 s. */
@@ -197,7 +198,7 @@ export class Project {
       // Só os arquivos: uma aba sem título abriria o "Salvar como" a cada compilação.
       for (const tab of this.tabs.dirtyTabs()) if (tab.path()) await this.tabs.save(tab);
       this.buildOutput.set([]);
-      this.buildProblems.set([]);
+      this.buildLinks.set(new Map());
       this.buildResult.set(null);
       // O painel Saída não pega o foco: o editor continua com ele.
       this.panel.showOutput(BUILD_CHANNEL);
@@ -216,6 +217,8 @@ export class Project {
       this.output.update((lines) => withLine(lines, event.line));
     } else if (event.kind === 'buildOutput') {
       this.buildOutput.update((lines) => withLine(lines, event.line));
+      const { line, problem } = event;
+      if (problem) this.buildLinks.update((links) => new Map(links).set(line, problem));
     } else if (event.kind === 'buildFinished') {
       this.finishBuild(event.status, event.problems);
     } else {
@@ -226,7 +229,6 @@ export class Project {
 
   private finishBuild(status: BuildStatus, problems: BuildProblem[]): void {
     this.lastBuild = status;
-    this.buildProblems.set(problems);
     this.problems.set('build', problems.map(buildProblemItem));
     this.buildResult.set(buildSummary(status, problems));
     clearTimeout(this.resultTimer);

@@ -101,7 +101,7 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
 ### CMake com presets
 
 1. **Configurações:** os presets de configuração não ocultos, lidos de `cmake --list-presets`. A IDE não interpreta o JSON (`include`, `condition`) por conta própria.
-2. **Configurar:** `cmake --preset <nome> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
+2. **Configurar:** `cmake --preset <nome> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. No Windows, um preset sem `generator` usa o Ninja, pela variável `CMAKE_GENERATOR`: o padrão seria o gerador do Visual Studio, que não gera o `compile_commands.json`.
 3. **Pasta de build:** vem da linha `-- Build files have been written to: <pasta>` da saída do CMake.
    - Na primeira vez, cria a consulta da File API nessa pasta e configura de novo. A segunda passada é rápida, porque o cache já existe.
    - O `binaryDir` do usuário não é alterado.
@@ -130,7 +130,7 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
 1. Se já existe compilador no `PATH` (`cl`, `clang`, `gcc`) ou `CC`/`CXX` estão definidos, o `PATH` vale como está: o que o usuário configurou ganha.
 2. Senão:
    - localiza o Visual Studio / Build Tools com `vswhere`;
-   - roda `VC\Auxiliary\Build\vcvarsall.bat` (com `x64`, ou `arm64` em máquina ARM);
+   - roda `VC\Auxiliary\Build\vcvars64.bat` (só x64, inclusive em máquina ARM);
    - captura as variáveis de ambiente resultantes, uma vez por sessão;
    - usa esse ambiente em `cmake`, `ninja`, `clangd` e no depurador.
 3. Nada encontrado: "Nenhum compilador C/C++ encontrado.", com o botão **Instalar**, que oferece o Visual Studio Build Tools pelo winget ([ferramentas.md](ferramentas.md)).

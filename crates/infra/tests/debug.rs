@@ -1,8 +1,6 @@
 //! Depuração (docs/specs/depuracao.md, critério 4) com o lldb-dap e o netcoredbg de verdade, sobre
 //! cópias temporárias das fixtures compiladas. O cliente DAP é escrito à mão. Sem a ferramenta os
-//! testes são pulados com um aviso. Fora do Windows, como os testes de compilar: lá o compilador
-//! depende do ambiente do vcvars.
-#![cfg(not(windows))]
+//! testes são pulados com um aviso.
 
 mod common;
 
@@ -11,12 +9,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use common::{TempDir, open, probe};
+#[cfg(unix)]
+use darktriad_core::CMakeTarget;
 use darktriad_core::{
-    CMakeTarget, DebugEvent, DebugLaunch, DebugSessions, TerminalEvent, TerminalSize, Terminals,
-    ToolProbe,
+    DebugEvent, DebugLaunch, DebugSessions, TerminalEvent, TerminalSize, Terminals, ToolProbe,
 };
 use darktriad_infra::{PortablePty, StdServerSpawner, SystemToolProbe, detect_default_shell};
 use serde_json::{Value, json};
@@ -29,6 +29,7 @@ type Sessions = DebugSessions<StdServerSpawner, SystemToolProbe, PortablePty>;
 /// Um cliente DAP mínimo sobre a sessão do núcleo.
 struct Dap {
     sessions: Arc<Sessions>,
+    terminals: Arc<Terminals<PortablePty>>,
     events: Receiver<DebugEvent>,
     seq: u32,
     /// Mensagens que chegaram antes de alguém esperar por elas (ex.: a resposta do `launch`, que o
@@ -38,10 +39,22 @@ struct Dap {
     terminal: Option<(String, Receiver<TerminalEvent>)>,
 }
 
+/// Um teste que falha no meio também encerra o adaptador e o programa.
+impl Drop for Dap {
+    fn drop(&mut self) {
+        self.sessions.stop();
+    }
+}
+
 impl Dap {
-    fn new(sessions: Arc<Sessions>, events: Receiver<DebugEvent>) -> Self {
+    fn new(
+        sessions: Arc<Sessions>,
+        terminals: Arc<Terminals<PortablePty>>,
+        events: Receiver<DebugEvent>,
+    ) -> Self {
         Self {
             sessions,
+            terminals,
             events,
             seq: 0,
             unread: Vec::new(),
@@ -93,13 +106,27 @@ impl Dap {
             .map(|arg| arg.as_str().unwrap().into())
             .collect();
         let cwd = PathBuf::from(arguments["cwd"].as_str().unwrap());
-        let (sender, output) = mpsc::channel();
+        let (sender, received) = mpsc::channel();
         let info = self
             .sessions
             .run_in_terminal(&args, &cwd, SIZE, move |event| {
                 let _ = sender.send(event);
             })
             .unwrap();
+        // O ConPTY pede a posição do cursor e não mostra nada até a resposta (na IDE, o xterm responde).
+        let (forward, output) = mpsc::channel();
+        let terminals = Arc::clone(&self.terminals);
+        let id = info.id;
+        thread::spawn(move || {
+            for event in received {
+                if matches!(&event, TerminalEvent::Output { data } if data.contains("\x1b[6n")) {
+                    let _ = terminals.write(id, "\x1b[1;1R");
+                }
+                if forward.send(event).is_err() {
+                    return;
+                }
+            }
+        });
         self.terminal = Some((info.name, output));
         self.seq += 1;
         let response = json!({
@@ -201,7 +228,7 @@ fn start(fixture: &str, tool: &str, debugger: &str, edit: impl Fn(&Path)) -> Opt
         .build_for_run()
         .unwrap()
         .expect("a compilação falhou");
-    let (sessions, _) = sessions();
+    let (sessions, terminals) = sessions();
     let (sender, events) = mpsc::channel();
     let launch = sessions
         .start(&command.target, &command.cwd, move |event| {
@@ -212,7 +239,7 @@ fn start(fixture: &str, tool: &str, debugger: &str, edit: impl Fn(&Path)) -> Opt
     assert_eq!(launch.launch["cwd"], root.0.to_str().unwrap());
     assert_eq!(launch.launch["console"], "integratedTerminal");
     Some(Started {
-        dap: Dap::new(sessions, events),
+        dap: Dap::new(sessions, terminals, events),
         launch,
         root,
     })
@@ -235,7 +262,8 @@ fn lldb_dap_stops_at_a_breakpoint_in_hello_cpp_and_runs_to_the_end() {
         return;
     };
     let program = launch.launch["program"].as_str().unwrap();
-    assert!(Path::new(program).is_absolute() && program.ends_with("app"));
+    let name = format!("app{}", std::env::consts::EXE_SUFFIX);
+    assert!(Path::new(program).is_absolute() && program.ends_with(&name));
 
     let main = root.0.join("app/main.cpp");
     debug_until_exit(
@@ -271,7 +299,8 @@ fn lldb_dap_keeps_its_comm_file_in_the_app_temp_folder_and_not_in_the_program_en
     }
     let root = TempDir(std::env::temp_dir().join(format!("darktriad-comm-{}", std::process::id())));
     let app_temp = root.0.join("servers");
-    let (sessions, _) = sessions_with(StdServerSpawner::with_temp_dir(app_temp.clone()).unwrap());
+    let (sessions, terminals) =
+        sessions_with(StdServerSpawner::with_temp_dir(app_temp.clone()).unwrap());
     let target = CMakeTarget {
         name: "env".into(),
         path: "/usr/bin/env".into(),
@@ -284,7 +313,7 @@ fn lldb_dap_keeps_its_comm_file_in_the_app_temp_folder_and_not_in_the_program_en
             let _ = sender.send(event);
         })
         .unwrap();
-    let mut dap = Dap::new(sessions, events);
+    let mut dap = Dap::new(sessions, terminals, events);
     let seq = dap.request(
         "initialize",
         // O lldb-dap 21 (CI) e o do Xcode exigem o `pathFormat`, como a interface já manda.
@@ -350,119 +379,129 @@ fn netcoredbg_stops_at_a_breakpoint_in_hello_cs_and_runs_to_the_end() {
     assert!(dap.terminal.is_none());
 }
 
-/// Um adaptador de mentira: um script no lugar do lldb-dap.
-struct FakeAdapter(PathBuf);
+/// Com um script de `sh` no lugar do adaptador. No Windows, o `process.rs` testa o mesmo: o que o
+/// servidor iniciou não sobrevive a ele.
+#[cfg(unix)]
+mod fake_adapter {
+    use super::*;
 
-impl ToolProbe for FakeAdapter {
-    fn find(&self, _: &str) -> Vec<PathBuf> {
-        vec![self.0.clone()]
-    }
+    /// Um adaptador de mentira: um script no lugar do lldb-dap.
+    struct FakeAdapter(PathBuf);
 
-    fn version_output(&self, _: &Path) -> std::io::Result<String> {
-        Ok("1.0".into())
-    }
-}
-
-/// Inicia uma sessão com `script` no lugar do adaptador.
-fn start_fake(
-    name: &str,
-    script: &str,
-) -> (
-    TempDir,
-    Arc<DebugSessions<StdServerSpawner, FakeAdapter, PortablePty>>,
-    Receiver<DebugEvent>,
-) {
-    let dir =
-        TempDir(std::env::temp_dir().join(format!("darktriad-{name}-{}", std::process::id())));
-    fs::create_dir_all(&dir.0).unwrap();
-    let adapter = dir.0.join("lldb-dap");
-    fs::write(&adapter, format!("#!/bin/sh\n{script}\n")).unwrap();
-    fs::set_permissions(
-        &adapter,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
-    )
-    .unwrap();
-    let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
-    let sessions = Arc::new(DebugSessions::new(
-        StdServerSpawner::default(),
-        StdServerSpawner::default(),
-        FakeAdapter(adapter),
-        terminals,
-    ));
-    let target = CMakeTarget {
-        name: "app".into(),
-        path: "/bin/true".into(),
-        project: None,
-        framework: None,
-    };
-    let (sender, events) = mpsc::channel();
-    sessions
-        .start(&target, &dir.0, move |event| {
-            let _ = sender.send(event);
-        })
-        .unwrap();
-    (dir, sessions, events)
-}
-
-fn sleep_in_terminal(
-    sessions: &DebugSessions<StdServerSpawner, FakeAdapter, PortablePty>,
-) -> Receiver<TerminalEvent> {
-    let (sender, output) = mpsc::channel();
-    let args = ["/bin/sleep".into(), "30".into()];
-    let info = sessions
-        .run_in_terminal(&args, &std::env::temp_dir(), SIZE, move |event| {
-            let _ = sender.send(event);
-        })
-        .unwrap();
-    assert_eq!(info.name, "🐞 app");
-    output
-}
-
-fn wait_exited(output: &Receiver<TerminalEvent>) {
-    let deadline = Instant::now() + TIMEOUT;
-    while !matches!(
-        output.recv_timeout(deadline.saturating_duration_since(Instant::now())),
-        Ok(TerminalEvent::Exited { .. })
-    ) {}
-}
-
-#[test]
-fn an_adapter_that_dies_ends_the_session_and_the_program() {
-    let (_dir, sessions, events) = start_fake("adaptador-cai", "echo falhou >&2; read x; exit 3");
-    let output = sleep_in_terminal(&sessions);
-    sessions.send("{}").unwrap();
-
-    let mut log = Vec::new();
-    let reason = loop {
-        match events.recv_timeout(TIMEOUT).unwrap() {
-            DebugEvent::Log { line } => log.push(line),
-            DebugEvent::Ended { reason } => break reason,
-            DebugEvent::Message { message } => panic!("{message}"),
+    impl ToolProbe for FakeAdapter {
+        fn find(&self, _: &str) -> Vec<PathBuf> {
+            vec![self.0.clone()]
         }
-    };
-    assert_eq!(
-        reason.as_deref(),
-        Some("O depurador (lldb-dap) encerrou inesperadamente. Veja o canal Depuração na Saída.")
-    );
-    assert!(
-        log[0].starts_with("> ") && log[0].ends_with("lldb-dap"),
-        "{log:?}"
-    );
-    assert!(log.contains(&"falhou".to_owned()), "{log:?}");
-    assert_eq!(log.last().unwrap(), "O lldb-dap terminou com código 3.");
-    wait_exited(&output);
-    assert!(sessions.send("{}").is_err());
-}
 
-#[test]
-fn stop_kills_the_adapter_and_the_program_and_nothing_else_arrives() {
-    let (_dir, sessions, events) = start_fake("parar", "cat > /dev/null");
-    let output = sleep_in_terminal(&sessions);
+        fn version_output(&self, _: &Path) -> std::io::Result<String> {
+            Ok("1.0".into())
+        }
+    }
 
-    sessions.stop();
-    wait_exited(&output);
-    assert!(sessions.send("{}").is_err());
-    std::thread::sleep(Duration::from_millis(200));
-    let after: Vec<_> = events.try_iter().skip(1).collect();
-    assert!(after.is_empty(), "{after:?}");
+    /// Inicia uma sessão com `script` no lugar do adaptador.
+    fn start_fake(
+        name: &str,
+        script: &str,
+    ) -> (
+        TempDir,
+        Arc<DebugSessions<StdServerSpawner, FakeAdapter, PortablePty>>,
+        Receiver<DebugEvent>,
+    ) {
+        let dir =
+            TempDir(std::env::temp_dir().join(format!("darktriad-{name}-{}", std::process::id())));
+        fs::create_dir_all(&dir.0).unwrap();
+        let adapter = dir.0.join("lldb-dap");
+        fs::write(&adapter, format!("#!/bin/sh\n{script}\n")).unwrap();
+        fs::set_permissions(
+            &adapter,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let terminals = Arc::new(Terminals::new(PortablePty, detect_default_shell()));
+        let sessions = Arc::new(DebugSessions::new(
+            StdServerSpawner::default(),
+            StdServerSpawner::default(),
+            FakeAdapter(adapter),
+            terminals,
+        ));
+        let target = CMakeTarget {
+            name: "app".into(),
+            path: "/bin/true".into(),
+            project: None,
+            framework: None,
+        };
+        let (sender, events) = mpsc::channel();
+        sessions
+            .start(&target, &dir.0, move |event| {
+                let _ = sender.send(event);
+            })
+            .unwrap();
+        (dir, sessions, events)
+    }
+
+    fn sleep_in_terminal(
+        sessions: &DebugSessions<StdServerSpawner, FakeAdapter, PortablePty>,
+    ) -> Receiver<TerminalEvent> {
+        let (sender, output) = mpsc::channel();
+        let args = ["/bin/sleep".into(), "30".into()];
+        let info = sessions
+            .run_in_terminal(&args, &std::env::temp_dir(), SIZE, move |event| {
+                let _ = sender.send(event);
+            })
+            .unwrap();
+        assert_eq!(info.name, "🐞 app");
+        output
+    }
+
+    fn wait_exited(output: &Receiver<TerminalEvent>) {
+        let deadline = Instant::now() + TIMEOUT;
+        while !matches!(
+            output.recv_timeout(deadline.saturating_duration_since(Instant::now())),
+            Ok(TerminalEvent::Exited { .. })
+        ) {}
+    }
+
+    #[test]
+    fn an_adapter_that_dies_ends_the_session_and_the_program() {
+        let (_dir, sessions, events) =
+            start_fake("adaptador-cai", "echo falhou >&2; read x; exit 3");
+        let output = sleep_in_terminal(&sessions);
+        sessions.send("{}").unwrap();
+
+        let mut log = Vec::new();
+        let reason = loop {
+            match events.recv_timeout(TIMEOUT).unwrap() {
+                DebugEvent::Log { line } => log.push(line),
+                DebugEvent::Ended { reason } => break reason,
+                DebugEvent::Message { message } => panic!("{message}"),
+            }
+        };
+        assert_eq!(
+            reason.as_deref(),
+            Some(
+                "O depurador (lldb-dap) encerrou inesperadamente. Veja o canal Depuração na Saída."
+            )
+        );
+        assert!(
+            log[0].starts_with("> ") && log[0].ends_with("lldb-dap"),
+            "{log:?}"
+        );
+        assert!(log.contains(&"falhou".to_owned()), "{log:?}");
+        assert_eq!(log.last().unwrap(), "O lldb-dap terminou com código 3.");
+        wait_exited(&output);
+        assert!(sessions.send("{}").is_err());
+    }
+
+    #[test]
+    fn stop_kills_the_adapter_and_the_program_and_nothing_else_arrives() {
+        let (_dir, sessions, events) = start_fake("parar", "cat > /dev/null");
+        let output = sleep_in_terminal(&sessions);
+
+        sessions.stop();
+        wait_exited(&output);
+        assert!(sessions.send("{}").is_err());
+        std::thread::sleep(Duration::from_millis(200));
+        let after: Vec<_> = events.try_iter().skip(1).collect();
+        assert!(after.is_empty(), "{after:?}");
+    }
 }

@@ -73,8 +73,13 @@ pub fn open(name: &str, tool: &str) -> Option<(TempDir, TestProject, Events)> {
     let _ = fs::remove_dir_all(&path);
     copy_dir(&fixture(name), &path);
     // No macOS a pasta temporária passa por um link (/var → /private/var), e o CMake informa a
-    // pasta de build pelo caminho real.
-    let root = TempDir(fs::canonicalize(&path).unwrap());
+    // pasta de build pelo caminho real. No Windows, o caminho real vem como `\\?\C:\...`, que o cmake
+    // e o dotnet não aceitam; a IDE recebe a pasta sem esse prefixo.
+    let root = TempDir(if cfg!(windows) {
+        path
+    } else {
+        fs::canonicalize(&path).unwrap()
+    });
     let before: Vec<_> = fs::read_dir(fixture(name))
         .unwrap()
         .map(|e| e.unwrap().file_name())

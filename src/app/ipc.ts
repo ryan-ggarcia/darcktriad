@@ -138,7 +138,7 @@ export interface BuildProblem {
 export type ProjectEvent =
   | { kind: 'output'; line: string }
   | { kind: 'state'; state: ProjectState }
-  | { kind: 'buildOutput'; line: string }
+  | { kind: 'buildOutput'; line: string; problem?: BuildProblem }
   | { kind: 'buildFinished'; status: BuildStatus; problems: BuildProblem[] };
 
 export type ToolStatus =

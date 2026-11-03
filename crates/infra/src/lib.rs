@@ -4,7 +4,11 @@ mod file_api;
 mod local_fs;
 #[cfg(any(target_os = "macos", test))]
 mod login_shell;
+#[cfg(windows)]
+mod msvc;
 mod process;
+#[cfg(windows)]
+mod process_tree;
 mod project_walker;
 mod pty;
 mod state_store;
@@ -15,6 +19,8 @@ pub use file_api::LocalFileApi;
 pub use local_fs::LocalFileSystem;
 #[cfg(target_os = "macos")]
 pub use login_shell::use_login_shell_path;
+#[cfg(windows)]
+pub use msvc::prepare_msvc_environment;
 pub use process::{StdProcessRunner, StdServerSpawner};
 pub use project_walker::IgnoreWalker;
 pub use pty::{PortablePty, detect_default_shell};

@@ -24,6 +24,10 @@ const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 /// Reinícios automáticos permitidos dentro da janela; a queda seguinte deixa o servidor parado.
 const MAX_RESTARTS: usize = 3;
 const READ_BUFFER: usize = 64 * 1024;
+/// O tempo que um servidor tem para sair sozinho depois do `exit`.
+const STOP_GRACE: Duration = Duration::from_millis(if cfg!(test) { 200 } else { 1000 });
+const SHUTDOWN: &str = r#"{"jsonrpc":"2.0","id":"darktriad-shutdown","method":"shutdown"}"#;
+const EXIT: &str = r#"{"jsonrpc":"2.0","method":"exit"}"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -206,6 +210,21 @@ struct Running {
     /// Fila da thread que escreve no stdin: as mensagens chegam ao servidor na ordem pedida.
     requests: Sender<String>,
     process: Arc<dyn ServerProcess>,
+    /// Recebe quando o processo terminou.
+    gone: Receiver<()>,
+}
+
+impl Running {
+    /// Saindo pelo LSP, o clangd apaga os temporários; quem não sair no prazo é encerrado.
+    fn stop(self) {
+        for message in [SHUTDOWN, EXIT] {
+            let _ = self.requests.send(message.to_owned());
+        }
+        if self.gone.recv_timeout(STOP_GRACE).is_err() {
+            // Falha só com o processo já encerrado.
+            let _ = self.process.kill();
+        }
+    }
 }
 
 impl Server {
@@ -213,10 +232,10 @@ impl Server {
         (self.on_event)(LanguageEvent::State { state });
     }
 
-    fn kill(&mut self) {
+    /// O processo sai em segundo plano: quem troca de processo ou fecha a pasta não espera.
+    fn let_go(&mut self) {
         if let Some(running) = self.running.take() {
-            // Falha só com o processo já encerrado.
-            let _ = running.process.kill();
+            thread::spawn(move || running.stop());
         }
     }
 }
@@ -270,7 +289,7 @@ where
         };
         let mut inner = self.lock();
         if let Some(mut previous) = inner.servers.insert(language, server) {
-            previous.kill();
+            previous.let_go();
         }
         self.launch(&mut inner, language);
         Ok(())
@@ -312,15 +331,27 @@ where
             .servers
             .remove(&language)
             .ok_or_else(not_started)?;
-        server.kill();
+        server.let_go();
         Ok(())
     }
 
-    /// Encerra todos os servidores (pasta fechada ou IDE fechando).
+    /// Encerra todos os servidores (pasta fechada).
     pub fn stop_all(&self) {
         for (_, mut server) in self.lock().servers.drain() {
-            server.kill();
+            server.let_go();
         }
+    }
+
+    /// A IDE fechando: espera, porque um processo em segundo plano morreria junto com o app.
+    pub fn stop_all_and_wait(&self) {
+        let running: Vec<_> = (self.lock().servers.drain())
+            .filter_map(|(_, server)| server.running)
+            .collect();
+        thread::scope(|scope| {
+            for one in running {
+                scope.spawn(move || one.stop());
+            }
+        });
     }
 
     /// Acompanha o projeto: o clangd reinicia com a pasta de build nova, e o C# inicia quando a
@@ -360,7 +391,7 @@ where
         let Some(server) = inner.servers.get_mut(&language) else {
             return;
         };
-        server.kill();
+        server.let_go();
         server.generation = generation;
         let (Some(launch), Some(program)) = (&server.launch, &server.program) else {
             let state = match server.launch {
@@ -419,11 +450,17 @@ where
         thread::spawn(move || write_messages(stdin, &receiver));
         let servers = Arc::clone(self);
         let waited = Arc::clone(&process);
+        let (ended, gone) = mpsc::channel();
         thread::spawn(move || {
             let code = waited.wait();
+            let _ = ended.send(());
             servers.exited(language, generation, code);
         });
-        Running { requests, process }
+        Running {
+            requests,
+            process,
+            gone,
+        }
     }
 
     /// O processo terminou sem a IDE pedir: reinicia, ou fica parado depois de quedas demais.
@@ -1036,7 +1073,7 @@ mod tests {
         fixture.servers.project_changed(&release);
         let spawned = fixture.spawned();
         assert_eq!(spawned.len(), 2);
-        assert!(*lock(&spawned[0].process.killed));
+        wait_until(|| *lock(&spawned[0].process.killed));
         assert_eq!(
             spawned[1].args,
             ["--compile-commands-dir=/proj/build/release"]
@@ -1103,8 +1140,48 @@ mod tests {
 
         let spawned = fixture.spawned();
         assert_eq!(spawned.len(), 2);
-        assert!(*lock(&spawned[0].process.killed));
+        wait_until(|| *lock(&spawned[0].process.killed));
         assert!(!*lock(&spawned[1].process.killed));
+    }
+
+    #[test]
+    fn a_server_that_leaves_when_asked_is_not_killed() {
+        let fixture = Fixture::new(true);
+        fixture
+            .start(Language::Cpp, &ProjectState::default())
+            .unwrap();
+        let process = Arc::clone(&fixture.spawned()[0].process);
+        let stdin = fixture.spawned()[0].stdin.clone();
+        let polite = thread::spawn(move || {
+            wait_until(|| String::from_utf8_lossy(&lock(&stdin.0)).contains(r#""exit""#));
+            process.exit(0);
+        });
+
+        fixture.servers.stop_all_and_wait();
+        polite.join().unwrap();
+
+        let spawned = fixture.spawned();
+        assert!(!*lock(&spawned[0].process.killed));
+        let sent = String::from_utf8_lossy(&lock(&spawned[0].stdin.0)).into_owned();
+        let shutdown = sent.find(r#""method":"shutdown""#).unwrap();
+        assert!(
+            shutdown < sent.find(r#""method":"exit""#).unwrap(),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn a_server_that_ignores_the_request_is_killed_after_the_grace() {
+        let fixture = Fixture::new(true);
+        fixture
+            .start(Language::Cpp, &ProjectState::default())
+            .unwrap();
+
+        let start = Instant::now();
+        fixture.servers.stop_all_and_wait();
+
+        assert!(start.elapsed() >= STOP_GRACE);
+        assert!(*lock(&fixture.spawned()[0].process.killed));
     }
 
     #[test]
@@ -1114,7 +1191,7 @@ mod tests {
         fixture.start(Language::Cpp, &dotnet).unwrap();
         fixture.start(Language::CSharp, &dotnet).unwrap();
         fixture.servers.stop(Language::Cpp).unwrap();
-        assert!(*lock(&fixture.spawned()[0].process.killed));
+        wait_until(|| *lock(&fixture.spawned()[0].process.killed));
         assert!(!*lock(&fixture.spawned()[1].process.killed));
         let error = fixture.servers.send(Language::Cpp, "{}").unwrap_err();
         assert_eq!(error.kind, ErrorKind::NotFound);
@@ -1125,7 +1202,7 @@ mod tests {
             .write_all(&encode_frame("{}"))
             .unwrap();
         fixture.servers.stop_all();
-        assert!(*lock(&fixture.spawned()[1].process.killed));
+        wait_until(|| *lock(&fixture.spawned()[1].process.killed));
         thread::sleep(Duration::from_millis(50));
         assert_eq!(lock(&fixture.events).len(), before);
         assert_eq!(

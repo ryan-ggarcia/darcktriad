@@ -1,7 +1,5 @@
 //! Projeto CMake e .NET (docs/specs/projeto.md) com o cmake e o dotnet de verdade, numa cópia
-//! temporária das fixtures. Sem a ferramenta no PATH os testes são pulados com um aviso. Fora do Windows: lá o
-//! compilador depende do ambiente do vcvars, que ainda não é aplicado.
-#![cfg(not(windows))]
+//! temporária das fixtures. Sem a ferramenta no PATH os testes são pulados com um aviso.
 
 mod common;
 

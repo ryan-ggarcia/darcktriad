@@ -136,7 +136,7 @@ interface ProjectState {
 type ProjectEvent =
   | { kind: 'output'; line: string }          // uma linha da Saída, sem o fim de linha: canal CMake (kind cmake/cmakePresets) ou dotnet (dotnetSolution/dotnetProjects)
   | { kind: 'state'; state: ProjectState }   // o estado novo inteiro: substitua o anterior
-  | { kind: 'buildOutput'; line: string }     // uma linha do canal Build da Saída, sem o fim de linha
+  | { kind: 'buildOutput'; line: string; problem?: BuildProblem } // uma linha do canal Build da Saída, sem o fim de linha; `problem` se ela citar um erro
   | { kind: 'buildFinished'; status: BuildStatus; problems: BuildProblem[] }; // a compilação terminou
 
 type BuildStatus = 'succeeded' | 'failed' | 'cancelled';
@@ -405,7 +405,7 @@ Não há comandos próprios: a interface usa a API de janela do Tauri, `getCurre
   - Antes, se o projeto não está configurado (`status` diferente de `ready`) ou há uma reconfiguração pendente (um arquivo do projeto salvo há menos de 1 s, ou a pasta de build apagada), o núcleo configura primeiro. Isso aparece como sempre: `state` e `output` no canal CMake/dotnet. Se a configuração falhar, o comando falha com a `message` do estado e não há `buildFinished`.
   - Comandos: CMake: `cmake --build <buildDir>`. .NET com solução: `dotnet build <sln> -c <config>`; sem solução, um `dotnet build <csproj> -c <config>` por projeto, em ordem, parando no primeiro que falhar.
 - **Uma compilação por vez:** `project_build` ou `project_run` durante uma compilação falha na hora com `other` e a mensagem "Já há uma compilação em andamento". Mostre a mensagem; nada é iniciado.
-- **Saída (canal Build):** cada `buildOutput` é uma linha, ao vivo. A primeira de cada comando é o comando, começando com `> `. A última é "Concluída em 3,2 s", "Falhou em 3,2 s" ou "Cancelada em 3,2 s". O canal não diz de onde veio o pedido: limpe-o quando quiser (ex.: a cada compilação).
+- **Saída (canal Build):** cada `buildOutput` é uma linha, ao vivo. Com `problem`, a linha cita um erro num arquivo que existe, e vira link assim que chega. A primeira de cada comando é o comando, começando com `> `. A última é "Concluída em 3,2 s", "Falhou em 3,2 s" ou "Cancelada em 3,2 s". O canal não diz de onde veio o pedido: limpe-o quando quiser (ex.: a cada compilação).
 - **Resultado:** `buildFinished` chega uma vez por compilação, depois da última linha. `problems` substitui todos os itens de origem `build` do painel Problemas e não mexe nos do clangd/Roslyn. Barra de status por 5 s: `succeeded` → "Compilação concluída"; `failed` → "Compilação falhou: N erros, M avisos" (conte `severity`); `cancelled` → nada a mostrar além do fim do "Compilando…".
   - Formatos lidos: GCC/Clang (`arq:l:c: error|warning|note: texto`, também sem coluna, e `fatal error:`), MSVC (`arq(l,c): error C2143: texto`, também `(l)`) e dotnet/MSBuild (igual ao MSVC, sem o sufixo ` [projeto]`).
   - Caminho relativo: vale o primeiro que existe entre a pasta de build (`buildDir`) e a raiz do projeto. Se não existe em nenhuma, a linha não vira item. `file` vem sem `..`, pronto para `read_file`.
@@ -447,7 +447,7 @@ Não há comandos próprios: a interface usa a API de janela do Tauri, `getCurre
 | `language_restart` | `{ language: Language }` | `void` | `notFound` |
 | `language_stop` | `{ language: Language }` | `void` | `notFound` |
 
-- **Quem fala LSP é a interface.** O núcleo só inicia o processo, põe e tira a moldura `Content-Length` e repassa o JSON como texto, sem olhar dentro. `initialize`, `initialized`, ids de pedido, `$/cancelRequest`, `shutdown`: tudo é da interface.
+- **Quem fala LSP é a interface.** O núcleo só inicia o processo, põe e tira a moldura `Content-Length` e repassa o JSON como texto, sem olhar dentro. `initialize`, `initialized`, ids de pedido e `$/cancelRequest` são da interface. Só ao parar um servidor o núcleo manda por conta própria o `shutdown` e o `exit`, e encerra à força quem não sair em 1 s.
 - **Iniciar:** chame `language_start` ao abrir o primeiro arquivo da linguagem na pasta (`.c`, `.cpp`, `.h`… → `cpp`; `.cs` → `csharp`). Crie o canal e trate as mensagens antes da chamada: o estado `starting` chega antes da resposta. Chamar de novo troca o servidor (e o canal) da linguagem.
   - `cpp`: `clangd`, com `--compile-commands-dir=<buildDir>` quando o projeto CMake tem pasta de build pronta (`ProjectState.buildDir`); sem ela, sem o argumento. Roda na raiz da pasta aberta.
   - `csharp`: `roslyn-language-server --stdio --autoLoadProjects`, só em pasta .NET (`dotnetSolution`/`dotnetProjects`). Fora dela, nenhum processo: chega `noProject`. Se a pasta for detectada como .NET depois (a detecção do projeto corre em segundo plano ao abrir), o servidor inicia sozinho.
@@ -575,18 +575,17 @@ Payload: `ProjectEvent`. As linhas da Saída do projeto (`output`, canal CMake o
   - Linux: a janela transparente depende do compositor. Sem ele, ou com drivers que não lidam bem com janelas transparentes no WebKitGTK, as áreas que a página não pinta podem ficar pretas ou com restos da imagem anterior. Se isso aparecer, `"transparent": false` num `tauri.linux.conf.json` desliga o vidro só no Linux.
   - macOS: a página transparente usa uma API privada do WebKit (`drawsBackground`), que o Tauri 2.12 ou mais novo usa sempre que a janela é transparente. Ela impede publicar na Mac App Store (o app é distribuído pelo GitHub) e pode parar de funcionar numa versão futura do macOS.
 - Projeto:
-  - Windows: o ambiente do vcvars ainda não é aplicado (o compilador precisa estar no `PATH`, também para compilar), e a busca de ferramentas não olha `C:\Program Files\LLVM\bin`. Cancelar a configuração ou a compilação encerra a árvore de processos com `taskkill /T /F`, nunca testado no Windows.
+  - Windows: o ambiente do vcvars é aplicado sem compilador no `PATH`, e a busca de ferramentas olha `%ProgramFiles%\LLVM\bin` depois do `PATH`. A IDE compila com `_LINK_=/INCREMENTAL:NO`, para o F11 do `lldb` entrar nas funções, e define `CMAKE_GENERATOR=Ninja`, para presets sem `generator`.
   - Unix: o cmake, o dotnet, os servidores de linguagem e os depuradores rodam numa sessão própria (`setsid`), e encerrar mata todos os processos dela. Quando um servidor ou depurador sai sozinho, o que ficou na sessão dele também é encerrado. Quem sai da sessão (daemons) sobrevive. O `lldb-server` que o lldb-dap inicia fica na sessão dele e morre junto (conferido no Linux).
   - .NET: o `dotnet build` deixa o servidor de compilação (`VBCSCompiler`) e nós do MSBuild rodando depois de terminar, para a próxima ser mais rápida. Eles saem sozinhos depois de alguns minutos parados e não são encerrados ao fechar a IDE.
   - O `PATH` usado para achar o cmake e as ferramentas é o da IDE. No macOS, ele vem do shell de login: ao abrir, o app roda `$SHELL -l -i -c` e usa o `PATH` que ele informa (com o `~/.zprofile`, Homebrew). Isso atrasa a abertura pelo tempo do shell; um shell que não responde em 3 s é deixado de lado, e o app fica com o `PATH` que recebeu. Nunca testado num Mac.
 - Linguagem:
-  - Windows: o ambiente do MSVC ainda não é passado ao clangd. Parar o Roslyn encerra a árvore de processos (BuildHost) com `taskkill /T /F`, nunca testado no Windows.
+  - Windows: sem compilador no `PATH`, o clangd recebe o ambiente do MSVC. O Roslyn e o BuildHost rodam num Job Object, encerrado junto com o servidor.
   - A busca do clangd e do Roslyn roda `--version` ao iniciar (até 5 s cada candidato); a ferramenta instalada com a IDE aberta só é achada se o `PATH` da IDE já a incluía.
-  - O núcleo encerra o servidor à força (sem `shutdown`/`exit` do LSP). Hoje isso não perde nada, porque nenhum dos dois grava estado ao sair.
 - Depuração:
   - O núcleo inicia todos os processos sem `DEBUGINFOD_URLS`: com ele, o lldb-dap travava baixando os símbolos do próprio lldb-dap (o lançador do `runInTerminal`). Os símbolos das bibliotecas do sistema não são baixados.
   - O netcoredbg não atende o `runInTerminal`: programa C# depurado não lê o teclado.
-  - Windows: se o adaptador cair, o que ele iniciou (ex.: o programa sob o netcoredbg) pode sobrar; o encerramento da árvore só existe no `debug_stop`. Nada da depuração foi testado no Windows nem no macOS.
+  - Windows: o adaptador roda num Job Object: se ele cair, o que ele iniciou é encerrado junto. Nada da depuração foi testado no macOS.
 - Terminal:
   - Não há controle de fluxo na saída: um programa que escreve sem parar (ex.: `yes`, ~36 MB/s) entrega tudo à interface, que pode ficar lenta. Com `seq 100000` a interface travou no máximo ~0,3 s no teste na janela.
   - O ambiente do MSVC no Windows ainda não é aplicado; ele chega com [projeto.md](specs/projeto.md).

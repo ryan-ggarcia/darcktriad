@@ -1,8 +1,6 @@
 //! Servidores de linguagem (docs/specs/linguagem.md, critério 4) com o clangd e o Roslyn de
 //! verdade, sobre cópias temporárias das fixtures já configuradas. O handshake do LSP é escrito à
-//! mão. Sem a ferramenta os testes são pulados com um aviso. Fora do Windows, como os testes do
-//! projeto: lá o compilador depende do ambiente do vcvars, e os URIs têm outra forma.
-#![cfg(not(windows))]
+//! mão. Sem a ferramenta os testes são pulados com um aviso.
 
 mod common;
 
@@ -166,7 +164,9 @@ fn errors_in(diagnostics: &Value) -> Vec<Value> {
 }
 
 fn uri(path: &Path) -> String {
-    format!("file://{}", path.display())
+    let path = path.display().to_string().replace('\\', "/");
+    let root = if path.starts_with('/') { "" } else { "/" };
+    format!("file://{root}{path}")
 }
 
 /// A fixture configurada, ou `None` quando falta alguma das ferramentas.

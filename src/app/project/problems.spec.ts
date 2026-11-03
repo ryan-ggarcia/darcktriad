@@ -59,7 +59,7 @@ describe('repositório de problemas', () => {
         .find((group) => group.file === main)!
         .items.map((p) => p.message),
     ).toEqual(['clangd 10', 'build 30', 'build 20', 'clangd 2']);
-    expect([problems.errors(), problems.warnings()]).toEqual([3, 1]);
+    expect([problems.errors(), problems.warnings(), problems.infos()]).toEqual([3, 1, 1]);
   });
 
   it('o clangd por arquivo troca só os itens daquele arquivo', () => {

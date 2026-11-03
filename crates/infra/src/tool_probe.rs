@@ -10,13 +10,16 @@ use std::time::{Duration, Instant};
 
 use darktriad_core::ToolProbe;
 
+#[cfg(windows)]
+use crate::process::CREATE_NO_WINDOW;
 use crate::process::DOTNET_QUIET;
 
 /// Uma ferramenta que não responde ao `--version` nesse tempo é tratada como sem versão.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct SystemToolProbe {
-    path: OsString,
+    /// `None`: o `PATH` da IDE, lido a cada busca porque, no Windows, o do MSVC chega depois.
+    path: Option<OsString>,
     home: Option<PathBuf>,
     dotnet_root: Option<PathBuf>,
     /// A pasta de ferramentas da IDE (`<dados do app>/tools`).
@@ -25,11 +28,11 @@ pub struct SystemToolProbe {
 }
 
 impl SystemToolProbe {
-    /// Usa o `PATH`, o `HOME` e o `DOTNET_ROOT` da IDE.
+    /// Usa o `PATH`, a pasta do usuário e o `DOTNET_ROOT` da IDE.
     pub fn new(tools_dir: PathBuf) -> Self {
         Self {
-            path: env::var_os("PATH").unwrap_or_default(),
-            home: env::var_os("HOME").map(PathBuf::from),
+            path: None,
+            home: env::home_dir(),
             dotnet_root: env::var_os("DOTNET_ROOT").map(PathBuf::from),
             tools_dir,
             timeout: VERSION_TIMEOUT,
@@ -53,7 +56,8 @@ impl SystemToolProbe {
 
 impl ToolProbe for SystemToolProbe {
     fn find(&self, program: &str) -> Vec<PathBuf> {
-        let path_dirs: Vec<PathBuf> = env::split_paths(&self.path).collect();
+        let path = self.path.clone().unwrap_or_else(ide_path);
+        let path_dirs: Vec<PathBuf> = env::split_paths(&path).collect();
         let on_path = path_dirs.iter().map(|dir| dir.join(executable(program)));
         let mut found = Vec::new();
         for candidate in on_path
@@ -79,6 +83,14 @@ impl ToolProbe for SystemToolProbe {
             self.timeout,
         )
     }
+}
+
+fn ide_path() -> OsString {
+    #[cfg(windows)]
+    if let Some(path) = crate::msvc::msvc_path() {
+        return path;
+    }
+    env::var_os("PATH").unwrap_or_default()
 }
 
 fn executable(program: &str) -> String {
@@ -114,10 +126,12 @@ fn llvm_paths(program: &str, path_dirs: &[PathBuf]) -> Vec<PathBuf> {
     versioned(program, path_dirs)
 }
 
-// shortcut: no Windows só o PATH e a pasta da IDE; `C:\Program Files\LLVM\bin` entra na rodada do Windows.
+/// Onde o instalador do LLVM põe os programas, quando a pessoa não marca a opção do `PATH`.
 #[cfg(windows)]
-fn llvm_paths(_: &str, _: &[PathBuf]) -> Vec<PathBuf> {
-    Vec::new()
+fn llvm_paths(program: &str, _: &[PathBuf]) -> Vec<PathBuf> {
+    (env::var_os("ProgramFiles").iter())
+        .map(|dir| Path::new(dir).join("LLVM/bin").join(executable(program)))
+        .collect()
 }
 
 /// `<programa>-<N>` das pastas do `PATH`, da maior versão para a menor (Debian e Ubuntu).
@@ -140,7 +154,7 @@ fn versioned(program: &str, path_dirs: &[PathBuf]) -> Vec<PathBuf> {
 // shortcut: lê a saída só no fim; serve para `--version`, não para saídas maiores que o buffer do pipe.
 fn output_within(command: &mut Command, timeout: Duration) -> io::Result<String> {
     #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut *command, 0x0800_0000);
+    std::os::windows::process::CommandExt::creation_flags(&mut *command, CREATE_NO_WINDOW);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -179,7 +193,7 @@ mod windows_tests {
         let dir = root.join("bin");
         fs::create_dir_all(&dir).unwrap();
         let probe = SystemToolProbe {
-            path: env::join_paths([&dir]).unwrap(),
+            path: Some(env::join_paths([&dir]).unwrap()),
             home: None,
             dotnet_root: None,
             tools_dir: root.join("tools"),
@@ -199,6 +213,21 @@ mod windows_tests {
             [dir.join("roslyn-language-server.exe")]
         );
     }
+
+    #[test]
+    fn the_llvm_installer_folder_comes_after_the_path() {
+        let program_files = env::var_os("ProgramFiles").unwrap();
+        assert_eq!(
+            llvm_paths("clangd", &[]),
+            [Path::new(&program_files).join("LLVM/bin/clangd.exe")]
+        );
+    }
+
+    #[test]
+    fn the_user_folder_counts_without_a_home_variable() {
+        let probe = SystemToolProbe::new(PathBuf::new());
+        assert_eq!(probe.home, env::var_os("USERPROFILE").map(PathBuf::from));
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -211,7 +240,7 @@ mod tests {
 
     fn probe(root: &Path, path_dirs: &[&str]) -> SystemToolProbe {
         SystemToolProbe {
-            path: env::join_paths(path_dirs.iter().map(|dir| root.join(dir))).unwrap(),
+            path: Some(env::join_paths(path_dirs.iter().map(|dir| root.join(dir))).unwrap()),
             home: Some(root.join("home")),
             dotnet_root: Some(root.join("dotnet-root")),
             tools_dir: root.join("tools"),

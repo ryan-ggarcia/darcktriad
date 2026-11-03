@@ -579,13 +579,15 @@ fn stop_children(app: &AppHandle) {
     app.state::<AppDebug>().stop();
     app.state::<AppTerminals>().close_all();
     app.state::<AppProject>().close();
-    app.state::<AppLanguages>().stop_all();
+    app.state::<AppLanguages>().stop_all_and_wait();
 }
 
 fn main() {
     // Antes de tudo: o resto do app (processos, terminal, busca de ferramentas) herda este PATH.
     #[cfg(target_os = "macos")]
     darktriad_infra::use_login_shell_path();
+    #[cfg(windows)]
+    darktriad_infra::prepare_msvc_environment();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

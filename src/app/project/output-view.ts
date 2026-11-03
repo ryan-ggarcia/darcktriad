@@ -14,6 +14,8 @@ import { Panel } from '../shared/panel';
 import { OutputChannels } from './output-channels';
 import { BUILD_CHANNEL, Project } from './project';
 
+const NO_LINKS: ReadonlyMap<string, BuildProblem> = new Map();
+
 /** Um pedaço do log: texto corrido, ou uma linha que é link para o problema. */
 export interface OutputSegment {
   text: string;
@@ -21,17 +23,18 @@ export interface OutputSegment {
 }
 
 /**
- * Corta o log nas linhas que citam um problema da compilação (mesmo `arquivo:linha` e mensagem),
- * que viram links. O resto fica em texto corrido, com as quebras de linha.
+ * Corta o log nas linhas que o núcleo marcou como erro, que viram links. O resto fica em texto
+ * corrido, com as quebras de linha.
  */
-export function linkProblems(lines: string[], problems: BuildProblem[]): OutputSegment[] {
-  const linked = problems.filter((problem) => problem.file && problem.line);
+export function linkProblems(
+  lines: string[],
+  links: ReadonlyMap<string, BuildProblem>,
+): OutputSegment[] {
   const segments: OutputSegment[] = [];
   let text = '';
-  // shortcut: compara cada linha com cada problema; indexar por arquivo se um log grande travar.
   lines.forEach((line, i) => {
     const separator = i ? '\n' : '';
-    const problem = linked.find((item) => mentions(line, item));
+    const problem = links.get(line);
     if (!problem) {
       text += separator + line;
       return;
@@ -40,16 +43,6 @@ export function linkProblems(lines: string[], problems: BuildProblem[]): OutputS
     text = '';
   });
   return [...segments, { text }].filter((segment) => segment.text);
-}
-
-function mentions(text: string, { file, line, message }: BuildProblem): boolean {
-  const name = basename(file!);
-  return (
-    text.includes(message) &&
-    [`${name}:${line}:`, `${name}(${line},`, `${name}(${line})`].some((place) =>
-      text.includes(place),
-    )
-  );
 }
 
 /**
@@ -89,8 +82,8 @@ export class OutputView {
   private readonly tabs = inject(EditorTabs);
   private readonly log = viewChild<ElementRef<HTMLElement>>('log');
   protected readonly segments = computed(() => {
-    const problems = this.output.current() === BUILD_CHANNEL ? this.project.buildProblems() : [];
-    return linkProblems(this.output.lines(), problems);
+    const links = this.output.current() === BUILD_CHANNEL ? this.project.buildLinks() : NO_LINKS;
+    return linkProblems(this.output.lines(), links);
   });
   private following = true;
 

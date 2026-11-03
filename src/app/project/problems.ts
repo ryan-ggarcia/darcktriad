@@ -43,6 +43,7 @@ export class Problems {
   readonly items = computed(() => this.groups().flatMap((group) => group.items));
   readonly errors = computed(() => this.count(8));
   readonly warnings = computed(() => this.count(4));
+  readonly infos = computed(() => this.count(2));
 
   /** Troca os itens de `source`; com `file`, só os desse arquivo. */
   set(source: string, items: ProblemItem[], file?: Path): void {

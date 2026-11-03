@@ -14,6 +14,10 @@ portable-pty = "0.9"
 serde_json = "1"
 trash = "5"
 
+# Encerrar o que um servidor iniciou quando ele cai (Job Object).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects"] }
+
 # Encerrar à força o shell que ignora o SIGHUP ao fechar o terminal.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -224,5 +224,6 @@ Fonte: [Debugging: debug actions](https://code.visualstudio.com/docs/debugtest/d
   - A IDE mantém os atalhos do VS Code; o aviso vai para a documentação de usuário.
 - **Windows:**
   - Depurar binários MSVC com `lldb-dap` é menos maduro que o depurador do Visual Studio, que é proibido pela stack.
-  - Ver a decisão no README e o critério 19.
+  - Ver a decisão no README e o critério 19, que passou em 2026-11-03 ([RISCOS.md](../RISCOS.md)).
+  - O F11 do `lldb` não atravessa o salto do link incremental do MSVC: a IDE compila com `_LINK_=/INCREMENTAL:NO`.
 - **netcoredbg:** não atende `runInTerminal` e não repassa o teclado no modo DAP (confirmado no código do netcoredbg 3.2). Vale a regra de "saída só para leitura" do item 3 de "Iniciar". O contorno só para Unix está em [RISCOS.md](../RISCOS.md).

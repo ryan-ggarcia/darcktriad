@@ -57,9 +57,13 @@ describe('links da Saída', () => {
     'Falhou em 3,2 s',
   ];
 
-  it('as linhas com o arquivo:linha e a mensagem de um problema viram links; o texto fica igual', () => {
+  it('as linhas marcadas pelo núcleo viram links; o texto fica igual', () => {
     const windows = problem({ file: 'C:\\p\\app\\main.cpp', line: 7, message: 'conversion' });
-    const segments = linkProblems(lines, [problem(), windows, RESERVE]);
+    const links = new Map([
+      [lines[1], problem()],
+      [lines[3], windows],
+    ]);
+    const segments = linkProblems(lines, links);
 
     expect(segments.map((segment) => segment.text).join('')).toBe(lines.join('\n'));
     expect(segments.filter((segment) => segment.problem).map((segment) => segment.text)).toEqual([
@@ -68,9 +72,8 @@ describe('links da Saída', () => {
     ]);
   });
 
-  it('outra linha ou outra mensagem não vira link', () => {
-    const segments = linkProblems(lines, [problem({ line: 50 }), problem({ message: 'outra' })]);
-    expect(segments).toEqual([{ text: lines.join('\n') }]);
+  it('sem marca, nenhuma linha vira link', () => {
+    expect(linkProblems(lines, new Map())).toEqual([{ text: lines.join('\n') }]);
   });
 });
 
@@ -187,8 +190,12 @@ describe('compilar e executar', () => {
   describe('Saída', () => {
     it('no canal Build, a linha do erro abre o arquivo na linha e na coluna; Limpar esvazia', async () => {
       fakes.files.write(MAIN, 'int main() {}\n');
-      fakes.project.emit({ kind: 'buildOutput', line: 'app/main.cpp:5:10: error: x' });
-      finish('failed', [problem({ message: 'x' })]);
+      // Sem o fim da compilação: o link existe assim que a linha chega.
+      fakes.project.emit({
+        kind: 'buildOutput',
+        line: 'app/main.cpp:5:10: error: x',
+        problem: problem({ message: 'x' }),
+      });
       panel.showOutput('Build');
       const fixture = TestBed.createComponent(OutputView);
       const page = fixture.nativeElement as HTMLElement;

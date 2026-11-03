@@ -85,6 +85,44 @@ export function connectDebugDecorations(monaco: typeof Monaco, injector: Injecto
   );
 }
 
+/** A bolinha clara na margem, na linha sob o mouse: onde o clique poria um ponto de parada. */
+export function hintOnGutterHover(
+  monaco: typeof Monaco,
+  editor: Monaco.editor.IStandaloneCodeEditor,
+  injector: Injector,
+): void {
+  const tabs = injector.get(EditorTabs);
+  const breakpoints = injector.get(Breakpoints);
+  const hint = editor.createDecorationsCollection();
+  let shown = 0;
+  const show = (line: number) => {
+    if (line === shown) return;
+    shown = line;
+    hint.set(
+      line
+        ? [
+            {
+              range: new monaco.Range(line, 1, line, 1),
+              options: { glyphMarginClassName: 'debug-breakpoint-hint' },
+            },
+          ]
+        : [],
+    );
+  };
+  editor.onMouseMove(({ target }) => {
+    const file = tabs.active()?.path();
+    const line =
+      target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
+        ? (target.position?.lineNumber ?? 0)
+        : 0;
+    const taken = breakpoints.list().some((item) => item.file === file && item.line === line);
+    show(file && !taken ? line : 0);
+  });
+  editor.onMouseLeave(() => show(0));
+  // O clique põe ou tira o ponto nessa linha: a bolinha volta só no próximo movimento.
+  editor.onMouseDown(() => show(0));
+}
+
 /** Clicar na margem à esquerda dos números alterna o ponto de parada, como o F9. */
 export function toggleOnGutterClick(
   monaco: typeof Monaco,

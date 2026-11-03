@@ -5,14 +5,14 @@ Estado em 2026-11-03, na v0.10.0. Cada item tem a explicação em [RISCOS.md](RI
 ## 1. Validar no Windows (precisa de uma máquina Windows)
 
 - [ ] Abrir os instaladores `.exe` e `.msi` e usar o app (Sem teste na janela › Instaladores)
-- [ ] Projeto com MSVC: critério 13 de [projeto.md](specs/projeto.md) — depende de corrigir o vcvars (item 5) (Windows)
-- [ ] Cancelar a compilação, parar e reiniciar o programa sem sobrar processo (`taskkill /T /F`): critério 14 de [compilar-e-executar.md](specs/compilar-e-executar.md) (Windows)
-- [ ] Compilar e executar inteiro (critérios 7 a 17 de compilar-e-executar.md) (Sem teste na janela › Compilar e executar)
-- [ ] Depuração com lldb-dap e netcoredbg: feita em 2026-11-03 com Clang e nos projetos de exemplo; falta o critério 19 (MSVC com lldb-dap) de [depuracao.md](specs/depuracao.md) (Depuração)
-- [ ] Queda do depurador não deixa o programa rodando (Depuração › Windows)
+- [x] Projeto com MSVC: critério 13 de [projeto.md](specs/projeto.md) (Windows)
+- [x] Cancelar a compilação, parar e reiniciar o programa sem sobrar processo: critério 14 de [compilar-e-executar.md](specs/compilar-e-executar.md), menos "digitar sem atraso", que não foi medido (Windows)
+- [x] Compilar e executar inteiro (critérios 7 a 17 de compilar-e-executar.md), com o MSVC, pelo DevTools (Sem teste na janela › Compilar e executar)
+- [x] Depuração com lldb-dap e netcoredbg, inclusive o critério 19 (MSVC com lldb-dap) de [depuracao.md](specs/depuracao.md) (Depuração)
+- [x] Queda do depurador não deixa o programa rodando, com o `lldb-dap` e o `netcoredbg` (Windows › Processos que sobram)
 - [ ] Atualizar pela IDE com um release real, pelo `.exe` (NSIS) e pelo `.msi`: aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
-- [ ] Temporários do clangd na pasta `servers` do app e limpeza ao abrir (Linguagem › Servidores encerrados à força)
-- [ ] Testes de integração (cmake, dotnet, clangd, Roslyn reais) rodando no CI do Windows (Windows)
+- [x] Temporários do clangd na pasta `servers` do app; saem ao fechar a pasta (Linguagem › Encerrar os servidores)
+- [ ] Testes de integração no CI do Windows: passam nesta máquina (11 de 11); falta ver no primeiro push (Windows)
 - [x] F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J com teclas reais não fazem nada de navegador: critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md) (Windows 11, build de produção, 2026-11-03)
 
 ## 2. Validar no macOS (precisa de um Mac)
@@ -52,8 +52,8 @@ O WebDriver não mede nem faz estes. **O usuário faz estes testes conforme usa 
 
 Bugs e limites, do mais importante para o menos importante.
 
-- [ ] **Windows:** aplicar o ambiente do compilador da Microsoft (vcvars) (Windows)
-- [ ] **Windows:** procurar ferramentas em `C:\Program Files\LLVM\bin` (Windows)
+- [x] **Windows:** aplicar o ambiente do compilador da Microsoft (vcvars) (Windows)
+- [x] **Windows:** procurar ferramentas em `C:\Program Files\LLVM\bin` (Windows)
 - [x] **macOS:** terminal e busca de ferramentas com o `PATH` do `~/.zprofile` quando a IDE é aberta pelo Finder (macOS)
 - [x] **macOS:** reconfigurar ao salvar quando a pasta passa por link simbólico (macOS)
 - [x] Salvar o `CMakeLists.txt` durante a configuração da compilação não pode interromper a configuração (Compilar e executar) → passou na janela (QA, 03b186a)
@@ -62,24 +62,25 @@ Bugs e limites, do mais importante para o menos importante.
 - [x] .NET com vários frameworks-alvo: passar `--framework` no `dotnet run` (Compilar e executar) → passou na janela (QA, 03b186a), com `net10.0;net10.0-browser`, sem baixar o 8.0
 - [x] .NET: salvar `.csproj`/`.sln` reconfigura; erros de restore sem linha aparecem em Problemas (Projeto) → passou na janela (QA, 03b186a)
 - [x] Trocar Debug/Release duas vezes rápido deixa o clangd na pasta errada (Linguagem) → passou na janela (QA, 03b186a)
-- [ ] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem)
+- [x] Encerrar o clangd e o Roslyn com `shutdown`/`exit` do LSP antes de matar (Linguagem › Encerrar os servidores)
 - [ ] Digitar com o clangd ativo: meta de p95 abaixo de 50 ms (critério 15 de [linguagem.md](specs/linguagem.md)) (Sem teste na janela › Linguagem) → com a máquina livre, pelo WebDriver no arquivo de 10.000 linhas: 49, 45, 44, 52 e 45 ms; pelo inspetor: todas as 12 rodadas abaixo de 50 ms (34 a 46 ms). Não passa por uma rodada; números em RISCOS.md, decisão do CTO
 - [x] Teste do netcoredbg: não esperar o netcoredbg sair sozinho depois do `disconnect`, que às vezes ele não sai; chamar o `stop` como a interface faz (Depuração)
-- [ ] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
-- [ ] Erros da compilação sublinhados no editor (Compilar e executar)
+- [x] Links de erro na Saída enquanto a compilação ainda roda, e sem confundir arquivos com o mesmo nome (Compilar e executar)
+- [x] Erros da compilação sublinhados no editor: já funcionava; agora testado na janela (Compilar e executar)
 - [x] Lixo em `/tmp`: `cc*.s` do GCC ao cancelar e `lldb-dap-run-in-terminal-comm-*` (Compilar e executar; Depuração) → o `cc*.s` foi corrigido e passou na janela (QA, 03b186a); o do lldb-dap foi para a pasta `servers` do app (teste automático com o lldb-dap real; sem teste na janela)
 - [ ] Programas que saem da sessão (`setsid`, `nohup … &`) continuam depois de Parar ou de fechar o terminal (Terminal; Compilar e executar)
-- [ ] Terminal sem controle de fluxo: muita saída pode travar a interface por ~0,3 s (Terminal)
+- [ ] Terminal sem controle de fluxo: no Windows não trava (medido; ver Terminal); medir no Linux para decidir se vale fazer
 - [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto; passou na janela (QA, 03b186a)
 - [ ] Conferir no Linux o espaçamento da JetBrains Mono embutida no terminal (Terminal)
 - [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração) → passou na janela (QA, 03b186a)
-- [ ] Depuração: campos com nome (ex.: `Count`) junto com os blocos de coleções grandes (Depuração)
+- [x] Depuração: campos com nome junto com os blocos de coleções grandes: não acontece com o `netcoredbg` nem com o `lldb-dap`; sem mudança de código (Depuração)
 - [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração) → passou na janela (QA, 03b186a)
-- [ ] Depuração: bolinha clara ao passar o mouse na margem (Depuração)
-- [ ] Linguagem: Ctrl+clique sublinha o nome; "Ir para definição" no menu de contexto (Linguagem)
+- [x] Depuração: bolinha clara ao passar o mouse na margem (Depuração)
+- [x] Linguagem: Ctrl+clique sublinha o nome; "Ir para definição" no menu de contexto (Linguagem)
+- [ ] Linguagem: os outros itens do menu de contexto do editor (Cut, Copy, Format Document…) estão em inglês; a tabela de mensagens do Monaco resolve (Linguagem)
 - [x] Linguagem: F8 vai para o problema mais próximo do cursor (Linguagem): fora de um problema, o próximo depois do cursor (Shift+F8, o anterior), dando a volta no arquivo; teste automático, sem teste na janela
 - [x] Linguagem: traduzir "View Problem" e "No quick fixes available" do Monaco (Linguagem): pela tabela de mensagens do Monaco, por índice; um teste avisa se os índices mudarem ao atualizar o Monaco; sem teste na janela
-- [ ] Linguagem: contador da barra com os itens informativos (Linguagem)
+- [x] Linguagem: contador da barra com os itens informativos (Linguagem)
 - [x] Abas: a aba ativa pode ficar fora da faixa visível quando há muitas abas (ex.: o depurador pausa e abre um arquivo, e a aba dele não aparece). Rolar a faixa até ela. Visto nas capturas do tema novo; o código das abas não tem rolagem até a ativa, então não é efeito do tema. → a faixa rola até a aba ativa a cada troca, por qualquer caminho, sem animação; teste de componente, sem teste na janela
 
 ## 5b. Testes instáveis ou que só falham no CI
@@ -89,7 +90,7 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [x] Testes de tempo do frontend (`explorer-view.spec.ts` "cada passo de rolagem…", `quick-open.spec.ts` 50.000 arquivos): os arquivos agora rodam em série e o teste não repete mais. Com outro processo pesado na máquina ainda podem falhar (RISCOS.md, Testes).
 - [ ] Teste de velocidade `listing_a_folder_with_5000_files_fits_the_budget` falhou 1 vez no CI do macOS (2f45e62).
 - [ ] Testes do depurador rodam aqui com o lldb-dap 23, mas o CI usa o 21 (Ubuntu) e o do Xcode (macOS): um teste novo passou aqui e falhou lá (faltava o `pathFormat`, 6a2d037). Rodar localmente também com uma versão antiga, ou conferir o CI antes de considerar pronto.
-- [ ] Testes do lldb-dap deixam o adaptador rodando quando falham no meio (não há `stop` em caso de pânico).
+- [x] Testes do lldb-dap deixam o adaptador rodando quando falham no meio: agora o `Dap` encerra a sessão ao ser descartado.
 - [ ] Teste do arquivo do `runInTerminal` do lldb-dap (`lldb_dap_keeps_its_comm_file…`) roda só no Linux: no macOS ele depura o `/usr/bin/env`, que o SIP protege, e o lldb-dap não o inicia (timeout no CI, 9c63b10). Trocar por um programa compilado da fixture para cobrir o macOS.
 - [ ] Teste da pasta dos servidores (`servers_use_the_app_temp_folder…`) falhou 1 vez no CI do Ubuntu por um lock herdado por um instante; foi feito esperar até 5 s (1d722e3). Confirmar que não volta.
 
@@ -98,6 +99,7 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [ ] C# sem teclado ao depurar: implementar o contorno só para Linux e macOS? (Depuração › C# não lê o teclado)
 - [ ] netcoredbg exige glibc 2.38: aceitar que Ubuntu 22.04 e distros antigas fiquem sem depuração de C#, ou procurar outra versão (Depuração)
 - [ ] Instalação automática de ferramentas ([ferramentas.md](specs/ferramentas.md)) (Adiado de propósito)
+- [ ] Windows sem compilador nenhum: mensagem "Nenhum compilador C/C++ encontrado." e botão Instalar, que a spec pede; entra junto com a instalação automática (Adiado de propósito)
 - [ ] Gdb como depurador de C/C++ (hoje "depois" no [roadmap](specs/README.md))
 
 ## Fora deste checklist

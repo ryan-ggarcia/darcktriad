@@ -1,8 +1,6 @@
 //! Compilar e executar (docs/specs/compilar-e-executar.md) com o cmake, o dotnet e o PTY de
 //! verdade, numa cópia temporária das fixtures: a parte do núcleo dos critérios 8 a 14. Sem a
-//! ferramenta no PATH os testes são pulados com um aviso. Fora do Windows: lá o compilador
-//! depende do ambiente do vcvars, que ainda não é aplicado.
-#![cfg(not(windows))]
+//! ferramenta no PATH os testes são pulados com um aviso.
 
 mod common;
 
@@ -33,7 +31,7 @@ fn results(events: &Events) -> Vec<(BuildStatus, Vec<BuildProblem>)> {
 fn build_output(events: &Events) -> Vec<String> {
     (events.lock().unwrap().iter())
         .filter_map(|event| match event {
-            ProjectEvent::BuildOutput { line } => Some(line.clone()),
+            ProjectEvent::BuildOutput { line, .. } => Some(line.clone()),
             _ => None,
         })
         .collect()
@@ -63,7 +61,8 @@ fn hello_cpp_builds_and_a_missing_semicolon_becomes_a_problem() {
     assert_eq!(status, BuildStatus::Succeeded, "{}", output.join("\n"));
     assert!(problems.is_empty(), "{problems:?}");
     let command = format!("--build {}", root.0.join("build/debug").display());
-    assert!(output[0].starts_with("> ") && output[0].ends_with(&command));
+    let slashed = |text: &str| text.replace('\\', "/");
+    assert!(output[0].starts_with("> ") && slashed(&output[0]).ends_with(&slashed(&command)));
     assert!(output.last().unwrap().starts_with("Concluída em "));
 
     let main = root.0.join("app/main.cpp");
@@ -164,6 +163,21 @@ fn run_in_terminal(command: &RunCommand, input: &str) -> (String, Option<u32>) {
         )
         .unwrap();
     assert_eq!(info.name, command.name);
+    // O ConPTY pede a posição do cursor e não mostra nada até a resposta (na IDE, o xterm responde).
+    #[cfg(windows)]
+    {
+        let start = Instant::now();
+        while !events.lock().unwrap().iter().any(
+            |event| matches!(event, TerminalEvent::Output { data } if data.contains("\x1b[6n")),
+        ) {
+            assert!(
+                start.elapsed() < TIMEOUT,
+                "sem o pedido da posição do cursor"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        terminals.write(info.id, "\x1b[1;1R").unwrap();
+    }
     terminals.write(info.id, input).unwrap();
     let start = Instant::now();
     loop {

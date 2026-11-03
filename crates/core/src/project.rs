@@ -397,9 +397,24 @@ const SEVERITIES: [(&str, Severity); 4] = [
     ("note", Severity::Info),
 ];
 
-/// Os itens do painel Problemas de uma compilação: as linhas reconhecidas cujo arquivo existe
-/// (relativo: primeiro em `dirs[0]`, depois nos seguintes), sem repetição, e o item de reserva
-/// quando ela falhou sem nenhum erro reconhecido.
+/// O problema de uma linha da compilação, se ela citar um arquivo que existe (relativo: primeiro
+/// em `dirs[0]`, depois nos seguintes).
+pub fn located_problem(
+    line: &str,
+    dirs: &[&Path],
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<BuildProblem> {
+    let mut problem = parse_build_line(line)?;
+    let written = problem.file.take().unwrap_or_default();
+    problem.file = dirs
+        .iter()
+        .map(|dir| normalize(&dir.join(&written)))
+        .find(|path| is_file(path));
+    problem.file.is_some().then_some(problem)
+}
+
+/// Os itens do painel Problemas de uma compilação: os de [`located_problem`], sem repetição, e o
+/// item de reserva quando ela falhou sem nenhum erro reconhecido.
 pub fn build_problems(
     lines: &[String],
     failed: bool,
@@ -407,14 +422,12 @@ pub fn build_problems(
     is_file: impl Fn(&Path) -> bool,
 ) -> Vec<BuildProblem> {
     let mut problems: Vec<BuildProblem> = Vec::new();
-    for mut problem in lines.iter().filter_map(|line| parse_build_line(line)) {
-        let written = problem.file.take().unwrap_or_default();
-        problem.file = dirs
-            .iter()
-            .map(|dir| normalize(&dir.join(&written)))
-            .find(|path| is_file(path));
+    for problem in lines
+        .iter()
+        .filter_map(|line| located_problem(line, dirs, &is_file))
+    {
         // O dotnet repete os erros no resumo do fim.
-        if problem.file.is_some() && !problems.contains(&problem) {
+        if !problems.contains(&problem) {
             problems.push(problem);
         }
     }

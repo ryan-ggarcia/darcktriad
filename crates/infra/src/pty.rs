@@ -43,6 +43,10 @@ impl PtySpawner for PortablePty {
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        #[cfg(windows)]
+        for (name, value) in crate::msvc::msvc_environment() {
+            command.env(name, value);
+        }
         let child = pair
             .slave
             .spawn_command(command)
