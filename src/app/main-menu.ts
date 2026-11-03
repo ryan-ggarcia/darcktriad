@@ -93,7 +93,7 @@ const MENUS: [string, Item[]][] = [
       'cancelBuild',
     ],
   ],
-  ['Ajuda', ['keyboardShortcuts', 'checkTools']],
+  ['Ajuda', ['keyboardShortcuts', 'checkTools', 'checkUpdates']],
 ];
 
 /** O menu nativo a partir do registro: rótulo sem a categoria, atalho do sistema e `role`. */

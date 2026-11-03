@@ -6,6 +6,7 @@ import { ExplorerService } from '../app/explorer.service';
 import { FileService } from '../app/file.service';
 import {
   AppError,
+  AvailableUpdate,
   Breakpoint,
   ChangeBatch,
   DebugEvent,
@@ -26,6 +27,7 @@ import {
   TerminalEvent,
   TerminalInfo,
   ToolCheck,
+  UpdateProgress,
 } from '../app/ipc';
 import { TextChange } from '../app/language/lsp';
 import { basename, dirname, replacePrefix } from '../app/paths';
@@ -34,6 +36,7 @@ import { ProjectService } from '../app/project.service';
 import { Dialogs } from '../app/shared/dialogs';
 import { TerminalScreen, TerminalScreens } from '../app/terminal/terminal-screen';
 import { TerminalService } from '../app/terminal.service';
+import { UpdateService } from '../app/update.service';
 import { WorkspaceService } from '../app/workspace.service';
 
 function fail(kind: AppError['kind'], message: string): Promise<never> {
@@ -707,6 +710,34 @@ export class FakeDebugService implements Partial<DebugService> {
   }
 }
 
+/** A atualização: o teste escolhe a resposta da verificação e termina o download quando quer. */
+export class FakeUpdateService implements Partial<UpdateService> {
+  /** Em ordem: o que o núcleo recebeu. */
+  readonly calls: ('check' | 'install' | 'restart')[] = [];
+  checkReply: AvailableUpdate | AppError | null = null;
+  installReply: Promise<void> = Promise.resolve();
+  /** De verdade, quase nunca responde (o app já saiu); aqui responde para o teste seguir. */
+  restartReply: Promise<void> = Promise.resolve();
+  progress: (progress: UpdateProgress) => void = () => undefined;
+
+  check(): Promise<AvailableUpdate | null> {
+    this.calls.push('check');
+    const reply = this.checkReply;
+    return reply && 'kind' in reply ? Promise.reject(reply) : Promise.resolve(reply);
+  }
+
+  install(onEvent: (progress: UpdateProgress) => void): Promise<void> {
+    this.calls.push('install');
+    this.progress = onEvent;
+    return this.installReply;
+  }
+
+  restart(): Promise<void> {
+    this.calls.push('restart');
+    return this.restartReply;
+  }
+}
+
 export interface Fakes {
   files: FakeFiles;
   dialogs: FakeDialogs;
@@ -717,6 +748,7 @@ export interface Fakes {
   project: FakeProjectService;
   languages: FakeLanguageService;
   debug: FakeDebugService;
+  update: FakeUpdateService;
   providers: Provider[];
 }
 
@@ -730,6 +762,7 @@ export function createFakes(): Fakes {
   const project = new FakeProjectService();
   const languages = new FakeLanguageService();
   const debug = new FakeDebugService();
+  const update = new FakeUpdateService();
   return {
     files,
     dialogs,
@@ -740,6 +773,7 @@ export function createFakes(): Fakes {
     project,
     languages,
     debug,
+    update,
     providers: [
       { provide: FileService, useValue: files },
       { provide: Dialogs, useValue: dialogs },
@@ -751,6 +785,7 @@ export function createFakes(): Fakes {
       { provide: ProjectService, useValue: project },
       { provide: LanguageService, useValue: languages },
       { provide: DebugService, useValue: debug },
+      { provide: UpdateService, useValue: update },
     ],
   };
 }

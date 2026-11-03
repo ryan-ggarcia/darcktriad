@@ -250,6 +250,74 @@ kbd {
   border-left-color: var(--focus);
 }
 
+/* Abaixo do editor: não empurra as abas, de que a barra flutuante de depuração depende. */
+.update-notice {
+  flex: none;
+  margin: 0 var(--gap) var(--gap);
+}
+
+.update-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-progress {
+  appearance: none;
+  width: 160px;
+  height: 6px;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-input);
+}
+
+.update-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+.update-progress::-webkit-progress-value {
+  background: var(--accent-soft);
+}
+
+/* Sem `appearance` a barra sem valor fica parada: o movimento diz que a tela não travou. */
+.update-progress:indeterminate {
+  background:
+    linear-gradient(90deg, transparent 30%, var(--accent-soft) 50%, transparent 70%) 0 0 / 200% 100%,
+    var(--bg-input);
+  animation: update-working 1.2s linear infinite;
+}
+
+@keyframes update-working {
+  to {
+    background-position:
+      -200% 0,
+      0 0;
+  }
+}
+
+.update-notes {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.update-notes summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.update-notes-text {
+  max-height: 160px;
+  margin-top: 4px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Mensagens do sistema: entram com um deslize curto. */
 @keyframes message-in {
   from {
@@ -380,6 +448,7 @@ app-root {
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -583,6 +652,7 @@ app-root {
 .editor-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

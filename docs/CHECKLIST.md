@@ -10,6 +10,7 @@ Estado em 2026-11-02, na v0.7.0. Cada item tem a explicação em [RISCOS.md](RIS
 - [ ] Compilar e executar inteiro (critérios 7 a 17 de compilar-e-executar.md) (Sem teste na janela › Compilar e executar)
 - [ ] Depuração com lldb-dap e netcoredbg; critério 19 (MSVC com lldb-dap) de [depuracao.md](specs/depuracao.md) (Depuração)
 - [ ] Queda do depurador não deixa o programa rodando (Depuração › Windows)
+- [ ] Atualizar pela IDE com um release real, pelo `.exe` (NSIS) e pelo `.msi`: aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
 - [ ] Temporários do clangd na pasta `servers` do app e limpeza ao abrir (Linguagem › Servidores encerrados à força)
 - [ ] Testes de integração (cmake, dotnet, clangd, Roslyn reais) rodando no CI do Windows (Windows)
 
@@ -20,6 +21,7 @@ Estado em 2026-11-02, na v0.7.0. Cada item tem a explicação em [RISCOS.md](RIS
 - [ ] Compilar, executar e depurar com o lldb-dap do Xcode (Depuração)
 - [ ] Colar um texto grande no terminal sem perder nada (Terminal › `\r` a mais no macOS)
 - [ ] Temporários do clangd na pasta `servers` do app (Linguagem)
+- [ ] Atualizar pela IDE com um release real, pelo `.app` (Intel e Apple Silicon): aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
 
 ## 3. Validar no Linux com teclado e mouse reais
 
@@ -30,6 +32,7 @@ O WebDriver não mede nem faz estes. **O usuário faz estes testes conforme usa 
 - [ ] Clicar nas abas com a janela estreita (800 px) (Sem teste na janela › Depuração) → pelo WebDriver, a 800 px, o clique em aba funcionou com o tema novo (causa provável do problema antigo: a barra de status empurrava os editores para fora da janela; não reproduzido na versão antiga); falta com o mouse real
 - [ ] Digitar com o clangd ativo: decidir se o atraso se percebe (a medida automática oscila em torno da meta de 50 ms) (Sem teste na janela › Linguagem)
 - [ ] Abrir o AppImage, o `.deb` e o `.rpm` e usar o app de verdade (Sem teste na janela › Instaladores)
+- [ ] Atualizar pela IDE com um release real, pelo AppImage, pelo `.deb` e pelo `.rpm` (estes pedem a senha: a tela não pode parecer travada), com um arquivo sem salvar e um programa rodando antes de "Reiniciar agora" (Atualização automática)
 
 ## 4. Validar no Linux (o QA pode fazer pelo WebDriver ou com teste automático)
 

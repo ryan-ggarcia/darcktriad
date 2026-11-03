@@ -102,7 +102,8 @@ export type CommandId =
   | 'toggleBreakpoint'
   | 'removeAllBreakpoints'
   | 'showDebug'
-  | 'keyboardShortcuts';
+  | 'keyboardShortcuts'
+  | 'checkUpdates';
 
 /**
  * O registro: todo comando da IDE, com os atalhos das tabelas das specs (docs/specs/editor.md,
@@ -297,6 +298,7 @@ export const COMMANDS: Record<CommandId, CommandSpec> = {
   removeAllBreakpoints: { title: 'Depuração: Remover todos os pontos de parada' },
   showDebug: { title: 'Ver: Executar e Depurar', keys: ['Mod+Shift+D'] },
   keyboardShortcuts: { title: 'Ajuda: Atalhos de teclado' },
+  checkUpdates: { title: 'Ajuda: Verificar atualizações' },
 };
 
 /**

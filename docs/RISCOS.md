@@ -103,6 +103,11 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Windows:** se o instalador não abrir, o `update_restart` rejeita, mas os terminais e servidores de linguagem já foram encerrados.
 - **O que já foi testado (2026-11-02, só no Linux, sem release real):** um AppImage de teste, com par de chaves temporário e servidor local, instalou a versão nova, mostrou o progresso e reiniciou na versão nova, encerrando o terminal aberto. Assinatura trocada, arquivo adulterado e versão anunciada diferente da assinada foram recusados, com o arquivo intacto. O app com a configuração real falou com o GitHub por HTTPS.
 - **Nunca testado:** instalar por `.deb` e `.rpm`, tudo no Windows e no macOS e a chave real. O `latest.json` agora sai de `.github/scripts/latest-json.mjs`, testado só com dados falsos: o job `latest-json` do release e o `release-notes.yml` nunca rodaram no GitHub (o `gh` lendo o rascunho pela tag, os `.sig` com os nomes esperados, o envio com `--clobber`). Antes de publicar o primeiro release com o updater, confira no rascunho se o `latest.json` existe e se as URLs usam a tag, não `untagged-`; depois de publicar, confira se o `release-notes.yml` rodou verde.
+- **A tela (aviso abaixo do editor):** verifica sozinha 5 s depois de abrir, em silêncio (erro só no console). O comando `Ajuda: Verificar atualizações` (paleta e menu Ajuda) sempre responde. As notas aparecem como texto puro em "Ver novidades".
+- **Antes de reiniciar:** pergunta sobre arquivos sem salvar (a mesma pergunta do fechar) e, se houver compilação, programa rodando ou depuração, se pode encerrar. Terminais comuns são encerrados sem pergunta, como ao fechar a janela.
+- **"Depois" na atualização pronta:** no Linux e no macOS ela já está instalada e vale na próxima abertura. No Windows o pacote fica só na memória: fechar o app o perde, e o aviso volta na próxima verificação.
+- **Sem botão para cancelar o download.** Ele roda em segundo plano e não trava a IDE.
+- **Tela vista na janela (2026-11-02, Linux, WebDriver):** a verificação ao abrir falhou em silêncio (o último release não tem `latest.json`) e o comando mostrou o erro com "Tentar de novo" e "Fechar". Versão nova, notas, progresso, "pronta" e as perguntas antes de reiniciar só têm teste automático (`src/app/update/updates.spec.ts`).
 
 ## Adiado de propósito
 

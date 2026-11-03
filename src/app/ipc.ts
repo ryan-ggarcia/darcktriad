@@ -179,6 +179,19 @@ export type DebugEvent =
   /** O adaptador saiu; `reason` não nulo: caiu, com a mensagem pronta para mostrar. */
   | { kind: 'ended'; reason: string | null };
 
+/** A resposta do `update_check`. */
+export interface AvailableUpdate {
+  version: string;
+  notes: string | null;
+}
+
+/** Progresso do `update_install`. */
+export interface UpdateProgress {
+  downloaded: number;
+  /** Null se o servidor não informar o tamanho. */
+  total: number | null;
+}
+
 function isAppError(error: unknown): error is AppError {
   return typeof error === 'object' && error !== null && 'kind' in error && 'message' in error;
 }

@@ -131,7 +131,7 @@ export class Workspace {
   }
 
   /** Fechar a janela: uma única pergunta sobre as abas modificadas; depois grava a sessão. */
-  private async confirmClose(): Promise<boolean> {
+  async confirmClose(): Promise<boolean> {
     if (!(await this.tabs.confirmDiscard())) return false;
     if (this.folder.path()) await this.persist(this.tabs.session());
     return true;

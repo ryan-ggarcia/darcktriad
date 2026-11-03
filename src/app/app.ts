@@ -36,6 +36,8 @@ import { learnKeyLabel, loadKeyboardLayout, PLATFORM } from './shared/keybinding
 import { CurrentFolder } from './workspace/current-folder';
 import { TerminalPanel } from './terminal/terminal-panel';
 import { Terminals } from './terminal/terminals';
+import { UpdateNotice } from './update/update-notice';
+import { Updates } from './update/updates';
 import { WelcomeView } from './workspace/welcome-view';
 import { Workspace } from './workspace/workspace';
 
@@ -55,6 +57,7 @@ import { Workspace } from './workspace/workspace';
     QuickOpen,
     TerminalPanel,
     ToolsView,
+    UpdateNotice,
     WelcomeView,
   ],
   host: {
@@ -78,6 +81,7 @@ export class App {
   protected readonly problems = inject(Problems);
   private readonly panel = inject(Panel);
   private readonly dialogs = inject(Dialogs);
+  private readonly updates = inject(Updates);
   private readonly injector = inject(Injector);
   private readonly explorer = viewChild(ExplorerView);
   private readonly quickOpen = viewChild.required(QuickOpen);
@@ -102,6 +106,7 @@ export class App {
     void loadKeyboardLayout();
     inject(MainMenu).start();
     void this.project.start();
+    this.updates.start();
     void this.workspace.start().then(() => {
       // Com a tela pronta, carrega o Monaco no tempo ocioso: o primeiro arquivo abre tão rápido quanto os outros.
       // shortcut: sem requestIdleCallback (WebKit antigo no macOS/Linux) não pré-carrega; usar setTimeout se lá medir lento.
@@ -202,6 +207,7 @@ export class App {
       selectTarget: () => this.pickTarget(),
       reconfigure: () => this.project.reconfigure(),
       checkTools: () => this.toolsView().show(),
+      checkUpdates: () => this.updates.check(),
       goToDefinition: () => this.languages.goToDefinition((pick) => this.quickOpen().pick(pick)),
       navigateBack: () => this.tabs.back(),
       navigateForward: () => this.tabs.forward(),

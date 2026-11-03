@@ -111,6 +111,7 @@ export class Project {
   /** "Compilação concluída" ou "Compilação falhou: …", por 5 s. */
   readonly buildResult = signal<string | null>(null);
   private lastBuild: BuildStatus | null = null;
+  private onBuildEnded?: () => void;
   private resultTimer?: ReturnType<typeof setTimeout>;
   /** O canal da Saída (CMake ou dotnet); null se a pasta não tem projeto que configure. */
   readonly channel = computed(() => CHANNELS[this.state().kind] ?? null);
@@ -159,6 +160,13 @@ export class Project {
     this.service.cancelBuild().catch(warn);
   }
 
+  /** Cancela e resolve quando a compilação acabou de fato. */
+  cancelBuildAndWait(): Promise<void> {
+    if (!this.building()) return Promise.resolve();
+    this.cancelBuild();
+    return new Promise((resolve) => (this.onBuildEnded = resolve));
+  }
+
   /**
    * Ctrl+F5: salva tudo, compila o alvo ativo e o roda num terminal novo (o canal já recebe a
    * saída). Null se não rodou; com a compilação falha, abre o painel Problemas.
@@ -199,6 +207,7 @@ export class Project {
       return null;
     } finally {
       this.building.set(false);
+      this.onBuildEnded?.();
     }
   }
 
