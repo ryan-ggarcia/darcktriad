@@ -285,7 +285,8 @@ fn lldb_dap_keeps_its_comm_file_in_the_app_temp_folder_and_not_in_the_program_en
     let mut dap = Dap::new(sessions, events);
     let seq = dap.request(
         "initialize",
-        json!({"adapterID": launch.adapter, "supportsRunInTerminalRequest": true}),
+        // O lldb-dap 21 (CI) e o do Xcode exigem o `pathFormat`, como a interface já manda.
+        json!({"adapterID": launch.adapter, "pathFormat": "path", "supportsRunInTerminalRequest": true}),
     );
     dap.reply(seq);
     let launched = dap.request("launch", launch.launch.clone());
