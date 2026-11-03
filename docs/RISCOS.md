@@ -108,6 +108,12 @@ O que ficou sem corrigir ou sem testar, em linguagem simples. Os detalhes técni
 - **Teste real do botão Atualizar:** a v0.8.0 é a primeira com o updater. Só uma versão publicada depois dela (ex.: v0.8.1) permite ver, numa v0.8.0 instalada, o aviso, o download e o reinício de verdade.
 - **Tela vista na janela (2026-11-02, Linux, WebDriver):** a verificação ao abrir falhou em silêncio (o último release não tem `latest.json`) e o comando mostrou o erro com "Tentar de novo" e "Fechar". Versão nova, notas, progresso, "pronta" e as perguntas antes de reiniciar só têm teste automático (`src/app/update/updates.spec.ts`).
 
+## Testes
+
+- **Testes de tempo na máquina local:** com a máquina de 2 núcleos ocupada (a IDE instalada aberta, outro agente compilando), os testes de tempo do explorador e do Ctrl+P falham sem bug no app. No CI, com a máquina livre, passam. Hoje a regra é rodar de novo sozinho antes de concluir que falhou.
+- **Versões diferentes do lldb-dap:** aqui é o 23; no CI, o 21 (Ubuntu) e o do Xcode (macOS). O lldb-dap 21 e o do Xcode exigem o `pathFormat` no `initialize`, que o 23 aceita sem: um teste novo só falhou no CI (6a2d037, corrigido em 9c63b10). A interface sempre mandou o `pathFormat`.
+- **Adaptador que sobra:** um teste do lldb-dap que falha no meio não encerra o adaptador.
+
 ## Adiado de propósito
 
 - **Instalação automática de ferramentas** ([ferramentas.md](specs/ferramentas.md)): a IDE só detecta e explica como instalar.

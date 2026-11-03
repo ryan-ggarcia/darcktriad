@@ -80,6 +80,17 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] Linguagem: contador da barra com os itens informativos (Linguagem)
 - [x] Abas: a aba ativa pode ficar fora da faixa visível quando há muitas abas (ex.: o depurador pausa e abre um arquivo, e a aba dele não aparece). Rolar a faixa até ela. Visto nas capturas do tema novo; o código das abas não tem rolagem até a ativa, então não é efeito do tema. → a faixa rola até a aba ativa a cada troca, por qualquer caminho, sem animação; teste de componente, sem teste na janela
 
+## 5b. Testes instáveis ou que só falham no CI
+
+Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esconderem um bug de verdade (detalhes em [RISCOS.md](RISCOS.md), seção Testes).
+
+- [ ] Testes de tempo do frontend (`explorer-view.spec.ts` "cada passo de rolagem…", `quick-open.spec.ts` 50.000 arquivos) falham com a máquina de 2 núcleos ocupada (ex.: a IDE instalada aberta, outro agente compilando). Passam sozinhos e no CI.
+- [ ] Teste de velocidade `listing_a_folder_with_5000_files_fits_the_budget` falhou 1 vez no CI do macOS (2f45e62).
+- [ ] Testes do depurador rodam aqui com o lldb-dap 23, mas o CI usa o 21 (Ubuntu) e o do Xcode (macOS): um teste novo passou aqui e falhou lá (faltava o `pathFormat`, 6a2d037). Rodar localmente também com uma versão antiga, ou conferir o CI antes de considerar pronto.
+- [ ] Testes do lldb-dap deixam o adaptador rodando quando falham no meio (não há `stop` em caso de pânico).
+- [ ] Teste do arquivo do `runInTerminal` do lldb-dap (`lldb_dap_keeps_its_comm_file…`) roda só no Linux: no macOS ele depura o `/usr/bin/env`, que o SIP protege, e o lldb-dap não o inicia (timeout no CI, 9c63b10). Trocar por um programa compilado da fixture para cobrir o macOS.
+- [ ] Teste da pasta dos servidores (`servers_use_the_app_temp_folder…`) falhou 1 vez no CI do Ubuntu por um lock herdado por um instante; foi feito esperar até 5 s (1d722e3). Confirmar que não volta.
+
 ## 6. Decisões pendentes (do usuário)
 
 - [ ] C# sem teclado ao depurar: implementar o contorno só para Linux e macOS? (Depuração › C# não lê o teclado)

@@ -261,6 +261,8 @@ fn lldb_dap_stops_at_a_breakpoint_in_hello_cpp_and_runs_to_the_end() {
 
 /// Morto no meio do início, o lldb-dap deixava o `lldb-dap-run-in-terminal-comm-*` em `/tmp`. Ele
 /// vai para a pasta temporária do app, sem mudar o ambiente do programa depurado.
+// shortcut: só no Linux; no macOS o /usr/bin/env é protegido pelo SIP e o lldb-dap não o inicia. Usar um programa compilado da fixture para cobrir o macOS.
+#[cfg(target_os = "linux")]
 #[test]
 fn lldb_dap_keeps_its_comm_file_in_the_app_temp_folder_and_not_in_the_program_env() {
     if probe().find("lldb-dap").is_empty() {
