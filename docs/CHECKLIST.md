@@ -1,6 +1,6 @@
 # Checklist: o que falta corrigir e validar
 
-Estado em 2026-11-02, na v0.8.0. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
+Estado em 2026-11-03, na v0.8.1. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
 
 ## 1. Validar no Windows (precisa de uma máquina Windows)
 
