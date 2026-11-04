@@ -13,6 +13,7 @@ IDE para C, C++ e C#. Windows, macOS e Linux.
 | C# | Roslyn Language Server + `dotnet` / MSBuild |
 | Depuração | DAP: lldb-dap (C/C++), netcoredbg (C#) |
 | Terminal | xterm.js + portable-pty |
+| Ícones | Interface: Codicons (Microsoft, CC BY 4.0). Arquivos e pastas: mesmo desenho do Rubaxe |
 | Busca / arquivos | crates `ignore` + `grep` (ripgrep) e `notify` |
 | Testes | `cargo test` e `ng test` |
 | Release | GitHub Actions + `tauri-action`: tag `vX.Y.Z` → GitHub Release com `.msi/.exe`, `.dmg`, `.AppImage/.deb` |

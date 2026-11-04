@@ -1,4 +1,25 @@
-import { fileIcon } from './icon';
+import { TestBed } from '@angular/core/testing';
+import { fileIcon, Icon } from './icon';
+
+describe('Icon', () => {
+  const drawn = (name: string) => {
+    const fixture = TestBed.createComponent(Icon);
+    fixture.componentRef.setInput('name', name);
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('svg') as SVGElement;
+  };
+
+  // O sanitizador do Angular tiraria o SVG, e o ícone ficaria em branco sem erro nenhum.
+  it('desenha dentro do SVG o que o sanitizador tiraria', () => {
+    expect(drawn('folder').querySelector('path.fd-front')).not.toBeNull();
+    expect(drawn('file-cs').querySelector('text')?.textContent).toBe('C#');
+    expect(drawn('close').querySelector('path')).not.toBeNull();
+  });
+
+  it('sem desenho para o nome, fica vazio', () => {
+    expect(drawn('').childElementCount).toBe(0);
+  });
+});
 
 describe('fileIcon', () => {
   it.each([

@@ -59,7 +59,7 @@
                 [name]="!entry.isDir ? '' : row.expanded ? 'chevron-down' : 'chevron-right'"
               />
               @if (entry.isDir) {
-                <app-icon class="folder-icon" [name]="row.expanded ? 'folder-open' : 'folder'" />
+                <app-icon [name]="row.expanded ? 'folder-open' : 'folder'" />
               } @else {
                 <app-icon [name]="fileIcon(entry.name)" />
               }
@@ -77,10 +77,7 @@
           } @else if (row.kind === 'input') {
             <div class="tree-row" [style.padding-left.px]="indent(row.level)">
               <app-icon class="twistie" name="" />
-              <app-icon
-                [class.folder-icon]="tree.edit()?.kind === 'dir'"
-                [name]="tree.edit()?.kind === 'dir' ? 'folder' : 'file'"
-              />
+              <app-icon [name]="tree.edit()?.kind === 'dir' ? 'folder' : 'file'" />
               <ng-container *ngTemplateOutlet="nameField" />
             </div>
           } @else {
@@ -100,7 +97,7 @@
   </div>
 } @else {
   <div class="explorer-empty">
-    <app-icon class="empty-icon folder-icon" name="folder-open" />
+    <app-icon class="empty-icon" name="folder-open" />
     <h2 class="empty-title">Nenhuma pasta aberta</h2>
     <p class="empty-text">Abra a pasta do projeto para ver os arquivos aqui.</p>
     <button

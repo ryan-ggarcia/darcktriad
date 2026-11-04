@@ -56,7 +56,7 @@ import { SettingsMenu } from './settings-menu';
         [title]="themeHint()"
         (click)="appearance.toggleTheme()"
       >
-        <app-icon [name]="appearance.theme() === 'dark' ? 'sun' : 'moon'" />
+        <app-icon name="color-mode" />
       </button>
       <app-settings-menu buttonClass="title-action" placement="below-end" />
     </div>

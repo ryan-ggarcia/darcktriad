@@ -475,7 +475,7 @@ where
 
     /// Reconfigura 1 s depois do último salvamento de um arquivo do projeto em `paths` (CMake,
     /// `.csproj`, `.sln`), ou quando a pasta de build sumiu. Ignora o que o próprio CMake grava
-    /// nas pastas de build.
+    /// nas pastas de build. Numa pasta sem projeto, um desses arquivos faz detectar de novo.
     pub fn files_changed(self: &Arc<Self>, paths: &[PathBuf]) {
         let state = self.state();
         let Some(root) = state.root else {
@@ -519,6 +519,16 @@ where
             let now = Instant::now();
             if now >= at && !building && inner.state.status != ProjectStatus::Configuring {
                 inner.reconfigure_at = None;
+                // A pasta ganhou um projeto depois de aberta: é como abri-la de novo.
+                // shortcut: fora do lock, trocar de pasta neste instante reabre a anterior; se
+                // aparecer, faça a detecção sob o lock.
+                if let (ProjectKind::EditOnly, Some(root)) =
+                    (inner.state.kind, inner.state.root.clone())
+                {
+                    drop(inner);
+                    self.open(&root, ProjectChoice::default());
+                    return;
+                }
                 // Sob o mesmo lock: nenhuma configuração começa entre a conferência e esta.
                 break self.begin(&mut inner);
             }
@@ -532,6 +542,11 @@ where
 
     fn is_project_source(&self, root: &Path, path: &Path, kind: ProjectKind) -> bool {
         let name = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
+        let dotnet = || {
+            ["csproj", "sln", "slnx"]
+                .iter()
+                .any(|extension| has_extension(name, extension))
+        };
         let project_file = match kind {
             ProjectKind::CMake | ProjectKind::CMakePresets => {
                 matches!(
@@ -539,10 +554,8 @@ where
                     "CMakeLists.txt" | "CMakePresets.json" | "CMakeUserPresets.json"
                 ) || name.ends_with(".cmake")
             }
-            ProjectKind::DotnetSolution | ProjectKind::DotnetProjects => ["csproj", "sln", "slnx"]
-                .iter()
-                .any(|extension| has_extension(name, extension)),
-            ProjectKind::EditOnly => false,
+            ProjectKind::DotnetSolution | ProjectKind::DotnetProjects => dotnet(),
+            ProjectKind::EditOnly => name == "CMakeLists.txt" || dotnet(),
         };
         // Toda pasta de build tem `CMakeFiles`; sem este filtro, configurar dispararia outra configuração.
         let generated = || {
@@ -1043,7 +1056,7 @@ mod tests {
         dyn Fn(&[String], &AtomicBool, &mut dyn FnMut(&str)) -> io::Result<bool> + Send + Sync;
 
     struct FakeFs {
-        root_files: Vec<&'static str>,
+        root_files: Mutex<Vec<&'static str>>,
         /// Os outros itens que existem, pastas ou arquivos. A pasta de build entra com a consulta.
         paths: Paths,
     }
@@ -1053,8 +1066,7 @@ mod tests {
             if path != Path::new(ROOT) {
                 return Ok(Vec::new());
             }
-            Ok(self
-                .root_files
+            Ok(lock(&self.root_files)
                 .iter()
                 .map(|name| Entry {
                     name: (*name).into(),
@@ -1071,7 +1083,9 @@ mod tests {
 
         fn is_file(&self, path: &Path) -> bool {
             let in_root = path.parent() == Some(Path::new(ROOT))
-                && (self.root_files.iter()).any(|name| path.file_name() == Some(OsStr::new(name)));
+                && lock(&self.root_files)
+                    .iter()
+                    .any(|name| path.file_name() == Some(OsStr::new(name)));
             in_root || self.is_dir(path)
         }
 
@@ -1199,7 +1213,7 @@ mod tests {
             let paths = Paths::new(Mutex::new(paths));
             let mut project = Project::new(
                 FakeFs {
-                    root_files: root_files.into(),
+                    root_files: Mutex::new(root_files.into()),
                     paths: Arc::clone(&paths),
                 },
                 FakeRunner {
@@ -1745,6 +1759,28 @@ mod tests {
             project: Some(Path::new(ROOT).join(format!("{name}.csproj"))),
             framework: None,
         }
+    }
+
+    /// `dotnet new console` no terminal, com a pasta já aberta.
+    #[test]
+    fn a_project_created_after_opening_the_folder_is_detected() {
+        let fixture = Fixture::new(&["teste.c"], dotnet);
+        fixture.open(ProjectChoice::default());
+        assert_eq!(fixture.project.state().kind, ProjectKind::EditOnly);
+
+        fixture.project.files_changed(&["/proj/teste.c".into()]);
+        thread::sleep(Duration::from_millis(700));
+        assert_eq!(fixture.project.state().kind, ProjectKind::EditOnly);
+
+        lock(&fixture.project.fs.root_files).push("app.csproj");
+        fixture.project.files_changed(&["/proj/app.csproj".into()]);
+        wait_until(|| fixture.project.state().status == ProjectStatus::Ready);
+        let state = fixture.project.state();
+        assert_eq!(state.kind, ProjectKind::DotnetProjects);
+        assert_eq!(
+            state.targets,
+            [target("app", "/proj/bin/Debug/net10.0/app.dll")]
+        );
     }
 
     #[test]

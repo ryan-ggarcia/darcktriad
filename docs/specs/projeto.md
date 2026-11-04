@@ -74,6 +74,7 @@ Função pura no núcleo: recebe os nomes da raiz (e, para `.csproj`, até 2 ní
 
 1. **CMake e .NET juntos:** vale o CMake, e aparece o aviso "Também há um projeto .NET aqui. Nesta versão, abra a pasta dele separadamente."
 2. **Sem projeto:** a barra de status mostra "Sem projeto (só edição)". A dica explica que compilar exige `CMakeLists.txt` ou `.csproj`.
+3. **Projeto criado depois de abrir a pasta** (`dotnet new` no terminal, por exemplo): a detecção roda de novo 1 s depois de surgir um `CMakeLists.txt`, `.csproj`, `.sln` ou `.slnx`, sem precisar reabrir a pasta.
 
 ### Barra de status (esquerda)
 

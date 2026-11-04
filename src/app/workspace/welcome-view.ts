@@ -97,7 +97,7 @@ export function formatLastOpened(lastOpened: number | null, now = new Date()): s
                 "
                 (click)="workspace.openRecent(recent)"
               >
-                <app-icon class="folder-icon" name="folder" />
+                <app-icon name="folder" />
                 <span class="recent-text">
                   <span class="recent-name">{{ name }}</span>
                   <span class="recent-path">{{ recent.path }}</span>

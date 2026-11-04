@@ -70,6 +70,9 @@
   --radius-card: 10px;
   --motion: 200ms;
   --code-font: 'JetBrains Mono', Consolas, 'Cascadia Mono', Menlo, 'DejaVu Sans Mono', monospace;
+  --folder-back: #3e8fd6;
+  --folder-front: #7dc2f7;
+  --icon-ink: #1b1b1b;
   color-scheme: dark;
 }
 
@@ -103,6 +106,9 @@
   --breakpoint-unbound: #6f6491;
   --current-line: rgb(255 200 0 / 30%);
   --current-arrow: #b38600;
+  --folder-back: #3a86cc;
+  --folder-front: #8ccbfa;
+  --icon-ink: #ffffff;
   color-scheme: light;
 }
 
@@ -273,16 +279,21 @@ kbd {
   margin-left: 8px;
 }
 
-.icon {
+app-icon {
   display: inline-flex;
   flex: none;
   width: 16px;
   height: 16px;
 }
 
-.icon svg {
+app-icon svg {
   width: 16px;
   height: 16px;
+  fill: currentColor;
+}
+
+/* Os contornos dos ícones de arquivo. */
+app-icon .s {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.2;
@@ -290,16 +301,17 @@ kbd {
   stroke-linejoin: round;
 }
 
-.icon-dot svg {
-  stroke-width: 5;
+app-icon .fd-back {
+  fill: var(--folder-back);
 }
 
-/* O preenchimento suave dos ícones de arquivo e pasta; o traço por cima é o desenho do tipo. */
-.icon svg .icon-tile {
-  fill: currentColor;
-  fill-opacity: 0.2;
-  stroke-opacity: 0.55;
-  stroke-width: 1;
+app-icon .fd-front {
+  fill: var(--folder-front);
+}
+
+/* A sigla da linguagem, sobre o quadrado na cor do tipo. */
+app-icon .ink {
+  fill: var(--icon-ink);
 }
 
 .icon-file {
@@ -586,11 +598,6 @@ app-root {
   filter: drop-shadow(0 0 6px rgb(168 85 255 / 50%));
 }
 
-.title-logo svg {
-  fill: currentColor;
-  stroke: none;
-}
-
 .title-name {
   margin: 0 10px 0 6px;
   font-weight: 600;
@@ -747,10 +754,6 @@ app-root {
   background: #c50f1f;
 }
 
-.window-button .icon svg {
-  stroke-width: 1;
-}
-
 .activity-bar {
   grid-area: activity;
   display: flex;
@@ -802,8 +805,8 @@ app-root {
 
 .activity-button .icon,
 .activity-button .icon svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
 .activity-button.active {
@@ -855,7 +858,7 @@ app-root {
  * Os cartões arredondam sem overflow: hidden. O conteúdo não é cortado: nos do editor e do
  * terminal, o espaço embaixo mantém minimapa, rolagem e última linha longe da curva.
  */
-.main {
+main.main {
   grid-area: main;
   position: relative;
   min-width: 0;
@@ -868,7 +871,7 @@ app-root {
   border-radius: var(--radius-card);
 }
 
-.main:focus-within,
+main.main:focus-within,
 .sidebar:focus-within,
 .panel:focus-within {
   border-color: var(--border-strong);
@@ -891,7 +894,7 @@ app-root.panel-maximized .panel-sash {
 }
 
 /* Sem fundo próprio: fica sobre a janela. A posição do cursor muda aqui a cada tecla. */
-.status-bar {
+footer.status-bar {
   grid-area: status;
   margin-top: var(--gap);
   /* Erros e avisos em cor ficariam abaixo de 4,5:1 direto sobre o vidro da janela. */
@@ -909,11 +912,11 @@ app-root.panel-maximized .panel-sash {
   line-height: 22px;
 }
 
-.status-bar::-webkit-scrollbar {
+footer.status-bar::-webkit-scrollbar {
   display: none;
 }
 
-.status-bar > * {
+footer.status-bar > * {
   flex: none;
 }
 
@@ -963,10 +966,6 @@ app-root.panel-maximized .panel-sash {
   height: 40px;
 }
 
-.empty-icon svg {
-  stroke-width: 0.8;
-}
-
 .empty-title {
   margin: 4px 0 0;
   font-size: 14px;
@@ -979,7 +978,7 @@ app-root.panel-maximized .panel-sash {
   color: var(--fg-muted);
 }
 
-.tree {
+.explorer .tree {
   flex: 1;
   overflow: auto;
   /* A última linha e a rolagem não encostam na curva do cartão. */
@@ -1011,7 +1010,7 @@ app-root.panel-maximized .panel-sash {
   background: var(--bg-hover);
 }
 
-.tree:focus .tree-row.selected {
+.explorer .tree:focus .tree-row.selected {
   background: var(--bg-selected);
   box-shadow: var(--glow);
 }
@@ -1029,10 +1028,6 @@ app-root.panel-maximized .panel-sash {
   color: var(--fg-muted);
   font-style: italic;
   cursor: default;
-}
-
-.folder-icon {
-  color: var(--accent-soft);
 }
 
 .tree-field {
@@ -1381,8 +1376,6 @@ app-root.panel-maximized .panel-sash {
 .welcome-logo svg {
   width: 72px;
   height: 72px;
-  fill: currentColor;
-  stroke: none;
 }
 
 .welcome-title {
@@ -2061,7 +2054,7 @@ app-root.panel-maximized .panel-sash {
 }
 
 /* O texto que manda a barra: à esquerda dele, o projeto; à direita, o resto. */
-.status-bar > .status-message {
+footer.status-bar > .status-message {
   flex: 0 1 auto;
   min-width: 0;
   margin-right: auto;
