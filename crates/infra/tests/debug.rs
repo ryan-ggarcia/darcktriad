@@ -14,9 +14,10 @@ use std::time::{Duration, Instant};
 
 use common::{TempDir, open, probe};
 #[cfg(unix)]
-use darktriad_core::CMakeTarget;
+use darktriad_core::{CMakeTarget, ToolProbe};
 use darktriad_core::{
-    DebugEvent, DebugLaunch, DebugSessions, TerminalEvent, TerminalSize, Terminals, ToolProbe,
+    DebugEvent, DebugLaunch, DebugSessions, TOOLS, TerminalEvent, TerminalSize, Terminals,
+    ToolStatus,
 };
 use darktriad_infra::{PortablePty, StdServerSpawner, SystemToolProbe, detect_default_shell};
 use serde_json::{Value, json};
@@ -218,8 +219,11 @@ fn sessions_with(
 
 /// O alvo compilado da fixture e a sessão com o depurador iniciado.
 fn start(fixture: &str, tool: &str, debugger: &str, edit: impl Fn(&Path)) -> Option<Started> {
-    if probe().find(debugger).is_empty() {
-        eprintln!("PULADO: `{debugger}` não foi encontrado; o teste de {fixture} não rodou.");
+    let adapter = TOOLS.iter().find(|tool| tool.program == debugger).unwrap();
+    if adapter.check(&probe()) == ToolStatus::Missing {
+        eprintln!(
+            "PULADO: `{debugger}` não foi encontrado ou não abre; o teste de {fixture} não rodou."
+        );
         return None;
     }
     let (root, project, _) = open(fixture, tool)?;

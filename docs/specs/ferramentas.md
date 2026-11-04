@@ -376,7 +376,7 @@ O VS Code não tem atalho para instalar ferramentas. O comando fica **sem atalho
 ## Riscos para a implementação
 
 1. **lldb no Windows e Python:** relatos indicam que o `liblldb.dll` dos pacotes do LLVM para Windows depende de uma DLL do Python que o pacote não traz ([llvm-project#74073](https://github.com/llvm/llvm-project/issues/74073)).
-   - O QA deve confirmar com a versão do manifesto.
+   - Confirmado em 2026-11-04: o `liblldb.dll` do LLVM 23.1.4 pede o `python3.dll`, e sem ele o `lldb-dap` não abre. O QA deve confirmar com a versão do manifesto.
    - Se ainda for assim, é preciso decidir: incluir o Python "embeddable" oficial de python.org (que publica assinaturas), ou aceitar o lldb-dap só por instalação manual.
 2. **Dependências novas no Rust:**
    - cliente HTTPS, SHA-256, `zip`, `tar`, `flate2` e `zstd` (para o pacote do LLVM);

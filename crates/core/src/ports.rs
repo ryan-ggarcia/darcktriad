@@ -117,7 +117,7 @@ pub trait PtySpawner: Send + Sync {
 pub trait ToolProbe: Send + Sync {
     /// Os caminhos de `program`, na ordem de busca da IDE: `PATH`, caminhos conhecidos, pasta da IDE.
     fn find(&self, program: &str) -> Vec<PathBuf>;
-    /// O que `<path> --version` escreve.
+    /// O que `<path> --version` escreve. `NotFound`: o programa existe, mas não abre.
     fn version_output(&self, path: &Path) -> io::Result<String>;
 }
 

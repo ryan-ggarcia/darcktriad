@@ -16,6 +16,10 @@ use crate::process::DOTNET_QUIET;
 
 /// Uma ferramenta que não responde ao `--version` nesse tempo é tratada como sem versão.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+/// Códigos de saída de quem não abre por falta de uma DLL: do carregador do Windows e do
+/// carregamento tardio (o `lldb-dap` do LLVM 23 sem o Python).
+#[cfg(windows)]
+const MISSING_DLL: [u32; 2] = [0xC000_0135, 0xC06D_007E];
 
 pub struct SystemToolProbe {
     /// `None`: o `PATH` da IDE, lido a cada busca porque, no Windows, o do MSVC chega depois.
@@ -171,6 +175,10 @@ fn output_within(command: &mut Command, timeout: Duration) -> io::Result<String>
     }
     let output = child.wait_with_output()?;
     if !output.status.success() {
+        #[cfg(windows)]
+        if (output.status.code()).is_some_and(|code| MISSING_DLL.contains(&(code as u32))) {
+            return Err(io::ErrorKind::NotFound.into());
+        }
         return Err(io::Error::other(
             String::from_utf8_lossy(&output.stderr).into_owned(),
         ));
@@ -212,6 +220,25 @@ mod windows_tests {
             probe.find("roslyn-language-server"),
             [dir.join("roslyn-language-server.exe")]
         );
+    }
+
+    #[test]
+    fn a_program_without_its_dll_counts_as_not_found() {
+        let kind_of_exit = |code: i64| {
+            output_within(
+                Command::new("cmd.exe").args(["/d", "/c", &format!("exit {code}")]),
+                VERSION_TIMEOUT,
+            )
+            .unwrap_err()
+            .kind()
+        };
+        for code in MISSING_DLL {
+            assert_eq!(
+                kind_of_exit(i64::from(code as i32)),
+                io::ErrorKind::NotFound
+            );
+        }
+        assert_ne!(kind_of_exit(3), io::ErrorKind::NotFound);
     }
 
     #[test]

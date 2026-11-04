@@ -43,7 +43,8 @@ pub const TOOLS: [Tool; 7] = [
         // A spec só recomenda a 21: as anteriores ainda depuram.
         minimum: None,
         install: "Vem com o LLVM (https://github.com/llvm/llvm-project/releases); no macOS, com \
-                  as Command Line Tools (xcode-select --install).",
+                  as Command Line Tools (xcode-select --install). No Windows, o do LLVM também \
+                  precisa do Python (https://www.python.org/downloads/) no PATH.",
     },
     Tool {
         program: "dotnet",
@@ -128,8 +129,12 @@ impl Tool {
     pub fn check(&self, probe: &impl ToolProbe) -> ToolStatus {
         let mut outdated = None;
         for path in probe.find(self.program) {
-            let version = probe
-                .version_output(&path)
+            let output = probe.version_output(&path);
+            // Achado, mas não abre: no Windows, o lldb-dap do LLVM sem o Python, que o pacote não traz.
+            if (output.as_ref()).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) {
+                continue;
+            }
+            let version = output
                 .ok()
                 .as_deref()
                 .and_then(version_in)
@@ -244,6 +249,41 @@ mod tests {
             ToolStatus::Present {
                 path: "/opt/llvm/clangd".into(),
                 version: Some("18.1.3".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_candidate_that_does_not_open_is_skipped() {
+        struct Probe(&'static [&'static str]);
+        impl ToolProbe for Probe {
+            fn find(&self, _: &str) -> Vec<PathBuf> {
+                self.0.iter().map(PathBuf::from).collect()
+            }
+
+            fn version_output(&self, path: &Path) -> io::Result<String> {
+                match path.to_str() {
+                    Some("/sem-dll") => Err(io::ErrorKind::NotFound.into()),
+                    Some("/antigo") => Err(io::Error::other("opção desconhecida")),
+                    _ => Ok("lldb-dap version 23.1.4".into()),
+                }
+            }
+        }
+        let lldb_dap = tool("lldb-dap");
+        assert_eq!(lldb_dap.check(&Probe(&["/sem-dll"])), ToolStatus::Missing);
+        assert_eq!(
+            lldb_dap.check(&Probe(&["/sem-dll", "/bom"])),
+            ToolStatus::Present {
+                path: "/bom".into(),
+                version: Some("23.1.4".into()),
+            }
+        );
+        // Um lldb-dap antigo pode não conhecer o `--version` e ainda assim depurar.
+        assert_eq!(
+            lldb_dap.check(&Probe(&["/antigo"])),
+            ToolStatus::Present {
+                path: "/antigo".into(),
+                version: None,
             }
         );
     }

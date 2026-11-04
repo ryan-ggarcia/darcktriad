@@ -72,6 +72,7 @@ Bugs e limites, do mais importante para o menos importante.
 - [ ] Terminal sem controle de fluxo: no Windows não trava (medido; ver Terminal); medir no Linux para decidir se vale fazer
 - [x] ABNT2: mostrar "Ctrl+'" desde a abertura, e não só depois do primeiro aperto (Terminal): o caractere aprendido fica guardado; só a primeira abertura de todas ainda espera o aperto; passou na janela (QA, 03b186a)
 - [ ] Conferir no Linux o espaçamento da JetBrains Mono embutida no terminal (Terminal)
+- [x] Windows: `lldb-dap` do LLVM sem o Python aparece como ausente, com o passo a passo, e não mais como um código de erro (Depuração)
 - [x] Depuração: não mostrar "terminate: recusado" do lldb-dap como erro no canal Depuração (Depuração) → passou na janela (QA, 03b186a)
 - [x] Depuração: campos com nome junto com os blocos de coleções grandes: não acontece com o `netcoredbg` nem com o `lldb-dap`; sem mudança de código (Depuração)
 - [x] Depuração: pontos de parada ao recarregar o arquivo do disco (Depuração) → passou na janela (QA, 03b186a)
@@ -98,7 +99,7 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 
 - [ ] C# sem teclado ao depurar: implementar o contorno só para Linux e macOS? (Depuração › C# não lê o teclado)
 - [ ] netcoredbg exige glibc 2.38: aceitar que Ubuntu 22.04 e distros antigas fiquem sem depuração de C#, ou procurar outra versão (Depuração)
-- [ ] Instalação automática de ferramentas ([ferramentas.md](specs/ferramentas.md)) (Adiado de propósito)
+- [ ] Instalação automática de ferramentas ([ferramentas.md](specs/ferramentas.md)) (Adiado de propósito): fica como está por decisão do usuário (2026-11-04); rever conforme o uso
 - [ ] Windows sem compilador nenhum: mensagem "Nenhum compilador C/C++ encontrado." e botão Instalar, que a spec pede; entra junto com a instalação automática (Adiado de propósito)
 - [ ] Gdb como depurador de C/C++ (hoje "depois" no [roadmap](specs/README.md))
 
