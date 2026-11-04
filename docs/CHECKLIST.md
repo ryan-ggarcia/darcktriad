@@ -1,6 +1,6 @@
 # Checklist: o que falta corrigir e validar
 
-Estado em 2026-11-03, na v0.11.0. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
+Estado em 2026-11-04, na v0.11.0. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
 
 ## 1. Validar no Windows (precisa de uma máquina Windows)
 
@@ -12,8 +12,11 @@ Estado em 2026-11-03, na v0.11.0. Cada item tem a explicação em [RISCOS.md](RI
 - [x] Queda do depurador não deixa o programa rodando, com o `lldb-dap` e o `netcoredbg` (Windows › Processos que sobram)
 - [ ] Atualizar pela IDE com um release real, pelo `.exe` (NSIS) e pelo `.msi`: aviso, progresso, "Reiniciar agora" e abrir na versão nova (Atualização automática)
 - [x] Temporários do clangd na pasta `servers` do app; saem ao fechar a pasta (Linguagem › Encerrar os servidores)
-- [ ] Testes de integração no CI do Windows: passam nesta máquina (11 de 11); falta ver no primeiro push (Windows)
+- [x] Testes de integração no CI do Windows: verdes em 92371a3 (2026-11-04), menos o do `lldb-dap`, que é pulado lá (grupo 5b) (Windows)
 - [x] F5, Ctrl+R, Ctrl+P, Ctrl+F e Ctrl+J com teclas reais não fazem nada de navegador: critério 11 de [paleta-de-comandos.md](specs/paleta-de-comandos.md) (Windows 11, build de produção, 2026-11-03)
+- [ ] Itens novos da v0.11.0 com teclado e mouse reais: bolinha na margem, sublinhado do Ctrl, "Ir para definição" no menu de contexto e links da Saída durante a compilação; só foram testados pelo DevTools (Linguagem; Depuração; Compilar e executar)
+- [ ] Alt+letra nos menus: dizer se o som de aviso do Windows incomoda (Paleta e menu)
+- [ ] Usar o app com o Narrador (Sem teste na janela › Leitor de tela)
 
 ## 2. Validar no macOS (precisa de um Mac)
 
@@ -94,6 +97,7 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [x] Testes do lldb-dap deixam o adaptador rodando quando falham no meio: agora o `Dap` encerra a sessão ao ser descartado.
 - [ ] Teste do arquivo do `runInTerminal` do lldb-dap (`lldb_dap_keeps_its_comm_file…`) roda só no Linux: no macOS ele depura o `/usr/bin/env`, que o SIP protege, e o lldb-dap não o inicia (timeout no CI, 9c63b10). Trocar por um programa compilado da fixture para cobrir o macOS.
 - [ ] Teste da pasta dos servidores (`servers_use_the_app_temp_folder…`) falhou 1 vez no CI do Ubuntu por um lock herdado por um instante; foi feito esperar até 5 s (1d722e3). Confirmar que não volta.
+- [ ] Teste do `lldb-dap` no CI do Windows: é pulado, porque o LLVM 20 da imagem não abre sem o Python (`0xC0000135`). A depuração de C/C++ no Windows só é testada nesta máquina, com o LLVM 23 e o Python instalado. Pôr o Python certo no `PATH` do job para o teste rodar lá (Depuração)
 
 ## 6. Decisões pendentes (do usuário)
 
@@ -102,6 +106,8 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [ ] Instalação automática de ferramentas ([ferramentas.md](specs/ferramentas.md)) (Adiado de propósito): fica como está por decisão do usuário (2026-11-04); rever conforme o uso
 - [ ] Windows sem compilador nenhum: mensagem "Nenhum compilador C/C++ encontrado." e botão Instalar, que a spec pede; entra junto com a instalação automática (Adiado de propósito)
 - [ ] Gdb como depurador de C/C++ (hoje "depois" no [roadmap](specs/README.md))
+- [ ] Escolher o compilador quando há mais de um (ex.: Clang no `PATH` e o MSVC instalado): hoje vale o do `PATH`, sem como trocar pela IDE ([projeto.md](specs/projeto.md) › Ambiente do compilador no Windows)
+- [ ] Publicar no GitHub o rascunho da v0.11.0; os da v0.9.0 e da v0.10.0 podem ser descartados. Até lá, a publicada é a v0.8.1, e a atualização pela IDE não oferece as versões novas (Atualização automática)
 
 ## Fora deste checklist
 
