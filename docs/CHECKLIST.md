@@ -1,6 +1,6 @@
 # Checklist: o que falta corrigir e validar
 
-Estado em 2026-11-04, na v0.11.0. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
+Estado em 2026-11-04, na v0.11.1. Cada item tem a explicação em [RISCOS.md](RISCOS.md), na seção indicada entre parênteses. Ao concluir um item, marque `[x]` aqui e atualize o RISCOS.md.
 
 ## 1. Validar no Windows (precisa de uma máquina Windows)
 
@@ -17,6 +17,7 @@ Estado em 2026-11-04, na v0.11.0. Cada item tem a explicação em [RISCOS.md](RI
 - [ ] Itens novos da v0.11.0 com teclado e mouse reais: bolinha na margem, sublinhado do Ctrl, "Ir para definição" no menu de contexto e links da Saída durante a compilação; só foram testados pelo DevTools (Linguagem; Depuração; Compilar e executar)
 - [ ] Alt+letra nos menus: dizer se o som de aviso do Windows incomoda (Paleta e menu)
 - [ ] Usar o app com o Narrador (Sem teste na janela › Leitor de tela)
+- [ ] Itens novos da v0.11.1 com teclado e mouse reais: sugestões do editor, projeto criado com a pasta aberta e ícones; só foram testados pelo DevTools (Linguagem; Projeto; Visual)
 
 ## 2. Validar no macOS (precisa de um Mac)
 
@@ -98,6 +99,7 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [ ] Teste do arquivo do `runInTerminal` do lldb-dap (`lldb_dap_keeps_its_comm_file…`) roda só no Linux: no macOS ele depura o `/usr/bin/env`, que o SIP protege, e o lldb-dap não o inicia (timeout no CI, 9c63b10). Trocar por um programa compilado da fixture para cobrir o macOS.
 - [ ] Teste da pasta dos servidores (`servers_use_the_app_temp_folder…`) falhou 1 vez no CI do Ubuntu por um lock herdado por um instante; foi feito esperar até 5 s (1d722e3). Confirmar que não volta.
 - [ ] Teste do `lldb-dap` no CI do Windows: é pulado, porque o LLVM 20 da imagem não abre sem o Python (`0xC0000135`). A depuração de C/C++ no Windows só é testada nesta máquina, com o LLVM 23 e o Python instalado. Pôr o Python certo no `PATH` do job para o teste rodar lá (Depuração)
+- [ ] Teste `hello_cs_runs_with_dotnet_run_and_its_errors_appear_once` falhou 1 vez no CI do Windows (f808b77), com "é preciso o dotnet 8": provavelmente o `dotnet --version` passou dos 5 s da detecção. Se foi isso, uma máquina lenta veria o mesmo aviso falso (Testes).
 
 ## 6. Decisões pendentes (do usuário)
 
@@ -107,7 +109,6 @@ Testes que falharam sem bug no app. Ajustar para não darem alarme falso nem esc
 - [ ] Windows sem compilador nenhum: mensagem "Nenhum compilador C/C++ encontrado." e botão Instalar, que a spec pede; entra junto com a instalação automática (Adiado de propósito)
 - [ ] Gdb como depurador de C/C++ (hoje "depois" no [roadmap](specs/README.md))
 - [ ] Escolher o compilador quando há mais de um (ex.: Clang no `PATH` e o MSVC instalado): hoje vale o do `PATH`, sem como trocar pela IDE ([projeto.md](specs/projeto.md) › Ambiente do compilador no Windows)
-- [ ] Publicar no GitHub o rascunho da v0.11.0; os da v0.9.0 e da v0.10.0 podem ser descartados. Até lá, a publicada é a v0.8.1, e a atualização pela IDE não oferece as versões novas (Atualização automática)
 
 ## Fora deste checklist
 
