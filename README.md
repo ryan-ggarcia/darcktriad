@@ -16,7 +16,7 @@ npm run tauri build    # gera os instaladores do seu sistema
 
 ## Release
 
-1. Atualize `version` em `src-tauri/Cargo.toml` (ex.: `0.2.0`).
+1. Atualize `version` em `src-tauri/Cargo.toml` (ex.: `0.2.0`), faça o commit e o push, e espere o CI ficar verde.
 2. Crie e envie a tag: `git tag v0.2.0 && git push origin v0.2.0`.
-3. O GitHub Actions gera um release em rascunho com os instaladores de Windows, macOS e Linux.
-4. O QA testa os instaladores e publica o release.
+3. O workflow Release gera um rascunho com os instaladores de Windows, macOS e Linux e o `latest.json`.
+4. Só depois de o run da Release terminar verde, publique o rascunho marcado como Latest e confira se "Notas da atualização" (`release-notes.yml`) ficou verde. A IDE procura a versão nova na release Latest: publique sempre da mais antiga para a mais nova. Detalhes em [docs/RISCOS.md](docs/RISCOS.md) › Atualização automática.
